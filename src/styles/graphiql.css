@@ -1,0 +1,54 @@
+/* custom-graphiql.css */
+.graphiql-container {
+    background-color: #18181B; /* Change the background color */
+}
+
+.graphiql-toolbar {
+    background-color: #333; /* Change the toolbar background color */
+    color: #fff; /* Change the toolbar text color */
+}
+
+.graphiql-editor {
+    background-color: #282c34; /* Change the editor background color */
+    color: #abb2bf; /* Change the editor text color */
+}
+
+.graphiql-container .graphiql-editors {
+    background-color: #091113;
+}
+.graphiql-editors {
+    background-color: #091113;
+}
+
+.graphiql-editor {
+    background-color: #091113;
+}
+
+.graphiql-container .CodeMirror, .graphiql-container .CodeMirror-gutters   {
+    background-color: #091113;
+}
+
+.graphiql-response .result-window .CodeMirror {
+    background-color: #18181B; /* your desired color */
+}
+
+.graphiql-logo-link {
+    display: none;
+}
+
+button.graphiql-execute-button {
+    background-color: #00D992;
+}
+
+button.graphiql-execute-button:hover {
+    background-color: #01c081;
+}
+
+.graphiql-toolbar {
+    background-color: #091113;
+
+}
+.graphiql-container {
+    height: 800px;
+    margin-top: 32px;
+  }
