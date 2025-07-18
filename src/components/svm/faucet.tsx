@@ -1,0 +1,364 @@
+'use client'
+
+import { ChevronDownIcon } from '@heroicons/react/24/outline'
+import { PlayIcon, PlusIcon } from '@heroicons/react/24/solid'
+import confetti from 'canvas-confetti'
+import { useEffect, useState } from 'react'
+import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog'
+import { Field, Label } from '../catalyst/fieldset'
+import Image from 'next/image'
+
+interface Token {
+  ticker: string
+  imageUrl: string
+  address?: string
+  name: string
+  decimals: number
+}
+
+interface TokenRequest {
+  token: Token
+  amount: number
+}
+
+const rpcUrl = 'http://127.0.0.1:8899'
+
+export default function Faucet() {
+  const defaultFundingRequest = {
+    token: {
+      ticker: 'SOL',
+      imageUrl: 'https://img-v1.raydium.io/icon/So11111111111111111111111111111111111111112.png',
+      address: undefined,
+      decimals: 9,
+      name: 'Solana',
+    },
+    amount: 0,
+  }
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(0)
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
+  const [tokenShortcuts, setTokenShortcuts] = useState<Token[]>([])
+  const [tokenMatches, setTokenMatches] = useState<Token[]>([])
+
+  const [claimedTokens, setClaimedTokens] = useState(0)
+  const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest])
+  const [reccipients, setReccipients] = useState<
+    {
+      address: string | undefined
+    }[]
+  >([
+    {
+      address: '',
+    },
+  ])
+  const [tokenSearch, setTokenSearch] = useState('')
+
+  const [tokens, setTokens] = useState<any[]>([])
+
+  async function fetchData() {
+    // Fetch tokens from Jupiter API only once
+    if (tokens.length === 0) {
+      try {
+        const response = await fetch('https://lite-api.jup.ag/tokens/v1/tagged/verified')
+        const data = await response.json()
+
+        // console.log(`data: ${JSON.stringify(data)}`)
+        let usdc = filterTokensByTicker('USDC', data, true)
+        let usdt = filterTokensByTicker('USDT', data, true)
+        let ray = filterTokensByTicker('RAY', data, true)
+        let jup = filterTokensByTicker('JUP', data, true)
+
+        // Log the raw data first to debug
+        console.log('Raw token data:', data)
+
+        // Log each token search result
+        console.log('USDC tokens:', usdc)
+        console.log('USDT tokens:', usdt)
+        console.log('RAY tokens:', ray)
+        console.log('JUP tokens:', jup)
+
+        // Log the filter function parameters for debugging
+        console.log('Filter function called with:', {
+          ticker: 'USDC',
+          tokensLength: data.length,
+          first: true,
+        })
+        setTokens(data)
+        setTokenShortcuts([usdc[0], usdt[0], ray[0], jup[0]])
+      } catch (error) {
+        console.error('Error fetching tokens:', error)
+      }
+    }
+  }
+
+  const handleTokenSearch = (value: string) => {
+    setTokenSearch(value)
+    setTokenMatches(filterTokensByTicker(value, tokens, false))
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const filterTokensByTicker = (ticker: string, remoteTokens: any[], first: boolean): Token[] => {
+    if (!ticker || !remoteTokens) return []
+    const filteredTokens: Token[] = []
+    const normalizedTicker = ticker.toLowerCase().trim()
+    for (const entry of remoteTokens) {
+      if (entry.symbol.toLowerCase() === normalizedTicker) {
+        const token = {
+          name: entry.name,
+          ticker: entry.symbol,
+          imageUrl: entry.logoURI,
+          address: entry.address,
+          decimals: entry.decimals,
+        }
+        if (first == true) {
+          return [token]
+        } else {
+          filteredTokens.push(token)
+        }
+      }
+    }
+    return filteredTokens
+  }
+
+  const handleClaimTokens = async () => {
+    // Simulate claiming tokens
+    setClaimedTokens(claimedTokens + 10)
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+    })
+
+    for (const tokenFundingRequest of tokenFundingRequests) {
+      for (const recipient of reccipients) {
+        console.log(`Sending ${tokenFundingRequest.amount} ${tokenFundingRequest.token.ticker} to ${recipient.address}`)
+        console.log(``)
+        // send surfnet_setTokenAccount RPC request
+        var rpcRequest = {}
+        if (tokenFundingRequest.token.address) {
+          rpcRequest = {
+            id: 1,
+            jsonrpc: '2.0',
+            method: 'surfnet_setTokenAccount',
+            params: [recipient.address, tokenFundingRequest.token.address, { amount: tokenFundingRequest.amount * tokenFundingRequest.token.decimals }],
+          }
+        } else {
+          rpcRequest = {
+            id: 1,
+            jsonrpc: '2.0',
+            method: 'surfnet_setAccount',
+            params: [recipient.address, { lamports: tokenFundingRequest.amount * tokenFundingRequest.token.decimals }],
+          }
+        }
+
+        try {
+          const response = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcRequest),
+          })
+          if (!response.ok) {
+            throw new Error('Network response was not ok')
+          }
+          const data = await response.json()
+        } catch (error) {
+          console.error('Error in RPC request:', error)
+        }
+      }
+    }
+    setSuccessDialogOpen(true)
+  }
+
+  const handleAddFundingRequest = () => {
+    setTokenFundingRequest([...tokenFundingRequests, defaultFundingRequest])
+  }
+
+  const handleAddAddress = () => {
+    setReccipients([...reccipients, { address: undefined }])
+  }
+
+  const handleTokenFundingRequestChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const newTokenFundingRequests = [...tokenFundingRequests]
+    newTokenFundingRequests[index].amount = parseFloat(e.target.value)
+    setTokenFundingRequest(newTokenFundingRequests)
+  }
+
+  return (
+    <div className="faucet flex min-h-[600px] w-full items-start justify-center rounded-2xl bg-zinc-800">
+      <div className="flex w-full flex-col items-center space-y-4 p-6">
+        {/* Box 1: Tokens needed */}
+        <Field className="w-full uppercase">
+          <Label className="text-lg text-white">TOKENS</Label>
+        </Field>
+
+        {tokenFundingRequests.map((tokenFundingRequest, index) => (
+          <div key={index} className="w-full">
+            <Field className="w-full rounded-2xl bg-zinc-900 p-6">
+              <Label className="text-lg text-zinc-300">Amount</Label>
+              <div className="flex items-center space-x-4 mt-3">
+                <input
+                  id={`amount-${index}`}
+                  type="text"
+                  placeholder="0"
+                  className="flex-1 border-none bg-transparent text-left text-4xl text-white focus:outline-none"
+                  onChange={(e) => handleTokenFundingRequestChange(e, index)}
+                  autoFocus
+                />
+                <div
+                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 px-4 py-2 text-xl uppercase hover:bg-zinc-700"
+                  onClick={() => setTokenDialogOpen(index + 1)}
+                >
+                  <img
+                    src={tokenFundingRequest.token.imageUrl}
+                    alt={tokenFundingRequest.token.ticker}
+                    className="h-8 w-8 rounded-full object-cover mr-3"
+                  />
+                  <span className="text-white mr-3">{tokenFundingRequest.token.ticker}</span>
+                  <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
+                </div>
+              </div>
+            </Field>
+          </div>
+        ))}
+
+        <div className="flex justify-center">
+          <div
+            className="cursor-pointer rounded-full border-2 border-zinc-700 bg-zinc-800 p-2 hover:bg-zinc-700"
+            onClick={() => handleAddFundingRequest()}
+          >
+            <PlusIcon className="h-5 w-5 text-zinc-400" />
+          </div>
+        </div>
+
+        <Field className="w-full uppercase">
+          <Label className="text-lg text-white">RECIPIENTS</Label>
+        </Field>
+
+        {reccipients.map((reccipient, index) => (
+          <div key={index} className="w-full">
+            <Field className="w-full rounded-2xl bg-zinc-900 p-6">
+              <input
+                type="text"
+                placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
+                className="w-full border-none bg-transparent text-left text-lg text-white focus:outline-none"
+                value={reccipient.address}
+                onChange={(e) => {
+                  const newRecipients = [...reccipients]
+                  newRecipients[index].address = e.target.value
+                  setReccipients(newRecipients)
+                }}
+              />
+            </Field>
+          </div>
+        ))}
+
+        <div className="flex justify-center">
+          <div
+            className="cursor-pointer rounded-full border-2 border-zinc-700 bg-zinc-800 p-2 hover:bg-zinc-700"
+            onClick={() => handleAddAddress()}
+          >
+            <PlusIcon className="h-5 w-5 text-zinc-400" />
+          </div>
+        </div>
+
+        <Field className="w-full uppercase">
+          <Label className="text-lg text-white">NETWORK</Label>
+        </Field>
+
+        <div className="flex w-full items-center justify-between rounded-2xl bg-zinc-900 p-6">
+          <div className="flex flex-col">
+            <div className="text-lg font-medium uppercase text-white">Surfpool</div>
+            <div className="text-xs font-bold uppercase text-zinc-400">http://127.0.0.1:8899</div>
+          </div>
+          <button
+            className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#E034AE] text-white hover:bg-[#C02A96] transition-colors"
+            onClick={() => handleClaimTokens()}
+          >
+            <PlayIcon className="h-6 w-6" />
+          </button>
+        </div>
+      </div>
+
+      <Dialog open={tokenDialogOpen > 0} onClose={() => setTokenDialogOpen(0)} size="xl">
+        <DialogDescription>{''}</DialogDescription>
+        <input
+          type="text"
+          placeholder="Search for ticker (WSOL, $TRUMP, etc.)"
+          className="w-full border-none bg-transparent text-left text-xl focus:outline-none"
+          onChange={(e) => handleTokenSearch(e.target.value)}
+          autoFocus
+          ref={(input) => {
+            if (tokenDialogOpen > 0 && input) {
+              input.focus();
+            }
+          }}
+        />
+        <div className="mt-4 grid grid-cols-4 gap-4">
+          {tokenShortcuts.map((tokenShortcut, index) => (
+            <div
+              key={index}
+              className="flex cursor-pointer flex-col items-center rounded-xl bg-zinc-800 p-4 transition-colors"
+              onClick={() => {
+                const newTokenFundingRequests = [...tokenFundingRequests]
+                newTokenFundingRequests[tokenDialogOpen - 1].token = tokenShortcut
+                setTokenFundingRequest(newTokenFundingRequests)
+                setTokenDialogOpen(0) // Close the dialog after selection
+              }}
+            >
+              <img src={tokenShortcut.imageUrl} alt={tokenShortcut.ticker} className="mb-2 h-8 w-8" />
+              <div className="text-center text-sm font-bold">{tokenShortcut.ticker}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-8">
+          {tokenMatches.map((tokenMatch, index) => (
+            <div
+              key={index}
+              className="flex cursor-pointer flex-row items-center gap-6 rounded-xl border-2 border-zinc-700 p-4 transition-colors"
+              onClick={() => {
+                const newTokenFundingRequests = [...tokenFundingRequests]
+                newTokenFundingRequests[tokenDialogOpen - 1].token = tokenMatch
+                setTokenFundingRequest(newTokenFundingRequests)
+                setTokenMatches([])
+                setTokenSearch('')
+                setTokenDialogOpen(0)
+              }}
+            >
+              <Image src={tokenMatch.imageUrl} alt={tokenMatch.ticker} className="mb-2 h-12 w-12 bg-transparent rounded-full" />
+              <div className="text-center text-lg font-bold">{tokenMatch.ticker}</div>
+            </div>
+          ))}
+        </div>
+      </Dialog>
+
+      <Dialog open={successDialogOpen} onClose={() => setSuccessDialogOpen(false)} size="3xl">
+        <DialogTitle>Token Accounts Updated</DialogTitle>
+        <DialogDescription>{''}</DialogDescription>
+          {tokenFundingRequests.map((fundingRequest, index) => (
+            <div key={index} className="flex items-center gap-4 mt-4 p-4 rounded-lg bg-zinc-800/50">
+              <img 
+                src={fundingRequest.token.imageUrl} 
+                alt={fundingRequest.token.ticker} 
+                className="h-8 w-8 rounded-full"
+              />
+              <div className="flex flex-col">
+                <div className="font-medium">
+                  {fundingRequest.token.ticker}
+                </div>
+                <div className="text-sm text-zinc-400">
+                  {fundingRequest.token.address} 
+                </div>
+              </div>
+              <div className="ml-auto font-bold text-green-400">
+                {fundingRequest.amount} {fundingRequest.token.ticker}
+              </div>
+            </div>
+          ))}
+      </Dialog>
+    </div>
+  )
+}
