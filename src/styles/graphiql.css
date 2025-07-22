@@ -37,11 +37,13 @@
 }
 
 button.graphiql-execute-button {
-    background-color: #00D992;
+    background-color: #E034AE;
+    border-radius: 128px;
 }
 
 button.graphiql-execute-button:hover {
-    background-color: #01c081;
+    background-color: #b02488;
+    border-radius: 128px;
 }
 
 .graphiql-toolbar {
