@@ -16,6 +16,7 @@ import { StackedLayout } from '@/components/catalyst/stacked-layout'
 import { useWorkspaceContext } from '@/contexts/workspace-context'
 import {
   ArrowRightStartOnRectangleIcon,
+  PlayIcon,
 } from '@heroicons/react/16/solid'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
@@ -84,6 +85,19 @@ export function Dashboard({ children }: { children: React.ReactNode }) {
       }
     >
       {children}
+      
+      {/* Watch Tutorials Button - Fixed at bottom right */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <button
+          className="flex items-center gap-2 rounded-[9999px] px-6 py-3 shadow-lg hover:shadow-xl transition-all duration-200 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white cursor-pointer"
+          onClick={() => {
+            window.open('https://www.youtube.com/playlist?list=PL0FMgRjJMRzO1FdunpMS-aUS4GNkgyr3T', '_blank')
+          }}
+        >
+          <PlayIcon className="h-4 w-4" />
+          Watch Surfpool 101
+        </button>
+      </div>
     </StackedLayout>
   )
 }
