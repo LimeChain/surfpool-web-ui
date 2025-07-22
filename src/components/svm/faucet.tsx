@@ -189,7 +189,7 @@ export default function Faucet() {
 
   return (
     <div className="faucet flex min-h-[600px] w-full items-start justify-center rounded-2xl bg-zinc-800">
-      <div className="flex w-full flex-col items-center space-y-4 p-6">
+      <div className="flex w-full flex-col items-start space-y-4 p-6 ">
         {/* Box 1: Tokens needed */}
         <Field className="w-full uppercase">
           <Label className="text-lg text-white">TOKENS</Label>
