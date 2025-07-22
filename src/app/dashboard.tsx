@@ -20,37 +20,18 @@ import {
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
-const getTeams = () => `
-  query {
-    teams {
-      id
-      name
-    }
-  }
-`
+
 
 export function Dashboard({ children }: { children: React.ReactNode }) {
   let workspaceContext = useWorkspaceContext()
   let user = workspaceContext?.data?.user!
   let [isConfirmSignOutOpen, setConfirmSignOutOpen] = useState(false)
-  const [teams, setTeams] = useState<any[]>([])
-  const [teamName, setTeamName] = useState('');
-  const [workspaceName, setWorkspaceName] = useState('');
+
   const pathname = usePathname()
 
-  async function fetchTeams() {
-    let nhost = workspaceContext?.helpers.nhostClient!
-    let req = getTeams()
-    var { data, error } = await nhost.graphql.request(req)
-    if (error) {
-      console.error({ error })
-      return
-    }
-    setTeams(data.teams)
-  }
+ 
 
   useEffect(() => {
-    fetchTeams()
   }, [workspaceContext?.data])
 
   // Create a grapql query to get "teams" and "workspaces" from the user. if there are no teams, we will be displaying 2 inputs in the dialog.
