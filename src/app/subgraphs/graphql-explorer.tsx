@@ -19,7 +19,7 @@ export default function GraphQLExplorer() {
 
   const fetcher = useMemo(() => {
     return createGraphiQLFetcher({
-      url: "http://127.0.0.1:8488/gql/v1/graphql",
+      url: "http://127.0.0.1:18488/gql/v1/graphql",
     });
   }, [isMounted]);
 

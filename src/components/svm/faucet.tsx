@@ -6,7 +6,17 @@ import confetti from 'canvas-confetti'
 import { useEffect, useState } from 'react'
 import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog'
 import { Field, Label } from '../catalyst/fieldset'
-import Image from 'next/image'
+import { useWorkspaceContext } from '@/contexts/workspace-context'
+
+export type Network = {
+  id: string,
+  name: string,
+  description: string,
+  status: string,
+  created_at: string,
+  rpc_url: string,
+  datasource_rpc_url: string,
+}
 
 interface Token {
   ticker: string
@@ -20,8 +30,6 @@ interface TokenRequest {
   token: Token
   amount: number
 }
-
-const rpcUrl = 'http://127.0.0.1:8899'
 
 export default function Faucet() {
   const defaultFundingRequest = {
@@ -38,9 +46,10 @@ export default function Faucet() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false)
   const [tokenShortcuts, setTokenShortcuts] = useState<Token[]>([])
   const [tokenMatches, setTokenMatches] = useState<Token[]>([])
-
   const [claimedTokens, setClaimedTokens] = useState(0)
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest])
+  const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([])
+  const [processedRecipients, setProcessedRecipients] = useState<{address: string | undefined}[]>([])
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined
@@ -53,6 +62,12 @@ export default function Faucet() {
   const [tokenSearch, setTokenSearch] = useState('')
 
   const [tokens, setTokens] = useState<any[]>([])
+
+  const [networkStatuses, setNetworkStatuses] = useState<Record<string, boolean>>({})
+
+  const workspaceContext = useWorkspaceContext()
+
+  const rpcUrl = 'http://127.0.0.1:8899'
 
   async function fetchData() {
     // Fetch tokens from Jupiter API only once
@@ -97,7 +112,7 @@ export default function Faucet() {
 
   useEffect(() => {
     fetchData()
-  }, [fetchData])
+  }, [])
 
   const filterTokensByTicker = (ticker: string, remoteTokens: any[], first: boolean): Token[] => {
     if (!ticker || !remoteTokens) return []
@@ -122,7 +137,16 @@ export default function Faucet() {
     return filteredTokens
   }
 
+  const resetToInitialState = () => {
+    setTokenFundingRequest([defaultFundingRequest])
+    setReccipients([{ address: '' }])
+  }
+
   const handleClaimTokens = async () => {
+    // Store the tokens and recipients that were processed before resetting
+    setProcessedTokens([...tokenFundingRequests])
+    setProcessedRecipients([...reccipients])
+    
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10)
     confetti({
@@ -171,6 +195,7 @@ export default function Faucet() {
       }
     }
     setSuccessDialogOpen(true)
+    resetToInitialState()
   }
 
   const handleAddFundingRequest = () => {
@@ -188,99 +213,95 @@ export default function Faucet() {
   }
 
   return (
-    <div className="faucet flex min-h-[600px] w-full items-start justify-center rounded-2xl bg-zinc-800">
-      <div className="flex w-full flex-col items-start space-y-4 p-6 ">
+    <div className="faucet mx-auto flex min-h-[340px] max-w-[340px] items-center justify-center rounded-xl bg-zinc-800 absolute transform shadow-lg z-10">
+      <div className="flex flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
-        <Field className="w-full uppercase">
-          <Label className="text-lg text-white">TOKENS</Label>
+        <Field className="w-full pl-4 uppercase">
+          <Label className="text-lg">Faucet</Label>
         </Field>
 
         {tokenFundingRequests.map((tokenFundingRequest, index) => (
-          <div key={index} className="w-full">
-            <Field className="w-full rounded-2xl bg-zinc-900 p-6">
-              <Label className="text-lg text-zinc-300">Amount</Label>
-              <div className="flex items-center space-x-4 mt-3">
+          <div key={index} className="flex flex-col items-center pr-1 pl-1">
+            <Field className="rounded-xl bg-zinc-900 p-4">
+              <Label className="text-lg">Amount</Label>
+              <div className="flex items-center space-x-2">
                 <input
                   id={`amount-${index}`}
                   type="text"
                   placeholder="0"
-                  className="flex-1 border-none bg-transparent text-left text-4xl text-white focus:outline-none"
+                  value={tokenFundingRequest.amount || ''}
+                  className="w-full border-none bg-transparent text-left text-4xl focus:outline-none"
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                   autoFocus
                 />
                 <div
-                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 px-4 py-2 text-xl uppercase hover:bg-zinc-700"
+                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 p-2 text-xl uppercase hover:bg-zinc-800"
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
                     src={tokenFundingRequest.token.imageUrl}
                     alt={tokenFundingRequest.token.ticker}
-                    className="h-8 w-8 rounded-full object-cover mr-3"
+                    className="h-8 w-8 rounded-full object-cover mr-2"
                   />
-                  <span className="text-white mr-3">{tokenFundingRequest.token.ticker}</span>
-                  <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
+                  <span className="flex-grow text-right mr-5">{tokenFundingRequest.token.ticker}</span>
+                  <ChevronDownIcon className="h-4 w-4" />
                 </div>
               </div>
             </Field>
           </div>
         ))}
 
-        <div className="flex justify-center">
-          <div
-            className="cursor-pointer rounded-full border-2 border-zinc-700 bg-zinc-800 p-2 hover:bg-zinc-700"
-            onClick={() => handleAddFundingRequest()}
-          >
-            <PlusIcon className="h-5 w-5 text-zinc-400" />
-          </div>
+        <div
+          className="-mt-6 gap-2 rounded-xl border-2 border-zinc-800 bg-zinc-950 p-2 uppercase cursor-pointer"
+          onClick={() => handleAddFundingRequest()}
+        >
+          <PlusIcon className="h-6 w-6" />
         </div>
 
-        <Field className="w-full uppercase">
-          <Label className="text-lg text-white">RECIPIENTS</Label>
+        <Field className="w-full pt-4 pl-4 uppercase">
+          <Label className="text-sm">Recipients</Label>
         </Field>
 
         {reccipients.map((reccipient, index) => (
-          <div key={index} className="w-full">
-            <Field className="w-full rounded-2xl bg-zinc-900 p-6">
-              <input
-                type="text"
-                placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
-                className="w-full border-none bg-transparent text-left text-lg text-white focus:outline-none"
-                value={reccipient.address}
-                onChange={(e) => {
-                  const newRecipients = [...reccipients]
-                  newRecipients[index].address = e.target.value
-                  setReccipients(newRecipients)
-                }}
-              />
+          <div key={index} className="flex w-full flex-col items-center pr-1 pl-1">
+            <Field className="w-full rounded-xl bg-zinc-900 p-4 pt-5 pb-5">
+              <div className="flex w-full items-center space-x-2">
+                <input
+                  type="text"
+                  placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
+                  className="w-full border-none bg-transparent text-left text-[12px] focus:outline-none"
+                  value={reccipient.address}
+                  onChange={(e) => {
+                    const newRecipients = [...reccipients]
+                    newRecipients[index].address = e.target.value
+                    setReccipients(newRecipients)
+                  }}
+                />
+              </div>
             </Field>
           </div>
         ))}
 
-        <div className="flex justify-center">
-          <div
-            className="cursor-pointer rounded-full border-2 border-zinc-700 bg-zinc-800 p-2 hover:bg-zinc-700"
-            onClick={() => handleAddAddress()}
-          >
-            <PlusIcon className="h-5 w-5 text-zinc-400" />
-          </div>
+        <div
+          className="-mt-6 gap-2 rounded-xl border-2 border-zinc-800 bg-zinc-950 p-2 uppercase cursor-pointer"
+          onClick={() => handleAddAddress()}
+        >
+          <PlusIcon className="h-6 w-6" />
         </div>
 
-        <Field className="w-full uppercase">
-          <Label className="text-lg text-white">NETWORK</Label>
-        </Field>
 
-        <div className="flex w-full items-center justify-between rounded-2xl bg-zinc-900 p-6">
-          <div className="flex flex-col">
-            <div className="text-lg font-medium uppercase text-white">Surfpool</div>
-            <div className="text-xs font-bold uppercase text-zinc-400">http://127.0.0.1:8899</div>
+        <div className="absolute bottom-0 right-8 transform translate-y-1/2">
+            <div
+              className="flex gap-2 rounded-full bg-[#E034AE] p-4 text-center text-sm uppercase cursor-pointer"
+              onClick={() => handleClaimTokens()}
+            >
+              <PlayIcon className="h-5 w-5" />
+            </div>
+            {/* <div className="flex h-full w-36 items-center justify-center gap-2 rounded-lg bg-zinc-700 p-2 text-center text-sm uppercase">
+              Get Config
+            </div> */}
           </div>
-          <button
-            className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#E034AE] text-white hover:bg-[#C02A96] transition-colors"
-            onClick={() => handleClaimTokens()}
-          >
-            <PlayIcon className="h-6 w-6" />
-          </button>
-        </div>
+
       </div>
 
       <Dialog open={tokenDialogOpen > 0} onClose={() => setTokenDialogOpen(0)} size="xl">
@@ -328,35 +349,39 @@ export default function Faucet() {
                 setTokenDialogOpen(0)
               }}
             >
-              <Image src={tokenMatch.imageUrl} alt={tokenMatch.ticker} className="mb-2 h-12 w-12 bg-transparent rounded-full" />
+              <img src={tokenMatch.imageUrl} alt={tokenMatch.ticker} className="mb-2 h-12 w-12 bg-transparent rounded-full" />
               <div className="text-center text-lg font-bold">{tokenMatch.ticker}</div>
             </div>
           ))}
         </div>
       </Dialog>
-
       <Dialog open={successDialogOpen} onClose={() => setSuccessDialogOpen(false)} size="3xl">
         <DialogTitle>Token Accounts Updated</DialogTitle>
         <DialogDescription>{''}</DialogDescription>
-          {tokenFundingRequests.map((fundingRequest, index) => (
-            <div key={index} className="flex items-center gap-4 mt-4 p-4 rounded-lg bg-zinc-800/50">
-              <img 
-                src={fundingRequest.token.imageUrl} 
-                alt={fundingRequest.token.ticker} 
-                className="h-8 w-8 rounded-full"
-              />
-              <div className="flex flex-col">
-                <div className="font-medium">
-                  {fundingRequest.token.ticker}
+          {processedTokens.map((fundingRequest, tokenIndex) => (
+            processedRecipients.map((recipient, recipientIndex) => (
+              <div key={`${tokenIndex}-${recipientIndex}`} className="flex items-center gap-4 mt-4 p-4 rounded-lg bg-zinc-800/50">
+                <img 
+                  src={fundingRequest.token.imageUrl} 
+                  alt={fundingRequest.token.ticker} 
+                  className="h-8 w-8 rounded-full"
+                />
+                <div className="flex flex-col">
+                  <div className="font-medium">
+                    {fundingRequest.token.ticker}
+                  </div>
+                  <div className="text-sm text-zinc-400">
+                    {fundingRequest.token.address} 
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    To: {recipient.address}
+                  </div>
                 </div>
-                <div className="text-sm text-zinc-400">
-                  {fundingRequest.token.address} 
+                <div className="ml-auto font-bold text-green-400">
+                  {fundingRequest.amount} {fundingRequest.token.ticker}
                 </div>
               </div>
-              <div className="ml-auto font-bold text-green-400">
-                {fundingRequest.amount} {fundingRequest.token.ticker}
-              </div>
-            </div>
+            ))
           ))}
       </Dialog>
     </div>

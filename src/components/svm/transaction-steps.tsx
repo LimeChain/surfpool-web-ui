@@ -103,7 +103,7 @@ function highlightJsonDiff(pre: string, post: string) {
 
 export default function TransactionSteps() {
   return (
-    <div className="w-full max-w-6xl mx-auto mt-8 space-y-6 flex flex-col gap-4">
+    <div className="w-full mx-auto space-y-6 flex flex-col gap-4">
       <div className="mb-0">
         <h2 className="text-sm font-medium text-white uppercase tracking-wide">TRANSACTIONS</h2>
       </div>

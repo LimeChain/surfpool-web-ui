@@ -87,10 +87,10 @@ export function StackedLayout({
               <CircleStackIcon />
               Data Indexing
             </NavbarItem>
-            <NavbarItem href="/runbooks" current={path.endsWith('/operations')}>
+            {/* <NavbarItem href="/runbooks" current={path.endsWith('/operations')}>
               <ShieldCheckIcon />
               Operations
-            </NavbarItem>
+            </NavbarItem> */}
 
             {/* <NavbarItem href="/composer" current={path.endsWith('/composer')}>Composer</NavbarItem>
             <NavbarItem href="/explorer" current={path.endsWith('/explorer')}>Explorer</NavbarItem>
