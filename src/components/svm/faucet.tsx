@@ -213,7 +213,7 @@ export default function Faucet() {
   }
 
   return (
-    <div className="faucet mx-auto flex min-h-[340px] max-w-[340px] items-center justify-center rounded-xl bg-zinc-800 absolute transform shadow-lg z-10">
+    <div className="faucet mx-auto flex min-h-[340px] w-full md:max-w-[340px] items-center justify-center rounded-xl bg-zinc-800 relative shadow-lg z-10 mt-3 md:mt-0">
       <div className="flex flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
         <Field className="w-full pl-4 uppercase">

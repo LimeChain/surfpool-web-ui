@@ -22,6 +22,41 @@ export const SlotsGrid: React.FC = () => {
   const DEFAULT_SLOTS_IN_EPOCH = 432_000;
   const ACTIVE_SLOT_COLOR = '#62D595';
   const INACTIVE_SLOT_COLOR = '#2F2F32';
+  
+  // Epoch state
+  const [currentEpoch, setCurrentEpoch] = useState<number>(0)
+  const [currentSlot, setCurrentSlot] = useState<number>(0)
+  const [slotsInEpoch, setSlotsInEpoch] = useState<number>(DEFAULT_SLOTS_IN_EPOCH)
+  const rpcUrl = 'http://127.0.0.1:8899'
+
+  // Fetch epoch and slot data from RPC
+  const fetchEpochData = async () => {
+    try {
+      // Fetch current epoch info
+      const epochResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getEpochInfo',
+        }),
+      })
+      
+      if (epochResponse.ok) {
+        const epochData = await epochResponse.json()
+        if (epochData.result) {
+          setCurrentEpoch(epochData.result.epoch)
+          setCurrentSlot(epochData.result.slotIndex)
+          setSlotsInEpoch(epochData.result.slotsInEpoch)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching epoch data:', error)
+    }
+  }
 
   useEffect(() => {
     const container = containerRef.current
@@ -74,6 +109,16 @@ export const SlotsGrid: React.FC = () => {
     }
   }, [canvasSize, currentRect, redRects, circleRadius])
 
+  // Fetch epoch data on component mount and periodically
+  useEffect(() => {
+    fetchEpochData()
+    
+    // Fetch epoch data every 5 seconds
+    const epochInterval = setInterval(fetchEpochData, 5000)
+    
+    return () => clearInterval(epochInterval)
+  }, [])
+
   // Animation effect: only sets up interval
   useEffect(() => {
     if (totalCircles <= 1) return;
@@ -98,12 +143,15 @@ export const SlotsGrid: React.FC = () => {
       <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
         <canvas ref={canvasRef} style={{ background: 'transparent', width: '100%', height: canvasGridHeight }} />
       </div>
-      <div className="text-sm font-medium text-zinc-300 uppercase mt-4 mb-4">EPOCH</div>
+      <div className="text-sm font-medium text-zinc-300 uppercase mt-5 mb-2">EPOCH {currentEpoch}</div>
+      <div className="text-xs text-zinc-500 mb-2 text-right -mt-5">
+        {((currentSlot / slotsInEpoch) * 100).toFixed(1)}%
+      </div>
       <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: INACTIVE_SLOT_COLOR }}>
         <div
           className="h-full rounded-full transition-all duration-300"
           style={{
-            width: `${((currentRect + 1) / totalCircles) * 100}%`,
+            width: `${(currentSlot / slotsInEpoch) * 100}%`,
             background: ACTIVE_SLOT_COLOR,
           }}
         />
