@@ -39,9 +39,15 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       setLoading(true)
       setError(null)
       
-      const response = await fetch('http://127.0.0.1:18488/config')
+      // Try local /config endpoint first
+      let response = await fetch('/config')
       if (!response.ok) {
-        throw new Error(`Failed to fetch config: ${response.status}`)
+        console.log('⚠️ Local /config failed, trying http://127.0.0.1:18488/config')
+        // Fallback to the full URL
+        response = await fetch('http://127.0.0.1:18488/config')
+        if (!response.ok) {
+          throw new Error(`Failed to fetch config from both endpoints: ${response.status}`)
+        }
       }
       
       const data: Config = await response.json()
