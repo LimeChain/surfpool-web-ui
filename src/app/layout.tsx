@@ -1,6 +1,7 @@
 'use client';
 
 import { WorkspaceProvider } from '@/contexts/workspace-context';
+import { ConfigProvider } from '@/contexts/config-context';
 import { nhost } from '@/lib/nhost';
 import '@/styles/tailwind.css';
 import type React from 'react';
@@ -18,7 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
       </head>
       <body>
-        <Dashboard>{children}</Dashboard>
+        <ConfigProvider>
+          <Dashboard>{children}</Dashboard>
+        </ConfigProvider>
       </body>
     </html>
   );

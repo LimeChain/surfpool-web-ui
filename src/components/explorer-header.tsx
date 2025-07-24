@@ -1,10 +1,13 @@
 import React from 'react';
 import { SlotsGrid } from '@/components/svm/slot-grid';
 import Faucet from './svm/faucet';
-import ChatbotBox from '@/components/ChatbotBox';
 import { LabeledLink } from './svm/labeled-link';
+import { useAppConfig } from '@/hooks/use-app-config';
 
-const ExplorerHeader = () => (
+const ExplorerHeader = () => {
+  const { rpcUrl, wsUrl, rpcDatasourceUrl, loading: configLoading, error: configError } = useAppConfig();
+
+  return (
   <div className="grid grid-cols-1 md:grid-cols-[1fr_350px] gap-8 w-full mt-8 items-start">
     <div className="flex flex-col gap-8 w-full">
       <SlotsGrid />
@@ -16,7 +19,7 @@ const ExplorerHeader = () => (
             <LabeledLink
               endpoint={{
                 name: 'RPC URL',
-                url: "http://127.0.0.1:8899",
+                url: rpcUrl,
               }}
             />
           </div>
@@ -24,7 +27,7 @@ const ExplorerHeader = () => (
             <LabeledLink
               endpoint={{
                 name: 'WS URL',
-                url: "ws://127.0.0.1:8900",
+                url: wsUrl,
               }}
             />
           </div>
@@ -33,7 +36,7 @@ const ExplorerHeader = () => (
           <LabeledLink
             endpoint={{
               name: 'SOURCE',
-              url: "http://127.0.0.1:18488",
+              url: rpcDatasourceUrl,
             }}
           />
         </div>
@@ -44,6 +47,7 @@ const ExplorerHeader = () => (
       <Faucet />
     </div>
   </div>
-);
+  );
+};
 
 export default ExplorerHeader; 

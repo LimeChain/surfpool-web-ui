@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog'
 import { Field, Label } from '../catalyst/fieldset'
 import { useWorkspaceContext } from '@/contexts/workspace-context'
+import { useAppConfig } from '@/hooks/use-app-config'
 
 export type Network = {
   id: string,
@@ -66,8 +67,7 @@ export default function Faucet() {
   const [networkStatuses, setNetworkStatuses] = useState<Record<string, boolean>>({})
 
   const workspaceContext = useWorkspaceContext()
-
-  const rpcUrl = 'http://127.0.0.1:8899'
+  const { rpcUrl, loading: configLoading, error: configError } = useAppConfig()
 
   async function fetchData() {
     // Fetch tokens from Jupiter API only once

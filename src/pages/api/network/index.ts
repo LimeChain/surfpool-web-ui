@@ -83,11 +83,3 @@ export const checkNetworkStatus = async (network: Network): Promise<boolean> => 
       return false
     }
   }
-
-export function getWsUrl(rpcUrl: string): string {
-    // Replace protocol
-    let wsUrl = rpcUrl.replace(/^https?:\/\//, "wss://");
-    // Replace port 8899 with 8900
-    wsUrl = wsUrl.replace(/:8899$/, ":8900");
-    return wsUrl;
-}

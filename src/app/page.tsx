@@ -1,7 +1,7 @@
 'use client';
 
 import ExplorerHeader from '@/components/explorer-header';
-import TransactionSteps from '@/components/svm/transaction-steps';
+import TransactionLogs from '@/components/svm/transaction-logs';
 
 export default function Home() {
 
@@ -10,8 +10,8 @@ export default function Home() {
       <div className="flex flex-row w-full gap-8 items-start">
         <ExplorerHeader/>
       </div>
-      <div className="w-full mt-48">
-        {/* <TransactionSteps /> */}
+      <div className="w-full mt-24">
+        <TransactionLogs />
       </div>
     </div>
   );
