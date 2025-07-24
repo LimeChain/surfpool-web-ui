@@ -81,11 +81,27 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
   
   const wsRef = useRef<WebSocket | null>(null);
   const subscriptionIdRef = useRef<number | null>(null);
+  const processedSignaturesRef = useRef<Set<string>>(new Set());
+  const subscriptionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const startStreaming = useCallback(async () => {
     try {
+      // Prevent multiple simultaneous connections
+      if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+        console.log('⏳ WebSocket connection already in progress, skipping');
+        return;
+      }
+      
       setError(null);
       setStats(prev => ({ ...prev, connectionStatus: 'connecting' }));
+      
+      // Clean up any existing connection
+      if (wsRef.current) {
+        console.log('🧹 Cleaning up existing WebSocket connection');
+        wsRef.current.close();
+        wsRef.current = null;
+        subscriptionIdRef.current = null;
+      }
       
       // Convert HTTP RPC URL to WebSocket URL
       console.log('🔗 WebSocket URL:', wsUrl);
@@ -97,19 +113,38 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
         console.log('WebSocket connected');
         setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
         
-        // Subscribe to all transaction logs (this will give us all transactions)
-        const subscribeMessage = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'logsSubscribe',
-          params: [
-          ]
-        };
+        // Add a small delay to ensure connection is stable
+        subscriptionTimeoutRef.current = setTimeout(() => {
+          // Check if WebSocket is still ready before sending
+          if (ws.readyState === WebSocket.OPEN) {
+            // Subscribe to all transaction logs (this will give us all transactions)
+            const subscribeMessage = {
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'logsSubscribe',
+              params: [
+              ]
+            };
 
-        ws.send(JSON.stringify(subscribeMessage));
+            console.log('📤 Sending subscription message');
+            try {
+              ws.send(JSON.stringify(subscribeMessage));
+            } catch (err) {
+              console.error('❌ Error sending subscription message:', err);
+            }
+          } else {
+            console.error('❌ WebSocket not ready yet, ready state:', ws.readyState);
+          }
+        }, 100); // 100ms delay
       };
 
       ws.onmessage = (event) => {
+        // Check if WebSocket is still open before processing
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.log('⚠️ Ignoring message from closed WebSocket, ready state:', ws.readyState);
+          return;
+        }
+        
         try {
           const data = JSON.parse(event.data);
           console.log('🔌 WebSocket message received:', data);
@@ -123,6 +158,15 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
               const signature = logData.result.value.signature;
               console.log('✅ SIGNATURE FOUND:', signature);
               console.log('📊 Log data:', logData.result.value);
+              
+              // Check if we've already processed this signature
+              if (processedSignaturesRef.current.has(signature)) {
+                console.log('🔄 Signature already processed, skipping:', signature);
+                return;
+              }
+              
+              // Mark signature as processed
+              processedSignaturesRef.current.add(signature);
               
               // Fetch full transaction details
               console.log('🔄 Fetching transaction details for signature:', signature);
@@ -153,6 +197,13 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
         console.log('WebSocket disconnected');
         setIsStreaming(false);
         setStats(prev => ({ ...prev, connectionStatus: 'disconnected' }));
+        // Clean up references
+        if (subscriptionTimeoutRef.current) {
+          clearTimeout(subscriptionTimeoutRef.current);
+          subscriptionTimeoutRef.current = null;
+        }
+        wsRef.current = null;
+        subscriptionIdRef.current = null;
       };
 
     } catch (err) {
@@ -245,18 +296,35 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
   }, [rpcUrl, filterByProgram, maxTransactions]);
 
   const stopStreaming = useCallback(() => {
-    if (wsRef.current && subscriptionIdRef.current) {
-      // Unsubscribe from logs
-      const unsubscribeMessage = {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'logsUnsubscribe',
-        params: [subscriptionIdRef.current]
-      };
-      
-      wsRef.current.send(JSON.stringify(unsubscribeMessage));
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && subscriptionIdRef.current) {
+      try {
+        // Unsubscribe from logs
+        const unsubscribeMessage = {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'logsUnsubscribe',
+          params: [subscriptionIdRef.current]
+        };
+        
+        console.log('📤 Sending unsubscribe message');
+        wsRef.current.send(JSON.stringify(unsubscribeMessage));
+      } catch (err) {
+        console.error('❌ Error sending unsubscribe message:', err);
+      }
+    }
+    
+    if (wsRef.current) {
+      console.log('🔌 Closing WebSocket connection');
       wsRef.current.close();
     }
+    
+    // Clean up references
+    if (subscriptionTimeoutRef.current) {
+      clearTimeout(subscriptionTimeoutRef.current);
+      subscriptionTimeoutRef.current = null;
+    }
+    wsRef.current = null;
+    subscriptionIdRef.current = null;
     setIsStreaming(false);
   }, []);
 
@@ -270,6 +338,7 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
 
   const clearTransactions = useCallback(() => {
     setTransactions([]);
+    processedSignaturesRef.current.clear();
     setStats(prev => ({
       ...prev,
       totalReceived: 0,
@@ -304,7 +373,7 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
 
 // Utility functions
 export const formatSignature = (signature: string) => {
-  return `${signature.slice(0, 8)}...${signature.slice(-8)}`;
+  return signature;
 };
 
 export const formatTime = (timestamp: number | null) => {
