@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { solanaWebSocketService, SolanaWebSocketService } from './solana-websocket-service';
 
 // Types for transaction data
 export interface TransactionInfo {
@@ -79,139 +80,8 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     connectionStatus: 'disconnected'
   });
   
-  const wsRef = useRef<WebSocket | null>(null);
-  const subscriptionIdRef = useRef<number | null>(null);
+  const subscriptionIdRef = useRef<string | null>(null);
   const processedSignaturesRef = useRef<Set<string>>(new Set());
-  const subscriptionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const startStreaming = useCallback(async () => {
-    try {
-      // Prevent multiple simultaneous connections
-      if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
-        console.log('⏳ WebSocket connection already in progress, skipping');
-        return;
-      }
-      
-      setError(null);
-      setStats(prev => ({ ...prev, connectionStatus: 'connecting' }));
-      
-      // Clean up any existing connection
-      if (wsRef.current) {
-        console.log('🧹 Cleaning up existing WebSocket connection');
-        wsRef.current.close();
-        wsRef.current = null;
-        subscriptionIdRef.current = null;
-      }
-      
-      // Convert HTTP RPC URL to WebSocket URL
-      console.log('🔗 WebSocket URL:', wsUrl);
-      // Create WebSocket connection
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
-        
-        // Add a small delay to ensure connection is stable
-        subscriptionTimeoutRef.current = setTimeout(() => {
-          // Check if WebSocket is still ready before sending
-          if (ws.readyState === WebSocket.OPEN) {
-            // Subscribe to all transaction logs (this will give us all transactions)
-            const subscribeMessage = {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'logsSubscribe',
-              params: [
-              ]
-            };
-
-            console.log('📤 Sending subscription message');
-            try {
-              ws.send(JSON.stringify(subscribeMessage));
-            } catch (err) {
-              console.error('❌ Error sending subscription message:', err);
-            }
-          } else {
-            console.error('❌ WebSocket not ready yet, ready state:', ws.readyState);
-          }
-        }, 100); // 100ms delay
-      };
-
-      ws.onmessage = (event) => {
-        // Check if WebSocket is still open before processing
-        if (ws.readyState !== WebSocket.OPEN) {
-          console.log('⚠️ Ignoring message from closed WebSocket, ready state:', ws.readyState);
-          return;
-        }
-        
-        try {
-          const data = JSON.parse(event.data);
-          console.log('🔌 WebSocket message received:', data);
-          
-          if (data.method === 'logsNotification') {
-            // Handle log notifications
-            const logData = data.params;
-            console.log('🎯 LOG NOTIFICATION RECEIVED:', logData);
-            
-            if (logData?.result?.value?.signature) {
-              const signature = logData.result.value.signature;
-              console.log('✅ SIGNATURE FOUND:', signature);
-              console.log('📊 Log data:', logData.result.value);
-              
-              // Check if we've already processed this signature
-              if (processedSignaturesRef.current.has(signature)) {
-                console.log('🔄 Signature already processed, skipping:', signature);
-                return;
-              }
-              
-              // Mark signature as processed
-              processedSignaturesRef.current.add(signature);
-              
-              // Fetch full transaction details
-              console.log('🔄 Fetching transaction details for signature:', signature);
-              fetchTransactionDetails(signature);
-            } else {
-              console.log('⚠️ No signature found in log notification');
-              console.log('🔍 Full log data:', logData);
-            }
-          } else if (data.result !== undefined && data.id === 1) {
-            // Subscription confirmation
-            subscriptionIdRef.current = data.result;
-            console.log('✅ SUBSCRIPTION CONFIRMED with ID:', data.result);
-          } else {
-            console.log('📨 Other message type:', data.method || 'unknown');
-          }
-        } catch (err) {
-          console.error('❌ Error parsing WebSocket message:', err);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setError('WebSocket connection error');
-        setStats(prev => ({ ...prev, connectionStatus: 'error' }));
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        setIsStreaming(false);
-        setStats(prev => ({ ...prev, connectionStatus: 'disconnected' }));
-        // Clean up references
-        if (subscriptionTimeoutRef.current) {
-          clearTimeout(subscriptionTimeoutRef.current);
-          subscriptionTimeoutRef.current = null;
-        }
-        wsRef.current = null;
-        subscriptionIdRef.current = null;
-      };
-
-    } catch (err) {
-      console.error('Error starting transaction stream:', err);
-      setError('Failed to start transaction stream');
-      setStats(prev => ({ ...prev, connectionStatus: 'error' }));
-    }
-  }, [rpcUrl, filterByAccount]);
 
   const fetchTransactionDetails = useCallback(async (signature: string) => {
     try {
@@ -295,36 +165,56 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     }
   }, [rpcUrl, filterByProgram, maxTransactions]);
 
+  const startStreaming = useCallback(async () => {
+    if (!wsUrl) {
+      const errorMsg = 'WebSocket URL not provided';
+      console.error('❌', errorMsg);
+      setError(errorMsg);
+      return;
+    }
+
+    try {
+      console.log('🚀 Starting transaction stream...');
+      setError(null);
+      setStats(prev => ({ ...prev, connectionStatus: 'connecting' }));
+
+      // Connect to WebSocket service
+      console.log('🔗 Connecting to WebSocket service...');
+      console.log('🔗 Original WebSocket URL:', wsUrl);
+      
+      // Convert HTTP URL to WebSocket URL if needed
+      const convertedWsUrl = SolanaWebSocketService.convertHttpToWebSocket(wsUrl);
+      console.log('🔗 Converted WebSocket URL:', convertedWsUrl);
+      
+      await solanaWebSocketService.connect(convertedWsUrl);
+      console.log('🔗 WebSocket connected successfully');
+
+      // Subscribe to transactions
+      const filter = filterByAccount ? { account: filterByAccount } : 
+                    filterByProgram ? { program: filterByProgram } : undefined;
+      
+      console.log('📡 Subscribing to transactions with filter:', filter);
+      subscriptionIdRef.current = await solanaWebSocketService.subscribeToTransactions(filter);
+      console.log('✅ Transaction subscription confirmed, ID:', subscriptionIdRef.current);
+
+      setIsStreaming(true);
+      setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
+      console.log('🎉 Transaction stream started successfully');
+
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to start streaming';
+      console.error('❌ Failed to start streaming:', errorMsg);
+      console.error('❌ Full error:', err);
+      setError(errorMsg);
+      setStats(prev => ({ ...prev, connectionStatus: 'error' }));
+    }
+  }, [wsUrl, filterByAccount, filterByProgram]);
+
   const stopStreaming = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && subscriptionIdRef.current) {
-      try {
-        // Unsubscribe from logs
-        const unsubscribeMessage = {
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'logsUnsubscribe',
-          params: [subscriptionIdRef.current]
-        };
-        
-        console.log('📤 Sending unsubscribe message');
-        wsRef.current.send(JSON.stringify(unsubscribeMessage));
-      } catch (err) {
-        console.error('❌ Error sending unsubscribe message:', err);
-      }
+    if (subscriptionIdRef.current) {
+      solanaWebSocketService.unsubscribeAll();
+      subscriptionIdRef.current = null;
     }
-    
-    if (wsRef.current) {
-      console.log('🔌 Closing WebSocket connection');
-      wsRef.current.close();
-    }
-    
-    // Clean up references
-    if (subscriptionTimeoutRef.current) {
-      clearTimeout(subscriptionTimeoutRef.current);
-      subscriptionTimeoutRef.current = null;
-    }
-    wsRef.current = null;
-    subscriptionIdRef.current = null;
     setIsStreaming(false);
   }, []);
 
@@ -346,6 +236,69 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
       failed: 0,
       lastUpdate: new Date()
     }));
+  }, []);
+
+  // Listen for transaction events
+  useEffect(() => {
+    const handleTransaction = (data: any) => {
+      console.log('🔌 WebSocket message received:', data);
+      
+      if (data?.value?.signature) {
+        const signature = data.value.signature;
+        console.log('✅ SIGNATURE FOUND:', signature);
+        console.log('📊 Log data:', data.value);
+        
+        // Check if we've already processed this signature
+        if (processedSignaturesRef.current.has(signature)) {
+          console.log('🔄 Signature already processed, skipping:', signature);
+          return;
+        }
+        
+        // Mark signature as processed
+        processedSignaturesRef.current.add(signature);
+        
+        // Fetch full transaction details
+        console.log('🔄 Fetching transaction details for signature:', signature);
+        fetchTransactionDetails(signature);
+      } else {
+        console.log('⚠️ No signature found in log notification');
+        console.log('🔍 Full log data:', data);
+      }
+    };
+
+    solanaWebSocketService.on('transaction', handleTransaction);
+
+    return () => {
+      solanaWebSocketService.off('transaction', handleTransaction);
+    };
+  }, [fetchTransactionDetails]);
+
+  // Listen for connection status changes
+  useEffect(() => {
+    const handleConnected = () => {
+      console.log('🔗 WebSocket connected');
+      setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
+    };
+
+    const handleDisconnected = () => {
+      console.log('🔌 WebSocket disconnected');
+      setStats(prev => ({ ...prev, connectionStatus: 'disconnected' }));
+    };
+
+    const handleError = () => {
+      console.error('❌ WebSocket error');
+      setStats(prev => ({ ...prev, connectionStatus: 'error' }));
+    };
+
+    solanaWebSocketService.on('connected', handleConnected);
+    solanaWebSocketService.on('disconnected', handleDisconnected);
+    solanaWebSocketService.on('error', handleError);
+
+    return () => {
+      solanaWebSocketService.off('connected', handleConnected);
+      solanaWebSocketService.off('disconnected', handleDisconnected);
+      solanaWebSocketService.off('error', handleError);
+    };
   }, []);
 
   // Auto-start streaming

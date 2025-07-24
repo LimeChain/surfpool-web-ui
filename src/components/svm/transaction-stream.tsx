@@ -3,7 +3,7 @@
 import { Badge } from '@/components/catalyst/badge';
 import { Button } from '@/components/catalyst/button';
 import { Dialog, DialogBody, DialogTitle } from '@/components/catalyst/dialog';
-import { useTransactionStream, formatSignature, formatTime, getTransactionStatus, getTransactionPrograms } from '@/lib/solana-transaction-stream';
+import { useTransactionStream, formatSignature, getTransactionStatus, getTransactionPrograms } from '@/lib/solana-transaction-stream';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { useState } from 'react';
 
@@ -195,9 +195,6 @@ export default function TransactionStream({
                         {formatSignature(tx.transaction.signatures[0])}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {formatTime(tx.blockTime)}
-                    </div>
                   </div>
                   
                   <div className="text-xs text-gray-400 space-y-1">
@@ -222,13 +219,12 @@ export default function TransactionStream({
       </div>
 
       {/* Transaction Details Dialog */}
-      <Dialog open={transactionDialogOpen} onClose={() => setTransactionDialogOpen(false)} size="4xl">
-        <DialogTitle>Transaction Details</DialogTitle>
+      <Dialog open={transactionDialogOpen} onClose={() => setTransactionDialogOpen(false)} size="5xl">
         <DialogBody>
           {selectedTransaction ? (
             <div className="space-y-6">
               {/* Basic Transaction Info */}
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="bg-zinc-800/50 p-4 rounded-lg">
                   <div className="text-xs text-gray-500 mb-2">Status</div>
                   <Badge 
@@ -243,11 +239,6 @@ export default function TransactionStream({
                 <div className="bg-zinc-800/50 p-4 rounded-lg">
                   <div className="text-xs text-gray-500 mb-2">Compute Units Consumed</div>
                   <div className="text-sm font-mono">{selectedTransaction.meta.computeUnitsConsumed || 'Unknown'}</div>
-                </div>
-                
-                <div className="bg-zinc-800/50 p-4 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-2">Block Time</div>
-                  <div className="text-sm">{formatTime(selectedTransaction.blockTime)}</div>
                 </div>
                 
                 {selectedTransaction.meta ? (
@@ -294,7 +285,7 @@ export default function TransactionStream({
                 </div>
                               )}
 
-              Instructions
+              <div className="text-sm font-semibold text-zinc-200 mb-3">INSTRUCTIONS</div>
               {selectedTransaction.transaction?.message?.instructions && (
                 <div className="bg-zinc-800/50 p-4 rounded-lg">
                   <div className="text-xs text-gray-500 mb-2">
@@ -338,8 +329,8 @@ export default function TransactionStream({
                 </div>
               )}
 
-              State Changes
-                {transactionProfile?.value?.state && (
+                            <div className="text-sm font-semibold text-zinc-200 mb-3">STATE CHANGES</div>
+              {transactionProfile?.value?.state && (
                   <div className="bg-zinc-800/50 p-4 rounded-lg">
                     <div className="space-y-3">
                     {Object.entries(transactionProfile.value.state.preExecution).map(([address, preData]) => {
@@ -439,7 +430,7 @@ export default function TransactionStream({
                 </div>
               )}
 
-              Transaction Logs
+              <div className="text-sm font-semibold text-zinc-200 mb-3">TRANSACTION LOGS</div>
               {selectedTransaction.meta?.logMessages && selectedTransaction.meta.logMessages.length > 0 && (
                 <div className="bg-black/80 border border-gray-600 rounded-md p-3 font-mono text-xs">
                   <div className="space-y-1 max-h-64 overflow-y-auto">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAppConfig } from '@/hooks/use-app-config'
+import { solanaWebSocketService } from '@/lib/solana-websocket-service'
 
 export const SlotsGrid: React.FC = () => {
   const { rpcUrl, wsUrl, loading: configLoading, error: configError } = useAppConfig()
@@ -36,9 +37,7 @@ export const SlotsGrid: React.FC = () => {
 
   
   // WebSocket refs
-  const wsRef = useRef<WebSocket | null>(null)
-  const subscriptionIdRef = useRef<number | null>(null)
-  const subscriptionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const subscriptionIdRef = useRef<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
 
 
@@ -72,193 +71,95 @@ export const SlotsGrid: React.FC = () => {
   }
 
   // Start WebSocket subscription to slot updates
-  const startSlotSubscription = useCallback(() => {
+  const startSlotSubscription = useCallback(async () => {
     try {
-      // Don't create multiple connections
-      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
-        console.log('🔗 WebSocket already exists, not creating new connection')
-        return
-      }
-      
       console.log('🔗 Connecting to slot WebSocket:', wsUrl)
       
-      // Test if the WebSocket URL is reachable
-      let ws: WebSocket
-      try {
-        ws = new WebSocket(wsUrl)
-        wsRef.current = ws
-        console.log('🔗 WebSocket created successfully')
-      } catch (error) {
-        console.error('❌ Failed to create WebSocket:', error)
-        return
-      }
+      // Connect to WebSocket service
+      await solanaWebSocketService.connect(wsUrl)
+      console.log('✅ Slot WebSocket connected')
+      setWsConnected(true)
       
-      // Set a connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          console.log('⏰ Connection timeout, closing WebSocket')
-          ws.close()
-        }
-      }, 10000) // 10 second timeout
+      // Subscribe to slot updates
+      subscriptionIdRef.current = await solanaWebSocketService.subscribeToSlots()
+      console.log('✅ Slot subscription confirmed with ID:', subscriptionIdRef.current)
 
-      ws.onopen = () => {
-        console.log('✅ Slot WebSocket connected')
-        clearTimeout(connectionTimeout) // Clear the connection timeout
-        setWsConnected(true)
-        console.log('🔗 Connection state updated: wsConnected = true')
-        
-        // Subscribe to slot updates
-        const subscribeMessage = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'slotSubscribe',
-          params: []
-        }
-
-        // Wait for WebSocket to be fully ready before subscribing
-        let retryCount = 0
-        const maxRetries = 10 // Maximum 10 retries (1 second total)
-        
-        const attemptSubscription = () => {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(JSON.stringify(subscribeMessage))
-              console.log('📤 Sent slot subscription message')
-            } catch (error) {
-              console.error('❌ Failed to send subscription:', error)
-              ws.close()
-            }
-          } else if (retryCount < maxRetries) {
-            retryCount++
-            console.log(`⏳ WebSocket not ready yet, readyState: ${ws.readyState}, retry ${retryCount}/${maxRetries}`)
-            // Try again in 100ms
-            subscriptionTimeoutRef.current = setTimeout(attemptSubscription, 100)
-          } else {
-            console.error('❌ Failed to subscribe after maximum retries, closing connection')
-            ws.close()
-          }
-        }
-        
-        // Start attempting subscription after a short delay
-        setTimeout(attemptSubscription, 100)
-      }
-
-      ws.onmessage = (event: MessageEvent) => {
-        try {
-          const data = JSON.parse(event.data)
-          console.log('📡 Slot WebSocket message:', data)
-          
-          if (data.method === 'slotNotification') {
-            // Handle slot notifications
-            const slotData = data.params
-            console.log('🎯 SLOT UPDATE:', slotData)
-            
-            if (slotData?.result?.parent && slotData?.result?.root) {
-              const newSlot = slotData.result.parent
-              console.log('🔄 New slot:', newSlot)
-              
-              // Calculate slot index within current epoch
-              const slotIndexInEpoch = newSlot % slotsInEpoch
-              console.log('📊 Slot index in epoch:', slotIndexInEpoch, 'out of', slotsInEpoch)
-              
-              // Update current slot with epoch-relative index
-              setCurrentSlot(slotIndexInEpoch)
-              
-              // Update animation - move to next circle and add current to trail
-              setCurrentRect((prev) => {
-                const nextRect = (prev + 1) % totalCircles
-                
-                // Add the previous circle to trail
-                setRedRects((prevRects) => {
-                  const nextRects = new Set(prevRects)
-                  nextRects.add(prev)
-                  
-                  // Reset trail if we're at the end
-                  if (nextRect === 0) {
-                    console.log('🔄 Resetting trail at end of grid')
-                    return new Set()
-                  }
-                  
-                  console.log('📊 Added circle', prev, 'to trail. Trail size:', nextRects.size)
-                  return nextRects
-                })
-                
-                console.log('🔄 Moving from circle', prev, 'to circle', nextRect)
-                return nextRect
-              })
-            }
-          } else if (data.result !== undefined && data.id === 1) {
-            // Subscription confirmation
-            subscriptionIdRef.current = data.result
-            console.log('✅ Slot subscription confirmed with ID:', data.result)
-          }
-        } catch (err) {
-          console.error('❌ Error parsing slot WebSocket message:', err)
-        }
-      }
-
-      ws.onerror = (error) => {
-        console.error('❌ Slot WebSocket error:', error)
-      }
-
-      ws.onclose = (event: CloseEvent) => {
-        console.log('🔌 Slot WebSocket disconnected, code:', event.code, 'reason:', event.reason)
-        clearTimeout(connectionTimeout) // Clear the connection timeout
-        
-        // Clear subscription timeout if it exists
-        if (subscriptionTimeoutRef.current) {
-          clearTimeout(subscriptionTimeoutRef.current)
-          subscriptionTimeoutRef.current = null
-        }
-        
-        setWsConnected(false)
-        console.log('🔗 Connection state updated: wsConnected = false')
-        
-        // Clear the current WebSocket reference
-        wsRef.current = null
-        
-        // Only attempt to reconnect if we're not already trying to connect
-        if (!wsRef.current) {
-          setTimeout(() => {
-            console.log('🔄 Attempting to reconnect...')
-            startSlotSubscription()
-          }, 5000) // Wait 5 seconds before reconnecting
-        }
-      }
-
-    } catch (err) {
-      console.error('❌ Error starting slot subscription:', err)
+    } catch (error) {
+      console.error('❌ Error starting slot subscription:', error)
+      setWsConnected(false)
     }
-  }, [totalCircles, currentRect])
+  }, [wsUrl])
 
   // Stop WebSocket subscription
   const stopSlotSubscription = useCallback(() => {
-    if (wsRef.current) {
-      console.log('🔌 Stopping slot subscription')
-      
-      // Clear subscription timeout if it exists
-      if (subscriptionTimeoutRef.current) {
-        clearTimeout(subscriptionTimeoutRef.current)
-        subscriptionTimeoutRef.current = null
-      }
-      
-      // Handle WebSocket cleanup
-      if (wsRef.current && subscriptionIdRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        // Unsubscribe from slots
-        const unsubscribeMessage = {
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'slotUnsubscribe',
-          params: [subscriptionIdRef.current]
-        }
-        
-        wsRef.current.send(JSON.stringify(unsubscribeMessage))
-        wsRef.current.close()
-      } else if (wsRef.current) {
-        wsRef.current.close()
-      }
-    }
+    console.log('🔌 Stopping slot subscription')
+    solanaWebSocketService.unsubscribeAll()
+    subscriptionIdRef.current = null
+    setWsConnected(false)
+    console.log('🔗 Connection state updated: wsConnected = false')
   }, [])
+
+  // Listen for slot events
+  useEffect(() => {
+    const handleSlot = (data: any) => {
+      
+      if (data?.parent && data?.root) {
+        const newSlot = data.parent
+        
+        // Calculate slot index within current epoch
+        const slotIndexInEpoch = newSlot % slotsInEpoch
+        
+        // Update current slot with epoch-relative index
+        setCurrentSlot(slotIndexInEpoch)
+        
+        // Update animation - move to next circle and add current to trail
+        setCurrentRect((prev) => {
+          const nextRect = (prev + 1) % totalCircles
+          
+          // Add the previous circle to trail
+          setRedRects((prevRects) => {
+            const nextRects = new Set(prevRects)
+            nextRects.add(prev)
+            
+            // Reset trail if we're at the end
+            if (nextRect === 0) {
+              return new Set()
+            }
+            
+            return nextRects
+          })          
+          return nextRect
+        })
+      }
+    };
+
+    solanaWebSocketService.on('slot', handleSlot);
+
+    return () => {
+      solanaWebSocketService.off('slot', handleSlot);
+    };
+  }, [totalCircles, slotsInEpoch]);
+
+  // Listen for connection status changes
+  useEffect(() => {
+    const handleConnected = () => {
+      console.log('🔗 WebSocket connected');
+      setWsConnected(true);
+    };
+
+    const handleDisconnected = () => {
+      console.log('🔌 WebSocket disconnected');
+      setWsConnected(false);
+    };
+
+    solanaWebSocketService.on('connected', handleConnected);
+    solanaWebSocketService.on('disconnected', handleDisconnected);
+
+    return () => {
+      solanaWebSocketService.off('connected', handleConnected);
+      solanaWebSocketService.off('disconnected', handleDisconnected);
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current
@@ -292,7 +193,6 @@ export const SlotsGrid: React.FC = () => {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !isClient) {
-      console.log('🎨 Canvas draw skipped - canvas:', !!canvas, 'isClient:', isClient)
       return
     }
     const ctx = canvas.getContext('2d')
@@ -302,10 +202,8 @@ export const SlotsGrid: React.FC = () => {
     }
 
     const { width, height } = canvasSize
-    console.log('🎨 Drawing canvas with size:', { width, height })
     
     if (width === 0 || height === 0) {
-      console.log('⚠️ Canvas size is zero, skipping draw')
       return
     }
     
@@ -318,7 +216,6 @@ export const SlotsGrid: React.FC = () => {
 
     const totalColumns = Math.floor((width - 2 * horizontalPadding + horizontalSpacing) / (circleDiameter + horizontalSpacing))
     const newTotalCircles = totalColumns * totalRows
-    console.log('📊 Total circles:', newTotalCircles, 'Columns:', totalColumns, 'Rows:', totalRows)
     setTotalCircles(newTotalCircles)
 
     ctx.clearRect(0, 0, width, height)
@@ -337,9 +234,6 @@ export const SlotsGrid: React.FC = () => {
         const inactiveColor = hexToRgb(INACTIVE_SLOT_COLOR)
         const activeColor = hexToRgb(ACTIVE_SLOT_COLOR)
         
-        if (circleIndex === 0) {
-          console.log('🎨 Drawing circle 0 - progress:', progress.toFixed(2), 'isActive:', redRects.has(0) || 0 === currentRect)
-        }
         
         if (inactiveColor && activeColor) {
           const r = Math.round(inactiveColor.r + (activeColor.r - inactiveColor.r) * progress)
@@ -361,7 +255,6 @@ export const SlotsGrid: React.FC = () => {
       rowCount++
     }
     
-    console.log('✅ Canvas drawn with', circleIndex, 'circles')
   }, [canvasSize, currentRect, redRects, animationProgress, circleRadius, isClient])
 
   // Helper function to convert hex to RGB
@@ -386,17 +279,10 @@ export const SlotsGrid: React.FC = () => {
     // Set initial canvas size if container is available
     if (containerRef.current) {
       const width = containerRef.current.clientWidth
-      console.log('📏 Container width:', width)
       if (width > 0) {
         setCanvasSize({ width, height: canvasGridHeight })
-        console.log('📏 Set initial canvas size:', { width, height: canvasGridHeight })
-      } else {
-        console.log('⚠️ Container width is 0, will wait for resize')
       }
-    } else {
-      console.log('⚠️ Container ref not available yet')
     }
-    
     // Fallback: force canvas size after a delay if still 0
     const fallbackTimer = setTimeout(() => {
       if (canvasSize.width === 0 && containerRef.current) {
@@ -423,10 +309,8 @@ export const SlotsGrid: React.FC = () => {
       
       // Timer-based animation - independent of WebSocket
       const animationTimer = setInterval(() => {
-        console.log('🔄 Timer tick - moving dot')
         setCurrentRect((prev) => {
           const nextRect = (prev + 1) % totalCircles
-          console.log('🔄 Moving from', prev, 'to', nextRect)
           
           // Add the previous circle to trail
           setRedRects((prevRects) => {
@@ -435,11 +319,9 @@ export const SlotsGrid: React.FC = () => {
             
             // Reset trail if we're at the end
             if (nextRect === 0) {
-              console.log('🔄 Resetting trail')
               return new Set()
             }
             
-            console.log('🔄 Trail size:', nextRects.size)
             return nextRects
           })
           
@@ -461,7 +343,7 @@ export const SlotsGrid: React.FC = () => {
       
       // Periodic connection check
       const connectionCheck = setInterval(() => {
-        if (!wsConnected && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+        if (!wsConnected && !solanaWebSocketService.isConnected()) {
           console.log('🔍 Connection check: WebSocket is closed, attempting reconnect...')
           startSlotSubscription()
         }
@@ -477,9 +359,7 @@ export const SlotsGrid: React.FC = () => {
   // Smooth animation effect
   useEffect(() => {
     if (!isClient || totalCircles <= 1) return;
-    
-    console.log('🎬 Animation effect started - totalCircles:', totalCircles, 'currentRect:', currentRect)
-    
+        
     const animationInterval = setInterval(() => {
       setAnimationProgress((prev) => {
         const next = new Map(prev)
