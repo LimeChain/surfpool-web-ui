@@ -18,10 +18,12 @@ export const SlotsGrid: React.FC = () => {
   // Store totalCircles in state for use in progress bar
   const [totalCircles, setTotalCircles] = useState(1)
   const [redRects, setRedRects] = useState<Set<number>>(new Set())
+  const [animationProgress, setAnimationProgress] = useState<Map<number, number>>(new Map())
   const rowHeight = circleDiameter + verticalSpacing
   const DEFAULT_SLOTS_IN_EPOCH = 432_000;
   const ACTIVE_SLOT_COLOR = '#62D595';
   const INACTIVE_SLOT_COLOR = '#2F2F32';
+  const TRANSITION_DURATION = 300; // milliseconds
   
   // Epoch state
   const [currentEpoch, setCurrentEpoch] = useState<number>(0)
@@ -94,11 +96,23 @@ export const SlotsGrid: React.FC = () => {
     for (let y = 0; rowCount < totalRows; y += circleDiameter + verticalSpacing) {
       let colCount = 0
       for (let x = horizontalPadding; colCount < totalColumns && x + circleDiameter <= width - horizontalPadding; x += circleDiameter + horizontalSpacing) {
-        if (redRects.has(circleIndex) || circleIndex === currentRect) {
-          ctx.fillStyle = ACTIVE_SLOT_COLOR;
+        // Get animation progress for this circle
+        const progress = animationProgress.get(circleIndex) || 0
+        
+        // Interpolate between inactive and active colors
+        const inactiveColor = hexToRgb(INACTIVE_SLOT_COLOR)
+        const activeColor = hexToRgb(ACTIVE_SLOT_COLOR)
+        
+        if (inactiveColor && activeColor) {
+          const r = Math.round(inactiveColor.r + (activeColor.r - inactiveColor.r) * progress)
+          const g = Math.round(inactiveColor.g + (activeColor.g - inactiveColor.g) * progress)
+          const b = Math.round(inactiveColor.b + (activeColor.b - inactiveColor.b) * progress)
+          
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`
         } else {
-          ctx.fillStyle = INACTIVE_SLOT_COLOR;
+          ctx.fillStyle = progress > 0.5 ? ACTIVE_SLOT_COLOR : INACTIVE_SLOT_COLOR
         }
+        
         ctx.beginPath()
         ctx.arc(x + circleRadius, y + circleRadius, circleRadius, 0, 2 * Math.PI)
         ctx.fill()
@@ -107,7 +121,17 @@ export const SlotsGrid: React.FC = () => {
       }
       rowCount++
     }
-  }, [canvasSize, currentRect, redRects, circleRadius])
+  }, [canvasSize, currentRect, redRects, animationProgress, circleRadius])
+
+  // Helper function to convert hex to RGB
+  const hexToRgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null
+  }
 
   // Fetch epoch data on component mount and periodically
   useEffect(() => {
@@ -136,6 +160,33 @@ export const SlotsGrid: React.FC = () => {
     }, 300)
     return () => clearInterval(interval)
   }, [totalCircles, currentRect])
+
+  // Smooth animation effect
+  useEffect(() => {
+    if (totalCircles <= 1) return;
+    
+    const animationInterval = setInterval(() => {
+      setAnimationProgress((prev) => {
+        const next = new Map(prev)
+        
+        // Update progress for all circles
+        for (let i = 0; i < totalCircles; i++) {
+          const isActive = redRects.has(i) || i === currentRect
+          const currentProgress = next.get(i) || 0
+          
+          if (isActive && currentProgress < 1) {
+            next.set(i, Math.min(1, currentProgress + 0.1))
+          } else if (!isActive && currentProgress > 0) {
+            next.set(i, Math.max(0, currentProgress - 0.1))
+          }
+        }
+        
+        return next
+      })
+    }, 50) // Update every 50ms for smooth animation
+    
+    return () => clearInterval(animationInterval)
+  }, [totalCircles, currentRect, redRects])
 
   return (
     <div ref={containerRef} className="w-full">
