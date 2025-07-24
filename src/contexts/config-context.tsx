@@ -1,0 +1,81 @@
+import React, { createContext, useContext, useEffect, useState } from 'react'
+
+interface Config {
+  rpc_url: string
+  ws_url: string
+  rpc_datasource_url: string
+  studio_url: string
+  graphql_query_route_url: string
+}
+
+interface ConfigContextType {
+  config: Config | null
+  loading: boolean
+  error: string | null
+  refetch: () => void
+}
+
+const ConfigContext = createContext<ConfigContextType | undefined>(undefined)
+
+export const useConfig = () => {
+  const context = useContext(ConfigContext)
+  if (context === undefined) {
+    throw new Error('useConfig must be used within a ConfigProvider')
+  }
+  return context
+}
+
+interface ConfigProviderProps {
+  children: React.ReactNode
+}
+
+export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
+  const [config, setConfig] = useState<Config | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchConfig = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      // Try local /config endpoint first
+      let response = await fetch('/config')
+      if (!response.ok) {
+        console.log('⚠️ Local /config failed, trying http://127.0.0.1:18488/config')
+        // Fallback to the full URL
+        response = await fetch('http://127.0.0.1:18488/config')
+        if (!response.ok) {
+          throw new Error(`Failed to fetch config from both endpoints: ${response.status}`)
+        }
+      }
+      
+      const data: Config = await response.json()
+      console.log('📋 Config loaded:', data)
+      setConfig(data)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch config'
+      console.error('❌ Config fetch error:', errorMessage)
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchConfig()
+  }, [])
+
+  const value: ConfigContextType = {
+    config,
+    loading,
+    error,
+    refetch: fetchConfig
+  }
+
+  return (
+    <ConfigContext.Provider value={value}>
+      {children}
+    </ConfigContext.Provider>
+  )
+} 

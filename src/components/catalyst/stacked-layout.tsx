@@ -13,6 +13,7 @@ import { useWorkspaceContext } from '@/contexts/workspace-context';
 import { MagnifyingGlassIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid';
 import { CheckBadgeIcon } from '@heroicons/react/24/solid';
 import { ShieldCheckIcon } from '@heroicons/react/24/solid';
+import { CommandLineIcon } from '@heroicons/react/24/solid';
 
 function OpenMenuIcon() {
   return (
@@ -80,8 +81,8 @@ export function StackedLayout({
           <Navbar>
             <img src="/assets/txtx.svg" alt="Txtx Logo" className="h-12" />
             <NavbarItem href="/" current={path.endsWith('/')}>
-            <MagnifyingGlassIcon/>
-              Explorer
+            <CommandLineIcon/>
+              Console
             </NavbarItem>
             <NavbarItem href="/subgraphs" current={path.endsWith('/subgraphs')}>
               <CircleStackIcon />
