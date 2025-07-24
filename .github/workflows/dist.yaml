@@ -1,0 +1,57 @@
+name: Build and Upload Studio UI to S3
+
+on:
+  push:
+    branches: [main, ci]
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js app
+        run: |
+          npm run build
+
+      - name: Zip dist folder
+        run: |
+          cd out
+          zip -r ../studio-ui-dist.zip .
+
+      - name: ls
+        run: |
+          ls
+
+      - name: Read version from package.json
+        id: pkg
+        run: |
+          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+
+      - name: Upload zip to S3 (versioned)
+        run: |
+          aws s3 cp studio-ui-dist.zip s3://${{ secrets.S3_BUCKET_NAME }}/surfpool-studio-ui/v${{ steps.pkg.outputs.VERSION }}.zip --acl public-read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Upload zip to S3 (latest)
+        run: |
+          aws s3 cp studio-ui-dist.zip s3://${{ secrets.S3_BUCKET_NAME }}/surfpool-studio-ui/latest.zip --acl public-read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
