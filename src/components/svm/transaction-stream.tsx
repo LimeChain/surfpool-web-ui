@@ -6,6 +6,7 @@ import { Dialog, DialogBody, DialogTitle } from '@/components/catalyst/dialog';
 import { useTransactionStream, formatSignature, getTransactionStatus, getTransactionPrograms } from '@/lib/solana-transaction-stream';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { useState } from 'react';
+import * as jsonDiff from 'json-diff';
 
 interface TransactionStreamProps {
   rpcUrl?: string;
@@ -15,6 +16,168 @@ interface TransactionStreamProps {
   filterByProgram?: string;
   filterByAccount?: string;
 }
+
+let json = {
+  "slot": 123,
+  "key": "0c2441a4-85b4-4eed-802e-855a66da721d",
+  "instructionProfiles": [
+    {
+      "accountStates": {
+        "1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM": {
+          "type": "writable",
+          "accountChange": {
+            "type": "create",
+            "data": {
+              "lamports": 100,
+              "data": {
+                "program": "custom-program",
+                "parsed": {
+                  "field1": "value1",
+                  "field2": "value2"
+                },
+                "space": 50
+              },
+              "owner": "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh",
+              "executable": false,
+              "rentEpoch": 0,
+              "space": 100
+            }
+          }
+        },
+        "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh": {
+          "type": "readonly"
+        }
+      },
+      "computeUnitsConsumed": 100,
+      "logMessages": [
+        "Log message: Creating Account",
+        "Log message: Account created"
+      ],
+      "errorMessage": null
+    },
+    {
+      "accountStates": {
+        "1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM": {
+          "type": "writable",
+          "accountChange": {
+            "type": "update",
+            "data": [
+              {
+                "lamports": 100,
+                "data": {
+                  "program": "custom-program",
+                  "parsed": {
+                    "field1": "value1",
+                    "field2": "value2"
+                  },
+                  "space": 50
+                },
+                "owner": "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh",
+                "executable": false,
+                "rentEpoch": 0,
+                "space": 100
+              },
+              {
+                "lamports": 90,
+                "data": {
+                  "program": "custom-program",
+                  "parsed": {
+                    "field1": "updated-value1",
+                    "field2": "updated-value2"
+                  },
+                  "space": 50
+                },
+                "owner": "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh",
+                "executable": false,
+                "rentEpoch": 0,
+                "space": 100
+              }
+            ]
+          }
+        },
+        "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh": {
+          "type": "readonly"
+        }
+      },
+      "computeUnitsConsumed": 100,
+      "logMessages": [
+        "Log message: Updating Account",
+        "Log message: Account updated"
+      ],
+      "errorMessage": null
+    },
+    {
+      "accountStates": {
+        "1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM": {
+          "type": "writable",
+          "accountChange": {
+            "type": "delete",
+            "data": {
+              "lamports": 100,
+              "data": {
+                "program": "custom-program",
+                "parsed": {
+                  "field1": "updated-value1",
+                  "field2": "updated-value2"
+                },
+                "space": 50
+              },
+              "owner": "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh",
+              "executable": false,
+              "rentEpoch": 0,
+              "space": 100
+            }
+          }
+        },
+        "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh": {
+          "type": "readonly"
+        }
+      },
+      "computeUnitsConsumed": 100,
+      "logMessages": [
+        "Log message: Deleting Account",
+        "Log message: Account deleted"
+      ],
+      "errorMessage": null
+    }
+  ],
+  "transactionProfile": {
+    "accountStates": {
+      "1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM": {
+        "type": "writable",
+        "accountChange": {
+          "type": "unchanged"
+        }
+      },
+      "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh": {
+        "type": "readonly"
+      }
+    },
+    "computeUnitsConsumed": 300,
+    "logMessages": [
+      "Log message: Creating Account",
+      "Log message: Account created",
+      "Log message: Updating Account",
+      "Log message: Account updated",
+      "Log message: Deleting Account",
+      "Log message: Account deleted"
+    ],
+    "errorMessage": null
+  },
+  "readonlyAccountStates": {
+    "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh": {
+      "lamports": 100,
+      "data": [
+        "ABCDEFG",
+        "base64"
+      ],
+      "owner": "1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh",
+      "executable": false,
+      "rentEpoch": 0,
+      "space": 100
+    }
+  }
+};
 
 export default function TransactionStream({ 
   rpcUrl: propRpcUrl,
@@ -32,6 +195,7 @@ export default function TransactionStream({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Map<string, boolean>>(new Map());
   const [accountViewModes, setAccountViewModes] = useState<Map<string, 'parsed' | 'hex'>>(new Map());
+  const [expandedInstructions, setExpandedInstructions] = useState<Set<number>>(new Set());
   
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
@@ -52,20 +216,22 @@ export default function TransactionStream({
     filterByAccount
   });
 
-  const toggleAccountExpansion = (address: string) => {
+  const toggleAccountExpansion = (instructionIndex: number, address: string) => {
+    const key = `${instructionIndex}:${address}`;
     setExpandedAccounts(prev => {
       const newMap = new Map(prev);
-      const currentState = newMap.get(address);
-      newMap.set(address, !currentState);
+      const currentState = newMap.get(key);
+      newMap.set(key, !currentState);
       return newMap;
     });
   };
 
-  const isAccountExpanded = (address: string, hasChanges: boolean) => {
+  const isAccountExpanded = (instructionIndex: number, address: string, hasChanges: boolean) => {
+    const key = `${instructionIndex}:${address}`;
     // Default: readonly accounts collapsed, readwrite accounts expanded
     const defaultExpanded = hasChanges;
     // If the address has been explicitly set, use that value, otherwise use the default
-    return expandedAccounts.has(address) ? expandedAccounts.get(address)! : defaultExpanded;
+    return expandedAccounts.has(key) ? expandedAccounts.get(key)! : defaultExpanded;
   };
 
   const getAccountViewMode = (address: string) => {
@@ -78,6 +244,18 @@ export default function TransactionStream({
       const currentMode = newMap.get(address) || 'parsed';
       newMap.set(address, currentMode === 'parsed' ? 'hex' : 'parsed');
       return newMap;
+    });
+  };
+
+  const toggleInstructionExpansion = (index: number) => {
+    setExpandedInstructions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
     });
   };
 
@@ -136,6 +314,151 @@ export default function TransactionStream({
     return lines.join('\n');
   };
 
+  // Helper function to extract programData from parsed data
+  const extractProgramData = (data: any) => {
+    if (typeof data === 'object' && data !== null) {
+      // Check if it has the parsed structure with programData
+      if (data.parsed && data.parsed.info && data.parsed.info.programData) {
+        return data.parsed.info.programData;
+      }
+      
+      // Check if it's a base64 array format: ["base64string", "base64"]
+      if (Array.isArray(data) && data.length === 2 && data[1] === "base64") {
+        try {
+          const decoded = atob(data[0]);
+          return decoded === '' ? '<none>' : decoded;
+        } catch (error) {
+          // If decoding fails, return the original base64 string
+          return data[0] === '' ? '<none>' : data[0];
+        }
+      }
+      
+      // Pretty print JSON objects
+      try {
+        return JSON.stringify(data, null, 2);
+      } catch (error) {
+        return JSON.stringify(data);
+      }
+    }
+    const stringValue = String(data);
+    return stringValue === '' || stringValue === 'null' || stringValue === 'undefined' ? '<none>' : stringValue;
+  };
+
+  // Helper function to highlight character differences
+  const highlightDifferences = (beforeValue: any, afterValue: any, isRed: boolean) => {
+    // Convert values to strings for comparison
+    const beforeStr = String(beforeValue);
+    const afterStr = String(afterValue);
+    
+    // If values are identical, return the appropriate value without highlighting
+    if (beforeStr === afterStr) {
+      return <span>{isRed ? beforeStr : afterStr}</span>;
+    }
+    
+    console.log(`🔍 highlightDifferences: "${beforeStr}" vs "${afterStr}", isRed: ${isRed}`);
+    
+    // Find the first difference and highlight from there to the end
+    const maxLength = Math.max(beforeStr.length, afterStr.length);
+    let firstDiffIndex = -1;
+    
+    // Find the first character that's different
+    for (let i = 0; i < maxLength; i++) {
+      const beforeChar = beforeStr[i] || '';
+      const afterChar = afterStr[i] || '';
+      if (beforeChar !== afterChar) {
+        firstDiffIndex = i;
+        break;
+      }
+    }
+    
+    if (firstDiffIndex === -1) {
+      // No differences found
+      return <span>{isRed ? beforeStr : afterStr}</span>;
+    }
+    
+    // Split the string into normal and highlighted parts
+    const valueToShow = isRed ? beforeStr : afterStr;
+    const normalPart = valueToShow.substring(0, firstDiffIndex);
+    const highlightedPart = valueToShow.substring(firstDiffIndex);
+    
+    const colorClass = isRed ? 'text-red-500 font-bold bg-red-900/30' : 'text-green-500 font-bold bg-green-900/30';
+    
+    console.log(`✅ Result: normal="${normalPart}", highlighted="${highlightedPart}"`);
+    
+    return (
+      <>
+        {normalPart && <span>{normalPart}</span>}
+        {highlightedPart && <span className={colorClass}>{highlightedPart}</span>}
+      </>
+    );
+  };
+
+  // Helper function to render JSON diff with proper color coding
+  const renderJsonDiff = (beforeJson: any, afterJson: any, isRed: boolean) => {
+    try {
+      // Ensure we're working with actual objects, not strings
+      const beforeObj = typeof beforeJson === 'string' ? JSON.parse(beforeJson) : beforeJson;
+      const afterObj = typeof afterJson === 'string' ? JSON.parse(afterJson) : afterJson;
+      
+      // Get the JSON to display (before or after)
+      const jsonToShow = isRed ? beforeObj : afterObj;
+      const jsonString = JSON.stringify(jsonToShow, null, 2);
+      
+      // Use json-diff to get the diff string and parse it to find changed paths
+      const diffString = jsonDiff.diffString(beforeObj, afterObj);
+      
+      // Extract changed field names from the diff string
+      const changedFields = new Set<string>();
+      const lines = diffString.split('\n');
+      lines.forEach(line => {
+        if (line.startsWith('-') || line.startsWith('+')) {
+          // Extract field name from lines like: -    field1: "value1"
+          const match = line.match(/^\s*[-+]\s*(\w+):/);
+          if (match) {
+            changedFields.add(match[1]);
+          }
+        }
+      });
+      
+      console.log('Changed fields:', Array.from(changedFields));
+      console.log('Diff string:', diffString);
+      
+      // Split into lines and process each line
+      const jsonLines = jsonString.split('\n');
+      const processedLines = jsonLines.map((line, index) => {
+        const trimmedLine = line.trim();
+        
+        // Check if this line contains a changed field
+        const hasChangedValue = Array.from(changedFields).some(field => {
+          return trimmedLine.includes(`"${field}"`);
+        });
+        
+        if (hasChangedValue) {
+          const colorClass = isRed ? 'text-red-500 bg-red-900/30 font-bold' : 'text-green-500 bg-green-900/30 font-bold';
+          return (
+            <div key={index} className={colorClass}>
+              {line}
+            </div>
+          );
+        } else {
+          // Unchanged line
+          return (
+            <div key={index} className="text-gray-300">
+              {line}
+            </div>
+          );
+        }
+      });
+
+      return <div className="font-mono text-xs">{processedLines}</div>;
+    } catch (error) {
+      console.error('Error rendering JSON diff:', error);
+      // Fallback to simple string comparison
+      const jsonToShow = isRed ? beforeJson : afterJson;
+      return <pre className="text-gray-300">{JSON.stringify(jsonToShow, null, 2)}</pre>;
+    }
+  };
+
   const fetchTransactionProfile = async (signature: string) => {
     try {
       setProfileLoading(true);
@@ -144,31 +467,15 @@ export default function TransactionStream({
       
       console.log('🔍 Fetching transaction profile for signature:', signature);
       
-      const requestBody = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'surfnet_getTransactionProfile',
-        params: [signature]
-      };
+      // Mock response using the provided JSON
+      const mockResponse = json;
       
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      const data = await response.json();
-      console.log('📊 Transaction profile response:', data);
+      // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      if (data.result) {
-        setTransactionProfile(data.result);
-      } else if (data.error) {
-        setProfileError(`RPC Error: ${data.error.message || 'Unknown error'}`);
-      } else {
-        setProfileError('No result or error in response');
-      }
+      console.log('📊 Mock transaction profile response:', mockResponse);
+      setTransactionProfile(mockResponse);
+      
     } catch (error) {
       console.error('❌ Error fetching transaction profile:', error);
       setProfileError(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -324,7 +631,12 @@ export default function TransactionStream({
                 
                 <div className="bg-zinc-800/50 p-4 rounded-lg">
                   <div className="text-xs text-gray-500 mb-2">Compute Units Consumed</div>
-                  <div className="text-sm font-mono">{selectedTransaction.meta.computeUnitsConsumed || 'Unknown'}</div>
+                  <div className="text-sm font-mono">
+                    {transactionProfile && transactionProfile.instructionProfiles 
+                      ? transactionProfile.instructionProfiles.reduce((sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0), 0)
+                      : selectedTransaction.meta.computeUnitsConsumed || 'Unknown'
+                    }
+                  </div>
                 </div>
                 
                 {selectedTransaction.meta ? (
@@ -371,360 +683,447 @@ export default function TransactionStream({
                 </div>
                               )}
 
-              <div className="text-sm font-semibold text-zinc-200 mb-3">INSTRUCTIONS</div>
-              {selectedTransaction.transaction?.message?.instructions && (
-                <div className="bg-zinc-800/50 p-4 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-2">
-                    Instructions ({selectedTransaction.transaction.message.instructions.length})
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-3">
-                    {selectedTransaction.transaction.message.instructions.map((instruction: any, index: number) => (
-                      <div key={index} className="border-l-2 border-zinc-600 pl-3">
-                        <div className="text-xs font-mono text-gray-300 mb-1">
-                          <span className="text-gray-500">#{index}:</span> {instruction.programId || 'Unknown Program'}
-                        </div>
-                        {instruction.accounts && instruction.accounts.length > 0 && (
-                          <div className="text-xs text-gray-400 ml-4">
-                            <div className="text-gray-500 mb-1">Accounts:</div>
-                            <div className="space-y-1">
-                              {instruction.accounts.map((acc: any, accIndex: number) => (
-                                <div key={accIndex} className="flex items-start gap-2">
-                                  <span className="text-gray-500 w-6">{accIndex}:</span>
-                                  <span className="break-all">
-                                    {typeof acc === 'object' && acc !== null 
-                                      ? JSON.stringify(acc) 
-                                      : String(acc)
-                                    }
-                                  </span>
+              {/* Transaction Profile - New Detailed View */}
+              {transactionProfile && (
+                <>
+                  <div className="text-sm font-semibold text-zinc-200 mb-3">TRANSACTION PROFILE</div>
+                  
+                  {/* Compute Units Stack Bar */}
+                  {transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0 && (
+                    <div className="mb-8">
+                      <div className="text-xs text-gray-500 mb-3">Compute Units Distribution</div>
+                      <div className="flex h-6 rounded-md overflow-hidden border border-zinc-600">
+                        {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
+                          const cu = profile.computeUnitsConsumed || 0;
+                          const totalCu = transactionProfile.computeUnitsConsumed || 1;
+                          const percentage = (cu / totalCu) * 100;
+                          
+                          // macOS-style colors for different instruction types
+                          const colors = [
+                            'bg-blue-500',    // Blue
+                            'bg-green-500',   // Green  
+                            'bg-orange-500',  // Orange
+                            'bg-purple-500',  // Purple
+                            'bg-red-500',     // Red
+                            'bg-yellow-500',  // Yellow
+                            'bg-pink-500',    // Pink
+                            'bg-indigo-500',  // Indigo
+                          ];
+                          const colorClass = colors[index % colors.length];
+                          
+                          return (
+                            <div
+                              key={index}
+                              className={`${colorClass} relative group cursor-pointer transition-all duration-200 hover:brightness-110`}
+                              style={{ width: `${percentage}%` }}
+                              title={`Instruction ${index}: ${cu} CU (${percentage.toFixed(1)}%)`}
+                            >
+                              {/* Tooltip on hover */}
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/90 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                Instruction {index}: {cu} CU
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Legend */}
+                      <div className="flex flex-wrap gap-3 mt-3">
+                        {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
+                          const cu = profile.computeUnitsConsumed || 0;
+                          
+                          const colors = [
+                            'bg-blue-500',
+                            'bg-green-500', 
+                            'bg-orange-500',
+                            'bg-purple-500',
+                            'bg-red-500',
+                            'bg-yellow-500',
+                            'bg-pink-500',
+                            'bg-indigo-500',
+                          ];
+                          const colorClass = colors[index % colors.length];
+                          
+                          return (
+                            <div key={index} className="flex items-center gap-2 text-xs">
+                              <div className={`w-3 h-3 rounded ${colorClass}`}></div>
+                              <span className="text-gray-300">Instruction #{index}:</span>
+                              <span className="text-gray-400">{cu} CU</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+
+
+                  {/* Instruction Profiles */}
+                  <div className="space-y-4">
+                    {transactionProfile.instructionProfiles?.map((profile: any, index: number) => {
+                      // macOS-style colors for different instruction types
+                      const colors = [
+                        'bg-blue-500',    // Blue
+                        'bg-green-500',   // Green  
+                        'bg-orange-500',  // Orange
+                        'bg-purple-500',  // Purple
+                        'bg-red-500',     // Red
+                        'bg-yellow-500',  // Yellow
+                        'bg-pink-500',    // Pink
+                        'bg-indigo-500',  // Indigo
+                      ];
+                      
+                      return (
+                        <div key={index} className="bg-zinc-800/50 border border-zinc-700 rounded-lg overflow-hidden">
+                        {/* Instruction Header */}
+                        <div 
+                          className="bg-zinc-900/50 p-3 border-b border-zinc-700 cursor-pointer hover:bg-zinc-900/70 transition-colors"
+                          onClick={() => toggleInstructionExpansion(index)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`mr-2 ${colors[index % colors.length] === 'bg-blue-500' ? 'text-blue-500' : 
+                                                  colors[index % colors.length] === 'bg-green-500' ? 'text-green-500' :
+                                                  colors[index % colors.length] === 'bg-orange-500' ? 'text-orange-500' :
+                                                  colors[index % colors.length] === 'bg-purple-500' ? 'text-purple-500' :
+                                                  colors[index % colors.length] === 'bg-red-500' ? 'text-red-500' :
+                                                  colors[index % colors.length] === 'bg-yellow-500' ? 'text-yellow-500' :
+                                                  colors[index % colors.length] === 'bg-pink-500' ? 'text-pink-500' :
+                                                  colors[index % colors.length] === 'bg-indigo-500' ? 'text-indigo-500' : 'text-gray-500'}`}>
+                                  {expandedInstructions.has(index) ? '▼' : '▶'}
+                                </span>
+                                <div className="text-sm font-semibold text-zinc-200">
+                                  Instruction #{index}
                                 </div>
-                              ))}
+                              </div>
+
+                              {profile.errorMessage && (
+                                <Badge color="red" className="text-xs">
+                                  ERROR
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-xs text-green-400 font-mono font-semibold">
+                              {profile.computeUnitsConsumed || 0} CU
                             </div>
                           </div>
-                        )}
-                        {instruction.data && (
-                          <div className="text-xs text-gray-400 ml-4 mt-1">
-                            <div className="text-gray-500 mb-1">Data:</div>
-                            <div className="font-mono break-all bg-zinc-900/50 p-2 rounded">
-                              {instruction.data}
-                            </div>
+                        </div>
+
+                        {/* Instruction Content */}
+                        {expandedInstructions.has(index) && (
+                          <div className="p-4 space-y-4">
+                            {/* Account States */}
+                            {profile.accountStates && (
+                              <div>
+                                <div className="text-xs text-gray-500 mb-2 font-semibold">ACCOUNT STATES</div>
+                                <div className="space-y-3">
+                                  {Object.entries(profile.accountStates).map(([address, accountState]: [string, any]) => {
+                                    const isWritable = accountState.type === 'writable';
+                                    const hasChanges = accountState.accountChange && accountState.accountChange.type !== 'unchanged';
+                                    
+                                    return (
+                                      <div key={address} className="bg-zinc-900/30 border border-zinc-600 rounded p-3">
+                                        <div 
+                                          className="text-xs text-gray-400 mb-0 font-mono cursor-pointer hover:bg-gray-700/20 py-1 px-2 rounded transition-colors flex items-center justify-between"
+                                          onClick={() => toggleAccountExpansion(index, address)}
+                                        >
+                                          <div className="flex items-center">
+                                            <span className="text-gray-500 mr-2">
+                                              {isAccountExpanded(index, address, hasChanges) ? '▼' : '▶'}
+                                            </span>
+                                            <span className="text-gray-500">Account</span> <span className="text-gray-300 font-semibold ml-1">{address}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                                                                                  <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${isWritable ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/30' : 'bg-gray-700/30 text-gray-300 border border-gray-500/30'}`}>
+                                                        {isWritable ? 'WRITABLE' : 'READONLY'}
+                                                      </span>
+                                            {hasChanges && (
+                                              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                                accountState.accountChange.type === 'create' ? 'bg-green-900/30 text-green-300 border border-green-500/30' :
+                                                accountState.accountChange.type === 'update' ? 'bg-blue-900/30 text-blue-300 border border-blue-500/30' :
+                                                accountState.accountChange.type === 'delete' ? 'bg-red-900/30 text-red-300 border border-red-500/30' :
+                                                'bg-gray-700/30 text-gray-300 border border-gray-500/30'
+                                              }`}>
+                                                {accountState.accountChange.type === 'create' ? 'ACCOUNT CREATION' :
+                                                 accountState.accountChange.type === 'update' ? 'ACCOUNT UPDATE' :
+                                                 accountState.accountChange.type === 'delete' ? 'ACCOUNT DELETION' :
+                                                 accountState.accountChange.type.toUpperCase()}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        
+                                        {isAccountExpanded(index, address, hasChanges) && (
+                                          <div className="space-y-3">
+                                            {hasChanges && accountState.accountChange.type === 'create' && (
+                                              <div className="mt-3">
+                                                <div className="bg-green-900/20 border border-green-500/30 p-2 rounded">
+                                                  <div className="text-gray-300 text-xs space-y-1">
+                                                    <div className="flex justify-between items-center">
+                                                      <span className="inline-block w-16 text-left">Lamports:</span>
+                                                      <span className="text-right">{accountState.accountChange.data.lamports}</span>
+                                                    </div>
+                                                    {accountState.accountChange.data.owner && (
+                                                      <div className="flex justify-between items-center">
+                                                        <span className="inline-block w-16 text-left">Owner:</span>
+                                                        <span className="text-right">{accountState.accountChange.data.owner}</span>
+                                                      </div>
+                                                    )}
+                                                    <div>
+                                                      <div className="inline-block w-16 text-left">Data:</div>
+                                                      {getAccountViewMode(address) === 'parsed' 
+                                                        ? (
+                                                          <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                            {extractProgramData(accountState.accountChange.data.data)}
+                                                          </div>
+                                                        )
+                                                        : (
+                                                          <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                            {getHexData(accountState.accountChange.data.data)}
+                                                          </div>
+                                                        )
+                                                      }
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                            
+                                            {hasChanges && accountState.accountChange.type === 'update' && (
+                                              <div className="mt-3">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                  <div>
+                                                    <div className="text-xs text-gray-400 mb-1">PRE-EXECUTION</div>
+                                                    <div className="bg-gray-900/20 border border-gray-500/30 p-2 rounded">
+                                                                                                                                                                      <div className="text-gray-300 text-xs space-y-1">
+                                                           <div className={`${accountState.accountChange.data[0].lamports !== accountState.accountChange.data[1].lamports ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                             <span className="inline-block w-16 text-left">Lamports:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].lamports, accountState.accountChange.data[1].lamports, true)}</span>
+                                                           </div>
+                                                                                                                        {accountState.accountChange.data[0].owner && (
+                                                               <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                                 <span className="inline-block w-16 text-left">Owner:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, true)}</span>
+                                                               </div>
+                                                             )}
+                                                           <div>
+                                                             <div className="inline-block w-16 text-left">Data:</div>
+                                                             {getAccountViewMode(address) === 'parsed' 
+                                                               ? (
+                                                                 <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                                   {renderJsonDiff(extractProgramData(accountState.accountChange.data[0].data), extractProgramData(accountState.accountChange.data[1].data), true)}
+                                                                 </div>
+                                                               )
+                                                               : (
+                                                                 <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                                   {highlightDifferences(getHexData(accountState.accountChange.data[0].data), getHexData(accountState.accountChange.data[1].data), true)}
+                                                                 </div>
+                                                               )
+                                                             }
+                                                           </div>
+                                                         </div>
+                                                    </div>
+                                                  </div>
+                                                  <div>
+                                                    <div className="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                                                      POST-EXECUTION
+                                                      <div className="flex text-xs gap-2">
+                                                        <button
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setAccountViewModes(prev => {
+                                                              const newMap = new Map(prev);
+                                                              newMap.set(address, 'parsed');
+                                                              return newMap;
+                                                            });
+                                                          }}
+                                                          className={`transition-colors ${
+                                                            getAccountViewMode(address) === 'parsed' 
+                                                              ? 'text-white font-medium' 
+                                                              : 'text-gray-500 hover:text-gray-400'
+                                                          }`}
+                                                        >
+                                                          Pretty
+                                                        </button>
+                                                        <span className="text-gray-600">|</span>
+                                                        <button
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setAccountViewModes(prev => {
+                                                              const newMap = new Map(prev);
+                                                              newMap.set(address, 'hex');
+                                                              return newMap;
+                                                            });
+                                                          }}
+                                                          className={`transition-colors ${
+                                                            getAccountViewMode(address) === 'hex' 
+                                                              ? 'text-white font-medium' 
+                                                              : 'text-gray-500 hover:text-gray-400'
+                                                          }`}
+                                                        >
+                                                          Hex
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                    <div className="bg-gray-900/20 border border-gray-500/30 p-2 rounded">
+                                                                                                                                                                      <div className="text-gray-300 text-xs space-y-1">
+                                                           <div className={`${accountState.accountChange.data[0].lamports !== accountState.accountChange.data[1].lamports ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                             <span className="inline-block w-16 text-left">Lamports:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].lamports, accountState.accountChange.data[1].lamports, false)}</span>
+                                                           </div>
+                                                                                                                        {accountState.accountChange.data[1].owner && (
+                                                               <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                                 <span className="inline-block w-16 text-left">Owner:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, false)}</span>
+                                                               </div>
+                                                             )}
+                                                           <div>
+                                                             <div className="inline-block w-16 text-left">Data:</div>
+                                                             {getAccountViewMode(address) === 'parsed' 
+                                                               ? (
+                                                                 <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                                   {renderJsonDiff(extractProgramData(accountState.accountChange.data[0].data), extractProgramData(accountState.accountChange.data[1].data), false)}
+                                                                 </div>
+                                                               )
+                                                               : (
+                                                                 <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                                   {highlightDifferences(getHexData(accountState.accountChange.data[0].data), getHexData(accountState.accountChange.data[1].data), false)}
+                                                                 </div>
+                                                               )
+                                                             }
+                                                           </div>
+                                                         </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                            
+                                            {hasChanges && accountState.accountChange.type === 'delete' && (
+                                              <div className="mt-3">
+                                                <div className="bg-red-900/20 border border-red-500/30 p-2 rounded">
+                                                  <div className="text-gray-300 text-xs space-y-1">
+                                                    <div className="flex justify-between items-center">
+                                                      <span className="inline-block w-16 text-left">Lamports:</span>
+                                                      <span className="text-right">{accountState.accountChange.data.lamports}</span>
+                                                    </div>
+                                                    {accountState.accountChange.data.owner && (
+                                                      <div className="flex justify-between items-center">
+                                                        <span className="inline-block w-16 text-left">Owner:</span>
+                                                        <span className="text-right">{accountState.accountChange.data.owner}</span>
+                                                      </div>
+                                                    )}
+                                                    <div>
+                                                      <div className="inline-block w-16 text-left">Data:</div>
+                                                      {getAccountViewMode(address) === 'parsed' 
+                                                        ? (
+                                                          <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                            {extractProgramData(accountState.accountChange.data.data)}
+                                                          </div>
+                                                        )
+                                                        : (
+                                                          <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto mt-0.5 w-full">
+                                                            {getHexData(accountState.accountChange.data.data)}
+                                                          </div>
+                                                        )
+                                                      }
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                            
+                                            {!hasChanges && (
+                                              <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
+                                                No changes to this account
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Log Messages */}
+                            {profile.logMessages && profile.logMessages.length > 0 && (
+                              <div>
+                                <div className="text-xs text-gray-500 mb-2 font-semibold">LOGS</div>
+                                <div className="bg-black/80 border border-gray-600 rounded p-3 font-mono text-xs max-h-32 overflow-y-auto">
+                                  <div className="space-y-1">
+                                    {profile.logMessages.map((log: string, logIndex: number) => (
+                                      <div key={logIndex} className="text-green-400">
+                                        <span className="text-gray-500">[{logIndex.toString().padStart(3, '0')}]</span> {log}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Error Message */}
+                            {profile.errorMessage && (
+                              <div>
+                                <div className="text-xs text-red-400 mb-2 font-semibold">ERROR</div>
+                                <div className="bg-red-900/20 border border-red-500/30 p-3 rounded text-red-300 text-xs">
+                                  {profile.errorMessage}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
-                </div>
+                </>
               )}
 
-                            <div className="text-sm font-semibold text-zinc-200 mb-3">STATE TRANSITIONS</div>
-              {transactionProfile?.value?.state && (
+              {/* Legacy Instructions View (fallback) */}
+              {!transactionProfile && selectedTransaction.transaction?.message?.instructions && (
+                <>
+                  <div className="text-sm font-semibold text-zinc-200 mb-3">INSTRUCTIONS</div>
                   <div className="bg-zinc-800/50 p-4 rounded-lg">
-                    <div className="space-y-3">
-                    {Object.entries(transactionProfile.value.state.preExecution).map(([address, preData], index) => {
-                      const postData = transactionProfile.value.state.postExecution[address];
-                      
-                      // Check if account is readonly (no changes)
-                      const lamportsChanged = preData && postData && (preData as any).lamports !== (postData as any).lamports;
-                      const ownerChanged = preData && postData && (preData as any).owner !== (postData as any).owner;
-                      const executableChanged = preData && postData && (preData as any).executable !== (postData as any).executable;
-                      const spaceChanged = preData && postData && (preData as any).space !== (postData as any).space;
-                      const rentEpochChanged = preData && postData && (preData as any).rentEpoch !== (postData as any).rentEpoch;
-                      const dataChanged = preData && postData && (() => {
-                        const preDataValue = (preData as any).data;
-                        const postDataValue = (postData as any).data;
-                        
-                        // Handle different data types and encodings
-                        if (preDataValue === postDataValue) return false;
-                        
-                        // Convert to string for comparison
-                        const preStr = String(preDataValue);
-                        const postStr = String(postDataValue);
-                        
-                        return preStr !== postStr;
-                      })();
-                      
-                      // Check if account has changes
-                      const hasChanges = lamportsChanged || ownerChanged || executableChanged || dataChanged;
-
-                      // Helper function to extract programData from parsed data
-                      const extractProgramData = (data: any) => {
-                        if (typeof data === 'object' && data !== null) {
-                          // Check if it has the parsed structure with programData
-                          if (data.parsed && data.parsed.info && data.parsed.info.programData) {
-                            return data.parsed.info.programData;
-                          }
-                          
-                          // Check if it's a base64 array format: ["base64string", "base64"]
-                          if (Array.isArray(data) && data.length === 2 && data[1] === "base64") {
-                            try {
-                              const decoded = atob(data[0]);
-                              return decoded === '' ? '<none>' : decoded;
-                            } catch (error) {
-                              // If decoding fails, return the original base64 string
-                              return data[0] === '' ? '<none>' : data[0];
-                            }
-                          }
-                          
-                          // Fallback to JSON.stringify for other objects
-                          return JSON.stringify(data);
-                        }
-                        const stringValue = String(data);
-                        return stringValue === '' || stringValue === 'null' || stringValue === 'undefined' ? '<none>' : stringValue;
-                      };
-
-                      // Helper function to highlight character differences
-                      const highlightDifferences = (beforeValue: any, afterValue: any, isRed: boolean) => {
-                        // Handle data field specifically - normalize to string representation
-                        let beforeStr = String(beforeValue);
-                        let afterStr = String(afterValue);
-                        
-                        // For data fields, try to normalize the representation
-                        if (beforeValue !== null && afterValue !== null) {
-                          // If they're buffers or similar, try to get consistent string representation
-                          if (typeof beforeValue === 'object' && typeof afterValue === 'object') {
-                            beforeStr = JSON.stringify(beforeValue);
-                            afterStr = JSON.stringify(afterValue);
-                          }
-                        }
-                        
-                        const maxLength = Math.max(beforeStr.length, afterStr.length);
-                        const result = [];
-                        
-                        for (let i = 0; i < maxLength; i++) {
-                          const beforeChar = beforeStr[i] || '';
-                          const afterChar = afterStr[i] || '';
-                          const isDifferent = beforeChar !== afterChar;
-                          
-                          if (isDifferent) {
-                            const colorClass = isRed ? 'text-red-400 font-semibold' : 'text-green-400 font-semibold';
-                            // For red (before), show beforeChar. For green (after), show afterChar
-                            const charToShow = isRed ? beforeChar : afterChar;
-                            result.push(<span key={i} className={colorClass}>{charToShow}</span>);
-                          } else {
-                            // For both cases, show the appropriate character
-                            const charToShow = isRed ? beforeChar : afterChar;
-                            result.push(<span key={i}>{charToShow}</span>);
-                          }
-                        }
-                        
-                        return result;
-                      };
-                      
-                      return (
-                        <div key={address} className={index > 0 ? 'pt-4 border-t border-gray-700/30' : ''}>
-                          <div 
-                            className="text-xs text-gray-400 mb-2 font-mono cursor-pointer hover:bg-gray-700/20 p-1 rounded transition-colors flex items-center justify-between"
-                            onClick={() => toggleAccountExpansion(address)}
-                          >
-                            <div className="flex items-center">
-                              <span className="text-gray-500 mr-2">
-                                {isAccountExpanded(address, hasChanges) ? '▼' : '▶'}
-                              </span>
-                              <span className="text-gray-500">Account</span> <span className="text-gray-300 font-semibold ml-1">{address}</span>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${hasChanges ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/30' : 'bg-gray-700/30 text-gray-300 border border-gray-500/30'}`}>
-                              {hasChanges ? 'readwrite' : 'readonly'}
-                            </span>
+                    <div className="text-xs text-gray-500 mb-2">
+                      Instructions ({selectedTransaction.transaction.message.instructions.length})
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-3">
+                      {selectedTransaction.transaction.message.instructions.map((instruction: any, index: number) => (
+                        <div key={index} className="border-l-2 border-zinc-600 pl-3">
+                          <div className="text-xs font-mono text-gray-300 mb-1">
+                            <span className="text-gray-500">#{index}:</span> {instruction.programId || 'Unknown Program'}
                           </div>
-                                                      {isAccountExpanded(address, hasChanges) && (
-                              <>
-                                {hasChanges ? (
-                            <div className="grid grid-cols-2 gap-4">
-                              {/* Pre Execution */}
-                              <div>
-                                <div className="text-xs text-gray-400 mb-1 font-semibold">
-                                  PRE-EXECUTION
-                                </div>
-                                {preData ? (
-                                  <div className={`${lamportsChanged || ownerChanged || spaceChanged || rentEpochChanged || dataChanged ? 'bg-red-900/20 border-red-500/30' : 'bg-gray-700/20 border-gray-500/30'} border p-2 rounded`}>
-                                    <div className="text-gray-300 text-xs">
-                                                                            <div className={`${lamportsChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
-                                        Lamports: {lamportsChanged ? highlightDifferences((preData as any).lamports, (postData as any).lamports, true) : (preData as any).lamports}
-                                      </div>
-                                      {(preData as any).owner && (
-                                        <div className={`${ownerChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
-                                          Owner: {ownerChanged ? highlightDifferences((preData as any).owner, (postData as any).owner, true) : (preData as any).owner}
-                                        </div>
-                                      )}
-                                      <div className={`${dataChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
-                                        <div>Data:</div>
-                                        {getAccountViewMode(address) === 'parsed' 
-                                          ? (dataChanged ? highlightDifferences(extractProgramData((preData as any).data), extractProgramData((postData as any).data), true) : extractProgramData((preData as any).data))
-                                          : (
-                                            <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
-                                              {getHexData((preData as any).data)}
-                                            </div>
-                                          )
-                                        }
-                                      </div>
-                                    </div>
+                          {instruction.accounts && instruction.accounts.length > 0 && (
+                            <div className="text-xs text-gray-400 ml-4">
+                              <div className="text-gray-500 mb-1">Accounts:</div>
+                              <div className="space-y-1">
+                                {instruction.accounts.map((acc: any, accIndex: number) => (
+                                  <div key={accIndex} className="flex items-start gap-2">
+                                    <span className="text-gray-500 w-6">{accIndex}:</span>
+                                    <span className="break-all">
+                                      {typeof acc === 'object' && acc !== null 
+                                        ? JSON.stringify(acc) 
+                                        : String(acc)
+                                      }
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
-                                    Account not found
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Post Execution */}
-                              <div>
-                                <div className="text-xs text-gray-400 mb-1 font-semibold flex justify-between items-center">
-                                  POST-EXECUTION
-                                  <div className="flex text-xs gap-2">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setAccountViewModes(prev => {
-                                          const newMap = new Map(prev);
-                                          newMap.set(address, 'parsed');
-                                          return newMap;
-                                        });
-                                      }}
-                                      className={`transition-colors ${
-                                        getAccountViewMode(address) === 'parsed' 
-                                          ? 'text-white font-medium' 
-                                          : 'text-gray-500 hover:text-gray-400'
-                                      }`}
-                                    >
-                                      Pretty
-                                    </button>
-                                    <span className="text-gray-600">|</span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setAccountViewModes(prev => {
-                                          const newMap = new Map(prev);
-                                          newMap.set(address, 'hex');
-                                          return newMap;
-                                        });
-                                      }}
-                                      className={`transition-colors ${
-                                        getAccountViewMode(address) === 'hex' 
-                                          ? 'text-white font-medium' 
-                                          : 'text-gray-500 hover:text-gray-400'
-                                      }`}
-                                    >
-                                      Hex
-                                    </button>
-                                  </div>
-                                </div>
-                                {postData ? (
-                                  <div className={`${lamportsChanged || ownerChanged || spaceChanged || rentEpochChanged || dataChanged ? 'bg-green-900/20 border-green-500/30' : 'bg-gray-700/20 border-gray-500/30'} border p-2 rounded`}>
-                                    <div className="text-gray-300 text-xs">
-                                                                            <div className={`${lamportsChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
-                                        Lamports: {lamportsChanged ? highlightDifferences((preData as any).lamports, (postData as any).lamports, false) : (postData as any).lamports}
-                                      </div>
-                                      {(postData as any).owner && (
-                                        <div className={`${ownerChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
-                                          Owner: {ownerChanged ? highlightDifferences((preData as any).owner, (postData as any).owner, false) : (postData as any).owner}
-                                        </div>
-                                      )}
-                                      <div className={`${dataChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
-                                        <div>Data:</div>
-                                        {getAccountViewMode(address) === 'parsed' 
-                                          ? (dataChanged ? highlightDifferences(extractProgramData((preData as any).data), extractProgramData((postData as any).data), false) : extractProgramData((postData as any).data))
-                                          : (
-                                            <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
-                                              {getHexData((postData as any).data)}
-                                            </div>
-                                          )
-                                        }
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
-                                    Account not found
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            /* Readonly account - single display */
-                            <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded">
-                              <div className="text-xs text-gray-400 mb-1 font-semibold flex justify-between items-center">
-                                <div></div>
-                                <div className="flex text-xs gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setAccountViewModes(prev => {
-                                        const newMap = new Map(prev);
-                                        newMap.set(address, 'parsed');
-                                        return newMap;
-                                      });
-                                    }}
-                                    className={`transition-colors ${
-                                      getAccountViewMode(address) === 'parsed' 
-                                        ? 'text-white font-medium' 
-                                        : 'text-gray-500 hover:text-gray-400'
-                                    }`}
-                                  >
-                                    Pretty
-                                  </button>
-                                  <span className="text-gray-600">|</span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setAccountViewModes(prev => {
-                                        const newMap = new Map(prev);
-                                        newMap.set(address, 'hex');
-                                        return newMap;
-                                      });
-                                    }}
-                                    className={`transition-colors ${
-                                      getAccountViewMode(address) === 'hex' 
-                                        ? 'text-white font-medium' 
-                                        : 'text-gray-500 hover:text-gray-400'
-                                    }`}
-                                  >
-                                    Hex
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="text-gray-300 text-xs">
-                                                                                                     {preData ? (
-                                      <>
-                                        <div className="px-1">Lamports: {(preData as any).lamports}</div>
-                                        {(preData as any).owner && <div className="px-1">Owner: {(preData as any).owner}</div>}
-                                        <div className="px-1">
-                                          <div>Data:</div>
-                                          {getAccountViewMode(address) === 'parsed' 
-                                            ? extractProgramData((preData as any).data)
-                                            : (
-                                              <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
-                                                {getHexData((preData as any).data)}
-                                              </div>
-                                            )
-                                          }
-                                        </div>
-                                      </>
-                                    ) : (
-                                  <div className="text-gray-400">Account not found</div>
-                                )}
+                                ))}
                               </div>
                             </div>
                           )}
-                        </>
-                      )}
+                          {instruction.data && (
+                            <div className="text-xs text-gray-400 ml-4 mt-1">
+                              <div className="text-gray-500 mb-1">Data:</div>
+                              <div className="font-mono break-all bg-zinc-900/50 p-2 rounded">
+                                {instruction.data}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
+                      ))}
+                                        </div>
                   </div>
-                </div>
+                </>
               )}
-
-              <div className="text-sm font-semibold text-zinc-200 mb-3">TRANSACTION LOGS</div>
-              {selectedTransaction.meta?.logMessages && selectedTransaction.meta.logMessages.length > 0 && (
-                <div className="bg-black/80 border border-gray-600 rounded-md p-3 font-mono text-xs">
-                  <div className="space-y-1 max-h-64 overflow-y-auto">
-                    {selectedTransaction.meta.logMessages.map((log: string, index: number) => (
-                      <div key={index} className="text-green-400">
-                        <span className="text-gray-500">[{index.toString().padStart(3, '0')}]</span> {log}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-            )}
             </div>
 
           ) : (
@@ -736,4 +1135,4 @@ export default function TransactionStream({
       </Dialog>
     </div>
   );
-} 
+}
