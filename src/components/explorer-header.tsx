@@ -12,7 +12,7 @@ const ExplorerHeader = () => {
     <div className="flex flex-col gap-8 w-full">
       <SlotsGrid />
 
-      <div className="flex flex-col gap-2 w-full">
+      <div className="flex flex-col gap-0 w-full mt-4">
         <h2 className="text-sm font-medium text-white uppercase tracking-wide">SURFNET</h2>
         <div className="flex gap-2 w-full">
           <div className="w-1/2">
@@ -21,6 +21,7 @@ const ExplorerHeader = () => {
                 name: 'RPC URL',
                 url: rpcUrl,
               }}
+              className="rounded-tl-md"
             />
           </div>
           <div className="w-1/2">
@@ -29,6 +30,7 @@ const ExplorerHeader = () => {
                 name: 'WS URL',
                 url: wsUrl,
               }}
+              className="rounded-tr-md"
             />
           </div>
         </div>
@@ -38,6 +40,7 @@ const ExplorerHeader = () => {
               name: 'SOURCE',
               url: rpcDatasourceUrl,
             }}
+            className="rounded-b-md"
           />
         </div>
       </div>

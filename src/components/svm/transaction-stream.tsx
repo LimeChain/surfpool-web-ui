@@ -30,6 +30,8 @@ export default function TransactionStream({
   const [transactionProfile, setTransactionProfile] = useState<any>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Map<string, boolean>>(new Map());
+  const [accountViewModes, setAccountViewModes] = useState<Map<string, 'parsed' | 'hex'>>(new Map());
   
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
@@ -49,6 +51,90 @@ export default function TransactionStream({
     filterByProgram,
     filterByAccount
   });
+
+  const toggleAccountExpansion = (address: string) => {
+    setExpandedAccounts(prev => {
+      const newMap = new Map(prev);
+      const currentState = newMap.get(address);
+      newMap.set(address, !currentState);
+      return newMap;
+    });
+  };
+
+  const isAccountExpanded = (address: string, hasChanges: boolean) => {
+    // Default: readonly accounts collapsed, readwrite accounts expanded
+    const defaultExpanded = hasChanges;
+    // If the address has been explicitly set, use that value, otherwise use the default
+    return expandedAccounts.has(address) ? expandedAccounts.get(address)! : defaultExpanded;
+  };
+
+  const getAccountViewMode = (address: string) => {
+    return accountViewModes.get(address) || 'parsed';
+  };
+
+  const toggleAccountViewMode = (address: string) => {
+    setAccountViewModes(prev => {
+      const newMap = new Map(prev);
+      const currentMode = newMap.get(address) || 'parsed';
+      newMap.set(address, currentMode === 'parsed' ? 'hex' : 'parsed');
+      return newMap;
+    });
+  };
+
+  const getHexData = (data: any) => {
+    if (typeof data === 'object' && data !== null) {
+      // If it's a base64 array, decode and convert to hex
+      if (Array.isArray(data) && data.length === 2 && data[1] === "base64") {
+        try {
+          const decoded = atob(data[0]);
+          return formatHexDump(decoded);
+        } catch (error) {
+          return data[0] || '<none>';
+        }
+      }
+      // For other objects, convert to hex representation
+      const jsonStr = JSON.stringify(data);
+      return formatHexDump(jsonStr);
+    }
+    // For strings, convert to hex
+    const str = String(data);
+    if (str === '' || str === 'null' || str === 'undefined') return '<none>';
+    return formatHexDump(str);
+  };
+
+  const formatHexDump = (data: string) => {
+    const bytes = Array.from(data).map(char => char.charCodeAt(0));
+    const lines = [];
+    
+    for (let i = 0; i < bytes.length; i += 16) {
+      const lineBytes = bytes.slice(i, i + 16);
+      
+      // Hex representation
+      const hexPart = lineBytes.map(byte => 
+        byte.toString(16).padStart(2, '0').toUpperCase()
+      ).join(' ');
+      
+      // ASCII representation
+      const asciiPart = lineBytes.map(byte => {
+        if (byte >= 32 && byte <= 126) {
+          return String.fromCharCode(byte);
+        } else {
+          return '.';
+        }
+      }).join('');
+      
+      // Line number (offset)
+      const offset = i.toString(16).padStart(4, '0').toUpperCase();
+      
+      // Create line with ASCII pushed to extreme right
+      const hexSection = `${offset}: ${hexPart}`;
+      const asciiSection = `|${asciiPart}|`;
+      
+      lines.push(`${hexSection.padEnd(70)}${asciiSection}`);
+    }
+    
+    return lines.join('\n');
+  };
 
   const fetchTransactionProfile = async (signature: string) => {
     try {
@@ -329,100 +415,297 @@ export default function TransactionStream({
                 </div>
               )}
 
-                            <div className="text-sm font-semibold text-zinc-200 mb-3">STATE CHANGES</div>
+                            <div className="text-sm font-semibold text-zinc-200 mb-3">STATE TRANSITIONS</div>
               {transactionProfile?.value?.state && (
                   <div className="bg-zinc-800/50 p-4 rounded-lg">
                     <div className="space-y-3">
-                    {Object.entries(transactionProfile.value.state.preExecution).map(([address, preData]) => {
+                    {Object.entries(transactionProfile.value.state.preExecution).map(([address, preData], index) => {
                       const postData = transactionProfile.value.state.postExecution[address];
+                      
+                      // Check if account is readonly (no changes)
                       const lamportsChanged = preData && postData && (preData as any).lamports !== (postData as any).lamports;
                       const ownerChanged = preData && postData && (preData as any).owner !== (postData as any).owner;
                       const executableChanged = preData && postData && (preData as any).executable !== (postData as any).executable;
                       const spaceChanged = preData && postData && (preData as any).space !== (postData as any).space;
                       const rentEpochChanged = preData && postData && (preData as any).rentEpoch !== (postData as any).rentEpoch;
+                      const dataChanged = preData && postData && (() => {
+                        const preDataValue = (preData as any).data;
+                        const postDataValue = (postData as any).data;
+                        
+                        // Handle different data types and encodings
+                        if (preDataValue === postDataValue) return false;
+                        
+                        // Convert to string for comparison
+                        const preStr = String(preDataValue);
+                        const postStr = String(postDataValue);
+                        
+                        return preStr !== postStr;
+                      })();
+                      
+                      // Check if account has changes
+                      const hasChanges = lamportsChanged || ownerChanged || executableChanged || dataChanged;
+
+                      // Helper function to extract programData from parsed data
+                      const extractProgramData = (data: any) => {
+                        if (typeof data === 'object' && data !== null) {
+                          // Check if it has the parsed structure with programData
+                          if (data.parsed && data.parsed.info && data.parsed.info.programData) {
+                            return data.parsed.info.programData;
+                          }
+                          
+                          // Check if it's a base64 array format: ["base64string", "base64"]
+                          if (Array.isArray(data) && data.length === 2 && data[1] === "base64") {
+                            try {
+                              const decoded = atob(data[0]);
+                              return decoded === '' ? '<none>' : decoded;
+                            } catch (error) {
+                              // If decoding fails, return the original base64 string
+                              return data[0] === '' ? '<none>' : data[0];
+                            }
+                          }
+                          
+                          // Fallback to JSON.stringify for other objects
+                          return JSON.stringify(data);
+                        }
+                        const stringValue = String(data);
+                        return stringValue === '' || stringValue === 'null' || stringValue === 'undefined' ? '<none>' : stringValue;
+                      };
+
+                      // Helper function to highlight character differences
+                      const highlightDifferences = (beforeValue: any, afterValue: any, isRed: boolean) => {
+                        // Handle data field specifically - normalize to string representation
+                        let beforeStr = String(beforeValue);
+                        let afterStr = String(afterValue);
+                        
+                        // For data fields, try to normalize the representation
+                        if (beforeValue !== null && afterValue !== null) {
+                          // If they're buffers or similar, try to get consistent string representation
+                          if (typeof beforeValue === 'object' && typeof afterValue === 'object') {
+                            beforeStr = JSON.stringify(beforeValue);
+                            afterStr = JSON.stringify(afterValue);
+                          }
+                        }
+                        
+                        const maxLength = Math.max(beforeStr.length, afterStr.length);
+                        const result = [];
+                        
+                        for (let i = 0; i < maxLength; i++) {
+                          const beforeChar = beforeStr[i] || '';
+                          const afterChar = afterStr[i] || '';
+                          const isDifferent = beforeChar !== afterChar;
+                          
+                          if (isDifferent) {
+                            const colorClass = isRed ? 'text-red-400 font-semibold' : 'text-green-400 font-semibold';
+                            // For red (before), show beforeChar. For green (after), show afterChar
+                            const charToShow = isRed ? beforeChar : afterChar;
+                            result.push(<span key={i} className={colorClass}>{charToShow}</span>);
+                          } else {
+                            // For both cases, show the appropriate character
+                            const charToShow = isRed ? beforeChar : afterChar;
+                            result.push(<span key={i}>{charToShow}</span>);
+                          }
+                        }
+                        
+                        return result;
+                      };
                       
                       return (
-                        <div key={address}>
-                          <div className="text-xs text-gray-500 mb-2">
-                            Account {address}
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            {/* Pre Execution */}
-                            <div>
-                              <div className="text-xs text-gray-400 mb-1 font-semibold">Before</div>
-                              {preData ? (
-                                <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded">
-                                  <div className="text-gray-300 text-xs">
-                                    <div className={lamportsChanged ? 'text-red-300 bg-red-900/30 px-1 rounded' : ''}>
-                                      Lamports: {(preData as any).lamports}
-                                    </div>
-                                    {(preData as any).owner && (
-                                      <div className={ownerChanged ? 'text-red-300 bg-red-900/30 px-1 rounded' : ''}>
-                                        Owner: {(preData as any).owner}
-                                      </div>
-                                    )}
-                                    {(preData as any).executable !== undefined && (
-                                      <div className={executableChanged ? 'text-red-300 bg-red-900/30 px-1 rounded' : ''}>
-                                        Executable: {(preData as any).executable ? 'Yes' : 'No'}
-                                      </div>
-                                    )}
-                                    {(preData as any).space !== undefined && (
-                                      <div className={spaceChanged ? 'text-red-300 bg-red-900/30 px-1 rounded' : ''}>
-                                        Space: {(preData as any).space}
-                                      </div>
-                                    )}
-                                    {(preData as any).rentEpoch !== undefined && (
-                                      <div className={rentEpochChanged ? 'text-red-300 bg-red-900/30 px-1 rounded' : ''}>
-                                        Rent Epoch: {(preData as any).rentEpoch}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
-                                  Account not found
-                                </div>
-                              )}
+                        <div key={address} className={index > 0 ? 'pt-4 border-t border-gray-700/30' : ''}>
+                          <div 
+                            className="text-xs text-gray-400 mb-2 font-mono cursor-pointer hover:bg-gray-700/20 p-1 rounded transition-colors flex items-center justify-between"
+                            onClick={() => toggleAccountExpansion(address)}
+                          >
+                            <div className="flex items-center">
+                              <span className="text-gray-500 mr-2">
+                                {isAccountExpanded(address, hasChanges) ? '▼' : '▶'}
+                              </span>
+                              <span className="text-gray-500">Account</span> <span className="text-gray-300 font-semibold ml-1">{address}</span>
                             </div>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${hasChanges ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/30' : 'bg-gray-700/30 text-gray-300 border border-gray-500/30'}`}>
+                              {hasChanges ? 'readwrite' : 'readonly'}
+                            </span>
+                          </div>
+                                                      {isAccountExpanded(address, hasChanges) && (
+                              <>
+                                {hasChanges ? (
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Pre Execution */}
+                              <div>
+                                <div className="text-xs text-gray-400 mb-1 font-semibold">
+                                  PRE-EXECUTION
+                                </div>
+                                {preData ? (
+                                  <div className={`${lamportsChanged || ownerChanged || spaceChanged || rentEpochChanged || dataChanged ? 'bg-red-900/20 border-red-500/30' : 'bg-gray-700/20 border-gray-500/30'} border p-2 rounded`}>
+                                    <div className="text-gray-300 text-xs">
+                                                                            <div className={`${lamportsChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
+                                        Lamports: {lamportsChanged ? highlightDifferences((preData as any).lamports, (postData as any).lamports, true) : (preData as any).lamports}
+                                      </div>
+                                      {(preData as any).owner && (
+                                        <div className={`${ownerChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
+                                          Owner: {ownerChanged ? highlightDifferences((preData as any).owner, (postData as any).owner, true) : (preData as any).owner}
+                                        </div>
+                                      )}
+                                      <div className={`${dataChanged ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1`}>
+                                        <div>Data:</div>
+                                        {getAccountViewMode(address) === 'parsed' 
+                                          ? (dataChanged ? highlightDifferences(extractProgramData((preData as any).data), extractProgramData((postData as any).data), true) : extractProgramData((preData as any).data))
+                                          : (
+                                            <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
+                                              {getHexData((preData as any).data)}
+                                            </div>
+                                          )
+                                        }
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
+                                    Account not found
+                                  </div>
+                                )}
+                              </div>
 
-                            {/* Post Execution */}
-                            <div>
-                              <div className="text-xs text-gray-400 mb-1 font-semibold">After</div>
-                              {postData ? (
-                                <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded">
-                                  <div className="text-gray-300 text-xs">
-                                    <div className={lamportsChanged ? 'text-green-300 bg-green-900/30 px-1 rounded' : ''}>
-                                      Lamports: {(postData as any).lamports}
-                                    </div>
-                                    {(postData as any).owner && (
-                                      <div className={ownerChanged ? 'text-green-300 bg-green-900/30 px-1 rounded' : ''}>
-                                        Owner: {(postData as any).owner}
-                                      </div>
-                                    )}
-                                    {(postData as any).executable !== undefined && (
-                                      <div className={executableChanged ? 'text-green-300 bg-green-900/30 px-1 rounded' : ''}>
-                                        Executable: {(postData as any).executable ? 'Yes' : 'No'}
-                                      </div>
-                                    )}
-                                    {(postData as any).space !== undefined && (
-                                      <div className={spaceChanged ? 'text-green-300 bg-green-900/30 px-1 rounded' : ''}>
-                                        Space: {(postData as any).space}
-                                      </div>
-                                    )}
-                                    {(postData as any).rentEpoch !== undefined && (
-                                      <div className={rentEpochChanged ? 'text-green-300 bg-green-900/30 px-1 rounded' : ''}>
-                                        Rent Epoch: {(postData as any).rentEpoch}
-                                      </div>
-                                    )}
+                              {/* Post Execution */}
+                              <div>
+                                <div className="text-xs text-gray-400 mb-1 font-semibold flex justify-between items-center">
+                                  POST-EXECUTION
+                                  <div className="flex text-xs gap-2">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAccountViewModes(prev => {
+                                          const newMap = new Map(prev);
+                                          newMap.set(address, 'parsed');
+                                          return newMap;
+                                        });
+                                      }}
+                                      className={`transition-colors ${
+                                        getAccountViewMode(address) === 'parsed' 
+                                          ? 'text-white font-medium' 
+                                          : 'text-gray-500 hover:text-gray-400'
+                                      }`}
+                                    >
+                                      Pretty
+                                    </button>
+                                    <span className="text-gray-600">|</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAccountViewModes(prev => {
+                                          const newMap = new Map(prev);
+                                          newMap.set(address, 'hex');
+                                          return newMap;
+                                        });
+                                      }}
+                                      className={`transition-colors ${
+                                        getAccountViewMode(address) === 'hex' 
+                                          ? 'text-white font-medium' 
+                                          : 'text-gray-500 hover:text-gray-400'
+                                      }`}
+                                    >
+                                      Hex
+                                    </button>
                                   </div>
                                 </div>
-                              ) : (
-                                <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
-                                  Account not found
-                                </div>
-                              )}
+                                {postData ? (
+                                  <div className={`${lamportsChanged || ownerChanged || spaceChanged || rentEpochChanged || dataChanged ? 'bg-green-900/20 border-green-500/30' : 'bg-gray-700/20 border-gray-500/30'} border p-2 rounded`}>
+                                    <div className="text-gray-300 text-xs">
+                                                                            <div className={`${lamportsChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
+                                        Lamports: {lamportsChanged ? highlightDifferences((preData as any).lamports, (postData as any).lamports, false) : (postData as any).lamports}
+                                      </div>
+                                      {(postData as any).owner && (
+                                        <div className={`${ownerChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
+                                          Owner: {ownerChanged ? highlightDifferences((preData as any).owner, (postData as any).owner, false) : (postData as any).owner}
+                                        </div>
+                                      )}
+                                      <div className={`${dataChanged ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1`}>
+                                        <div>Data:</div>
+                                        {getAccountViewMode(address) === 'parsed' 
+                                          ? (dataChanged ? highlightDifferences(extractProgramData((preData as any).data), extractProgramData((postData as any).data), false) : extractProgramData((postData as any).data))
+                                          : (
+                                            <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
+                                              {getHexData((postData as any).data)}
+                                            </div>
+                                          )
+                                        }
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded text-gray-400 text-xs">
+                                    Account not found
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            /* Readonly account - single display */
+                            <div className="bg-gray-700/20 border border-gray-500/30 p-2 rounded">
+                              <div className="text-xs text-gray-400 mb-1 font-semibold flex justify-between items-center">
+                                <div></div>
+                                <div className="flex text-xs gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAccountViewModes(prev => {
+                                        const newMap = new Map(prev);
+                                        newMap.set(address, 'parsed');
+                                        return newMap;
+                                      });
+                                    }}
+                                    className={`transition-colors ${
+                                      getAccountViewMode(address) === 'parsed' 
+                                        ? 'text-white font-medium' 
+                                        : 'text-gray-500 hover:text-gray-400'
+                                    }`}
+                                  >
+                                    Pretty
+                                  </button>
+                                  <span className="text-gray-600">|</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAccountViewModes(prev => {
+                                        const newMap = new Map(prev);
+                                        newMap.set(address, 'hex');
+                                        return newMap;
+                                      });
+                                    }}
+                                    className={`transition-colors ${
+                                      getAccountViewMode(address) === 'hex' 
+                                        ? 'text-white font-medium' 
+                                        : 'text-gray-500 hover:text-gray-400'
+                                    }`}
+                                  >
+                                    Hex
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="text-gray-300 text-xs">
+                                                                                                     {preData ? (
+                                      <>
+                                        <div className="px-1">Lamports: {(preData as any).lamports}</div>
+                                        {(preData as any).owner && <div className="px-1">Owner: {(preData as any).owner}</div>}
+                                        <div className="px-1">
+                                          <div>Data:</div>
+                                          {getAccountViewMode(address) === 'parsed' 
+                                            ? extractProgramData((preData as any).data)
+                                            : (
+                                              <div className="font-mono text-xs bg-black/20 p-2 rounded border border-gray-600/30 whitespace-pre overflow-x-auto ml-4 mt-0.5">
+                                                {getHexData((preData as any).data)}
+                                              </div>
+                                            )
+                                          }
+                                        </div>
+                                      </>
+                                    ) : (
+                                  <div className="text-gray-400">Account not found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                         </div>
                       );
                     })}

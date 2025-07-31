@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAppConfig } from '@/hooks/use-app-config'
 import { solanaWebSocketService } from '@/lib/solana-websocket-service'
+import { PlayIcon, PauseIcon } from '@heroicons/react/24/outline'
 
 export const SlotsGrid: React.FC = () => {
   const { rpcUrl, wsUrl, loading: configLoading, error: configError } = useAppConfig()
@@ -34,12 +35,51 @@ export const SlotsGrid: React.FC = () => {
   const [currentEpoch, setCurrentEpoch] = useState<number>(0)
   const [currentSlot, setCurrentSlot] = useState<number>(0)
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(DEFAULT_SLOTS_IN_EPOCH)
+  const [isClockPaused, setIsClockPaused] = useState<boolean>(false)
+  const [dimmingPhase, setDimmingPhase] = useState<number>(0)
+  const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false)
 
   
   // WebSocket refs
   const subscriptionIdRef = useRef<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
 
+
+  // Toggle clock pause/resume
+  const toggleClock = async () => {
+    try {
+      const method = isClockPaused ? 'surfnet_resumeClock' : 'surfnet_pauseClock'
+      
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: method,
+        }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.result !== undefined) {
+          setIsClockPaused(!isClockPaused)
+          
+          // If we're pausing, ignore slot events for a short period
+          if (!isClockPaused) {
+            setIgnoreSlotEvents(true)
+            setTimeout(() => {
+              setIgnoreSlotEvents(false)
+            }, 1000) // Ignore slot events for 1 second after pausing
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling clock:', error)
+    }
+  }
 
   // Fetch epoch and slot data from RPC
   const fetchEpochData = async () => {
@@ -112,6 +152,12 @@ export const SlotsGrid: React.FC = () => {
         // Update current slot with epoch-relative index
         setCurrentSlot(slotIndexInEpoch)
         
+        // Auto-exit pause mode when receiving slots (but not when ignoring events)
+        if (isClockPaused && !ignoreSlotEvents) {
+          console.log('🔄 Auto-exiting pause mode - receiving slot events')
+          setIsClockPaused(false)
+        }
+        
         // Update animation - move to next circle and add current to trail
         setCurrentRect((prev) => {
           const nextRect = (prev + 1) % totalCircles
@@ -138,7 +184,7 @@ export const SlotsGrid: React.FC = () => {
     return () => {
       solanaWebSocketService.off('slot', handleSlot);
     };
-  }, [totalCircles, slotsInEpoch]);
+  }, [totalCircles, slotsInEpoch, isClockPaused, ignoreSlotEvents]);
 
   // Listen for connection status changes
   useEffect(() => {
@@ -241,6 +287,15 @@ export const SlotsGrid: React.FC = () => {
           const b = Math.round(inactiveColor.b + (activeColor.b - inactiveColor.b) * progress)
           
           fillStyle = `rgb(${r}, ${g}, ${b})`
+          
+          // Apply blinking effect when clock is paused
+          if (isClockPaused && progress > 0 && dimmingPhase === 0) {
+            // Use inactive color when blinking off
+            const inactiveColor = hexToRgb(INACTIVE_SLOT_COLOR)
+            if (inactiveColor) {
+              fillStyle = `rgb(${inactiveColor.r}, ${inactiveColor.g}, ${inactiveColor.b})`
+            }
+          }
         } else {
           fillStyle = progress > 0.5 ? ACTIVE_SLOT_COLOR : INACTIVE_SLOT_COLOR
         }
@@ -255,7 +310,7 @@ export const SlotsGrid: React.FC = () => {
       rowCount++
     }
     
-  }, [canvasSize, currentRect, redRects, animationProgress, circleRadius, isClient])
+      }, [canvasSize, currentRect, redRects, animationProgress, circleRadius, isClient, isClockPaused, dimmingPhase])
 
   // Helper function to convert hex to RGB
   const hexToRgb = (hex: string) => {
@@ -275,6 +330,7 @@ export const SlotsGrid: React.FC = () => {
     // Initialize animation state after client-side hydration
     setRedRects(new Set([0])) // Start with first dot active
     setAnimationProgress(new Map([[0, 1]])) // Start with first dot fully active
+    setCurrentRect(0) // Ensure currentRect is initialized
     
     // Set initial canvas size if container is available
     if (containerRef.current) {
@@ -302,48 +358,29 @@ export const SlotsGrid: React.FC = () => {
     }
   }, [isClient])
 
-  // Start animation timer when component mounts
-  useEffect(() => {
-    if (isClient && totalCircles > 1) {
-      console.log('🎬 Starting animation timer')
-      
-      // Timer-based animation - independent of WebSocket
-      const animationTimer = setInterval(() => {
-        setCurrentRect((prev) => {
-          const nextRect = (prev + 1) % totalCircles
-          
-          // Add the previous circle to trail
-          setRedRects((prevRects) => {
-            const nextRects = new Set(prevRects)
-            nextRects.add(prev)
-            
-            // Reset trail if we're at the end
-            if (nextRect === 0) {
-              return new Set()
-            }
-            
-            return nextRects
-          })
-          
-          return nextRect
-        })
-      }, 500) // Move every 500ms
-      
-      return () => {
-        console.log('🛑 Stopping animation timer')
-        clearInterval(animationTimer)
-      }
-    }
-  }, [isClient, totalCircles])
+
+
+
+
+
   
   // Start WebSocket subscription separately
   useEffect(() => {
     if (isClient && totalCircles > 1) {
-      startSlotSubscription()
+      console.log('🔗 WebSocket effect triggered:', { 
+        isClient, 
+        totalCircles, 
+        hasSubscription: !!subscriptionIdRef.current,
+        wsConnected 
+      })
+      
+      if (!subscriptionIdRef.current) {
+        startSlotSubscription()
+      }
       
       // Periodic connection check
       const connectionCheck = setInterval(() => {
-        if (!wsConnected && !solanaWebSocketService.isConnected()) {
+        if (!wsConnected && !solanaWebSocketService.isConnected() && !subscriptionIdRef.current) {
           console.log('🔍 Connection check: WebSocket is closed, attempting reconnect...')
           startSlotSubscription()
         }
@@ -383,13 +420,32 @@ export const SlotsGrid: React.FC = () => {
     return () => clearInterval(animationInterval)
   }, [isClient, totalCircles, currentRect, redRects])
 
+  // Blinking animation when clock is paused
+  useEffect(() => {
+    if (!isClient || !isClockPaused) return;
+    
+    const blinkInterval = setInterval(() => {
+      setDimmingPhase((prev) => prev === 0 ? 1 : 0)
+    }, 500) // Blink every 500ms like a typical pause button
+    
+    return () => clearInterval(blinkInterval)
+  }, [isClient, isClockPaused])
+
 
 
   // Don't render anything until client-side hydration is complete
   if (!isClient) {
     return (
-      <div className="w-full">
-        <div className="text-sm font-medium text-zinc-300 uppercase mb-4">SLOTS</div>
+      <div className="w-full -mt-2">
+        <div className="flex justify-between items-center mb-4">
+          <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
+          <button
+            disabled
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+          >
+            <PauseIcon className="h-4 w-4 text-zinc-300" />
+          </button>
+        </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded"></div>
         </div>
@@ -405,8 +461,16 @@ export const SlotsGrid: React.FC = () => {
   // Show loading state while config is being fetched
   if (configLoading) {
     return (
-      <div className="w-full">
-        <div className="text-sm font-medium text-zinc-300 uppercase mb-4">SLOTS</div>
+      <div className="w-full -mt-2">
+        <div className="flex justify-between items-center mb-4">
+          <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
+          <button
+            disabled
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+          >
+            <PauseIcon className="h-4 w-4 text-zinc-300" />
+          </button>
+        </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded flex items-center justify-center">
             <div className="text-sm text-zinc-500">Loading configuration...</div>
@@ -424,8 +488,16 @@ export const SlotsGrid: React.FC = () => {
   // Show error state if config failed to load
   if (configError) {
     return (
-      <div className="w-full">
-        <div className="text-sm font-medium text-zinc-300 uppercase mb-4">SLOTS</div>
+      <div className="w-full -mt-2">
+        <div className="flex justify-between items-center mb-4">
+          <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
+          <button
+            disabled
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+          >
+            <PauseIcon className="h-4 w-4 text-zinc-300" />
+          </button>
+        </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded flex items-center justify-center">
             <div className="text-sm text-red-500">Failed to load configuration</div>
@@ -441,8 +513,21 @@ export const SlotsGrid: React.FC = () => {
   }
 
   return (
-    <div ref={containerRef} className="w-full">
-      <div className="text-sm font-medium text-zinc-300 uppercase mb-4">SLOTS</div>
+    <div ref={containerRef} className="w-full -mt-2">
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
+        <button
+          onClick={toggleClock}
+          className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+          title={isClockPaused ? 'Resume clock' : 'Pause clock'}
+        >
+          {isClockPaused ? (
+            <PlayIcon className="h-4 w-4 text-zinc-300" />
+          ) : (
+            <PauseIcon className="h-4 w-4 text-zinc-300" />
+          )}
+        </button>
+      </div>
       <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
         <canvas ref={canvasRef} style={{ background: 'transparent', width: '100%', height: canvasGridHeight }} />
       </div>

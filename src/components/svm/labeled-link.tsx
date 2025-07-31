@@ -12,9 +12,10 @@ export interface Endpoint {
 
 interface LabeledLinkProps {
   endpoint: Endpoint
+  className?: string
 }
 
-export function LabeledLink({ endpoint }: LabeledLinkProps) {
+export function LabeledLink({ endpoint, className = '' }: LabeledLinkProps) {
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({})
 
   const copyToClipboard = (text: string, id: string) => {
@@ -33,7 +34,7 @@ export function LabeledLink({ endpoint }: LabeledLinkProps) {
         {/* Query Endpoint */}
         <div className="flex-1 space-y-2">
           <div className="text-sm font-medium text-zinc-300 uppercase">{endpoint.title}</div>
-          <div className="flex h-[38px] items-center justify-between overflow-hidden rounded-md border border-zinc-700 bg-zinc-800 pr-[6px] font-mono text-xs">
+          <div className={`flex h-[38px] items-center justify-between overflow-hidden border border-zinc-700 bg-zinc-800 pr-[6px] font-mono text-xs ${className}`}>
             {' '}
             <div className="flex h-full items-center gap-2">
               <span className="flex h-full w-[72px] items-center justify-center border-r border-zinc-600 bg-zinc-900 p-1 text-zinc-300 uppercase">

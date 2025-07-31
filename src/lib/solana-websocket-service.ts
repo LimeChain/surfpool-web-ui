@@ -235,7 +235,9 @@ class SolanaWebSocketService extends EventEmitter {
           {
             mentions: []
           },
-          'processed'
+          {
+            commitment: 'processed'
+          }
         ]
       };
     }
