@@ -27,6 +27,12 @@ export const SlotsGrid: React.FC = () => {
   const [currentRect, setCurrentRect] = useState(0)
   // Store totalCircles in state for use in progress bar
   const [totalCircles, setTotalCircles] = useState(1)
+  const totalCirclesRef = useRef(totalCircles)
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    totalCirclesRef.current = totalCircles
+  }, [totalCircles])
   const [redRects, setRedRects] = useState<Set<number>>(new Set())
   const [animationProgress, setAnimationProgress] = useState<Map<number, number>>(new Map())
   const rowHeight = circleDiameter + verticalSpacing
@@ -43,6 +49,8 @@ export const SlotsGrid: React.FC = () => {
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false)
   const [dimmingPhase, setDimmingPhase] = useState<number>(0)
   const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false)
+
+
 
   // Time travel popup state
   const [showTimeTravel, setShowTimeTravel] = useState<boolean>(false)
@@ -280,7 +288,7 @@ export const SlotsGrid: React.FC = () => {
         
         // Update animation - move to next circle and add current to trail
         setCurrentRect((prev) => {
-          const nextRect = (prev + 1) % totalCircles
+          const nextRect = (prev + 1) % totalCirclesRef.current
           
           // Add the previous circle to trail
           setRedRects((prevRects) => {
@@ -304,7 +312,7 @@ export const SlotsGrid: React.FC = () => {
     return () => {
       solanaWebSocketService.off('slot', handleSlot);
     };
-  }, [totalCircles, slotsInEpoch, isClockPaused, ignoreSlotEvents]);
+  }, [slotsInEpoch, isClockPaused, ignoreSlotEvents]);
 
   // Listen for connection status changes
   useEffect(() => {
@@ -330,15 +338,12 @@ export const SlotsGrid: React.FC = () => {
   useEffect(() => {
     const container = containerRef.current
     if (!container) {
-      console.log('📏 Container not available for ResizeObserver')
       return
     }
 
-    console.log('📏 Setting up ResizeObserver for container')
     const observer = new ResizeObserver((entries) => {
       for (let entry of entries) {
         const width = entry.contentRect.width
-        console.log('📏 ResizeObserver detected width:', width)
         setCanvasSize({ width, height: canvasGridHeight })
       }
     })
@@ -348,12 +353,24 @@ export const SlotsGrid: React.FC = () => {
     // Also set initial size immediately if container has width
     const initialWidth = container.clientWidth
     if (initialWidth > 0) {
-      console.log('📏 Setting initial size from container:', initialWidth)
       setCanvasSize({ width: initialWidth, height: canvasGridHeight })
     }
     
-    return () => observer.disconnect()
-  }, [canvasGridHeight])
+    // Add window resize listener as well
+    const handleWindowResize = () => {
+      if (container) {
+        const newWidth = container.clientWidth
+        setCanvasSize({ width: newWidth, height: canvasGridHeight })
+      }
+    }
+    
+    window.addEventListener('resize', handleWindowResize)
+    
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', handleWindowResize)
+    }
+  }, []) // Remove canvasGridHeight dependency
 
   // Draw effect: only draws, does not set up interval
   useEffect(() => {
@@ -363,7 +380,6 @@ export const SlotsGrid: React.FC = () => {
     }
     const ctx = canvas.getContext('2d')
     if (!ctx) {
-      console.log('❌ Could not get canvas context')
       return
     }
 
@@ -444,7 +460,6 @@ export const SlotsGrid: React.FC = () => {
 
   // Set client flag on mount and initialize canvas size
   useEffect(() => {
-    console.log('🚀 Component mounting, setting isClient to true')
     setIsClient(true)
     
     // Initialize animation state after client-side hydration
@@ -452,13 +467,40 @@ export const SlotsGrid: React.FC = () => {
     setAnimationProgress(new Map([[0, 1]])) // Start with first dot fully active
     setCurrentRect(0) // Ensure currentRect is initialized
     
-    // Set initial canvas size if container is available
-    if (containerRef.current) {
-      const width = containerRef.current.clientWidth
-      if (width > 0) {
-        setCanvasSize({ width, height: canvasGridHeight })
+    // Set up ResizeObserver here since this useEffect is working
+    const container = containerRef.current
+    if (container) {
+      const observer = new ResizeObserver((entries) => {
+        for (let entry of entries) {
+          const width = entry.contentRect.width
+          setCanvasSize({ width, height: canvasGridHeight })
+        }
+      })
+
+      observer.observe(container)
+      
+      // Add window resize listener as well
+      const handleWindowResize = () => {
+        if (container) {
+          const newWidth = container.clientWidth
+          setCanvasSize({ width: newWidth, height: canvasGridHeight })
+        }
+      }
+      
+      window.addEventListener('resize', handleWindowResize)
+      
+      // Set initial canvas size if container is available
+      const initialWidth = container.clientWidth
+      if (initialWidth > 0) {
+        setCanvasSize({ width: initialWidth, height: canvasGridHeight })
+      }
+      
+      return () => {
+        observer.disconnect()
+        window.removeEventListener('resize', handleWindowResize)
       }
     }
+    
     // Fallback: force canvas size after a delay if still 0
     const fallbackTimer = setTimeout(() => {
       if (canvasSize.width === 0 && containerRef.current) {
@@ -471,6 +513,15 @@ export const SlotsGrid: React.FC = () => {
     return () => clearTimeout(fallbackTimer)
   }, [canvasGridHeight, canvasSize.width])
 
+  // Reset animation when circle count changes (due to resize)
+  useEffect(() => {
+    if (isClient && totalCircles > 1) {
+      setCurrentRect(0)
+      setRedRects(new Set([0]))
+      setAnimationProgress(new Map([[0, 1]]))
+    }
+  }, [totalCircles, isClient])
+
   // Fetch epoch data on component mount
   useEffect(() => {
     if (isClient) {
@@ -479,34 +530,17 @@ export const SlotsGrid: React.FC = () => {
   }, [isClient])
 
   
-  // Start WebSocket subscription separately
+  // Start WebSocket subscription once on mount
   useEffect(() => {
-    if (isClient && totalCircles > 1) {
-      console.log('🔗 WebSocket effect triggered:', { 
-        isClient, 
-        totalCircles, 
-        hasSubscription: !!subscriptionIdRef.current,
-        wsConnected 
-      })
-      
-      if (!subscriptionIdRef.current) {
-        startSlotSubscription()
-      }
-      
-      // Periodic connection check
-      const connectionCheck = setInterval(() => {
-        if (!wsConnected && !solanaWebSocketService.isConnected() && !subscriptionIdRef.current) {
-          console.log('🔍 Connection check: WebSocket is closed, attempting reconnect...')
-          startSlotSubscription()
-        }
-      }, 10000) // Check every 10 seconds to avoid interference
+    if (isClient && !subscriptionIdRef.current) {
+      console.log('🔗 Starting WebSocket subscription')
+      startSlotSubscription()
       
       return () => {
         stopSlotSubscription()
-        clearInterval(connectionCheck)
       }
     }
-  }, [isClient, totalCircles, startSlotSubscription, stopSlotSubscription, wsConnected])
+  }, [isClient, startSlotSubscription, stopSlotSubscription])
 
   // Smooth animation effect
   useEffect(() => {
