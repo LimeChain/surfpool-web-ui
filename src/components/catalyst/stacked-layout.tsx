@@ -42,7 +42,7 @@ function MobileSidebar({ open, close, children }: React.PropsWithChildren<{ open
         transition
         className="fixed inset-y-0 w-full max-w-80 p-2 transition duration-300 ease-in-out data-closed:-translate-x-full"
       >
-        <div className="flex h-full flex-col rounded-lg bg-white shadow-xs ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
+        <div className="flex h-full flex-col items-start rounded-lg bg-white shadow-xs ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
           <div className="-mb-3 px-4 pt-3">
             <Headless.CloseButton as={NavbarItem} aria-label="Close navigation">
               <CloseMenuIcon />
@@ -79,23 +79,15 @@ export function StackedLayout({
         </div>
         <div className="min-w-0 flex-1">
           <Navbar>
-            <img src="/assets/txtx.svg" alt="Txtx Logo" className="h-12" />
-            <NavbarItem href="/" current={path.endsWith('/')}>
-            <CommandLineIcon/>
+            <img src="/assets/txtx.png" alt="Txtx Logo" className="h-5 lg:h-4 lg:ml-4 ml-auto" />
+                        <NavbarItem href="/" current={path.endsWith('/')} className="max-lg:hidden">
+              <CommandLineIcon/>
               Console
             </NavbarItem>
-            <NavbarItem href="/subgraphs" current={path.endsWith('/subgraphs')}>
+            <NavbarItem href="/subgraphs" current={path.endsWith('/subgraphs')} className="max-lg:hidden">
               <CircleStackIcon />
               Data Indexing
             </NavbarItem>
-            {/* <NavbarItem href="/runbooks" current={path.endsWith('/operations')}>
-              <ShieldCheckIcon />
-              Operations
-            </NavbarItem> */}
-
-            {/* <NavbarItem href="/composer" current={path.endsWith('/composer')}>Composer</NavbarItem>
-            <NavbarItem href="/explorer" current={path.endsWith('/explorer')}>Explorer</NavbarItem>
-            <NavbarItem href="/simulator" current={path.endsWith('/simulator')}>Simulator</NavbarItem> */}
           </Navbar>
         </div>
       </header>

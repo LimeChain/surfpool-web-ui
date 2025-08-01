@@ -6,7 +6,7 @@ import { Dialog, DialogBody, DialogTitle } from '@/components/catalyst/dialog';
 import { useTransactionStream, formatSignature, getTransactionStatus, getTransactionPrograms } from '@/lib/solana-transaction-stream';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { useState } from 'react';
-import { CheckIcon, ClipboardIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ClipboardIcon, TrashIcon } from '@heroicons/react/24/outline';
 import * as jsonDiff from 'json-diff';
 
 interface TransactionStreamProps {
@@ -521,36 +521,30 @@ export default function TransactionStream({
 
   return (
     <div className="w-full mx-auto space-y-6 flex flex-col gap-4">
-      <div className="mb-0">
-        <h2 className="text-sm font-medium text-white uppercase tracking-wide">Transaction Logs</h2>
+      <div className="mb-0 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-white uppercase tracking-wide">Recent Transactions</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 h-8 rounded-md border border-zinc-600 bg-zinc-800">
+            <div className={`w-2 h-2 rounded-full ${
+              stats.connectionStatus === 'connected' ? 'bg-green-400' : 
+              stats.connectionStatus === 'connecting' ? 'bg-yellow-400' :
+              stats.connectionStatus === 'error' ? 'bg-red-400' : 'bg-gray-500'
+            }`} />
+            <span className="text-sm text-gray-300">
+              {wsUrl}
+            </span>
+          </div>
+          <button
+            onClick={clearTransactions}
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            title="Clear transaction logs"
+          >
+            <TrashIcon className="h-4 w-4 text-zinc-300" />
+          </button>
+        </div>
       </div>
       
       <div className='rounded-lg'>
-        {/* Controls and Stats */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={toggleStreaming}
-              color={isStreaming ? 'red' : 'green'}
-            >
-              {isStreaming ? 'Stop Stream' : 'Start Stream'}
-            </Button>
-            
-            <Button
-              onClick={clearTransactions}
-              color="zinc"
-            >
-              Clear
-            </Button>
-          </div>
-          
-          <div className="flex items-center gap-6 text-sm text-gray-300">
-            <div>Total: {stats.totalReceived}</div>
-            <div className="text-green-400">Success: {stats.successful}</div>
-            <div className="text-red-400">Failed: {stats.failed}</div>
-            <div>Last: {stats.lastUpdate.toLocaleTimeString()}</div>
-          </div>
-        </div>
 
         {error && (
           <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded text-red-300 text-sm">
@@ -558,25 +552,23 @@ export default function TransactionStream({
           </div>
         )}
 
-        {/* Connection Status */}
-        <div className="mb-4 flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${
-            stats.connectionStatus === 'connected' ? 'bg-green-400' : 
-            stats.connectionStatus === 'connecting' ? 'bg-yellow-400' :
-            stats.connectionStatus === 'error' ? 'bg-red-400' : 'bg-gray-500'
-          }`} />
-          <span className="text-sm text-gray-300">
-            {stats.connectionStatus === 'connected' ? 'Connected' : 
-             stats.connectionStatus === 'connecting' ? 'Connecting' :
-             stats.connectionStatus === 'error' ? 'Error' : 'Disconnected'} - {rpcUrl}
-          </span>
-        </div>
+
 
         {/* Transactions List */}
         <div className="space-y-3">
           {transactions.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              {isStreaming ? 'Waiting for transactions...' : 'No transactions received'}
+            <div className="flex items-center justify-center h-[280px] border border-zinc-600 rounded-lg">
+              <div className="text-center">
+                <div className="mb-4">
+                  <svg className="w-12 h-12 mx-auto text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div className="text-lg font-medium text-zinc-300 mb-2">No transactions</div>
+                <div className="text-sm text-zinc-500 max-w-md">
+                  Send transactions on your Surfnet to get detailed simulations, performance profiling, and data indexing
+                </div>
+              </div>
             </div>
           ) : (
             transactions.map((tx, index) => {
@@ -599,25 +591,36 @@ export default function TransactionStream({
                   className={`bg-zinc-800 p-4 ${statusColors[status as keyof typeof statusColors]} cursor-pointer hover:bg-zinc-700 transition-colors`}
                   onClick={() => handleTransactionClick(tx)}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <Badge color={badgeColors[status as keyof typeof badgeColors] as any} className="text-xs">
+                  <div className="flex items-start justify-between mb-0">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-gray-300 font-mono hidden sm:inline">
+                          {formatSignature(tx.transaction.signatures[0])}
+                        </span>
+                        <span className="text-sm text-gray-300 font-mono sm:hidden">
+                          {formatSignature(tx.transaction.signatures[0]).slice(0, 8)}⋯{formatSignature(tx.transaction.signatures[0]).slice(-8)}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(formatSignature(tx.transaction.signatures[0]), `sig-${tx.transaction.signatures[0]}`);
+                          }}
+                          className="sm:hidden flex h-4 w-4 items-center justify-center ml-1 text-gray-400 hover:text-gray-300 transition-colors"
+                        >
+                          <ClipboardIcon className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                      <Badge color={badgeColors[status as keyof typeof badgeColors] as any} className="text-xs w-fit">
                         {status.toUpperCase()}
                       </Badge>
-                      <span className="text-sm text-gray-300 font-mono">
-                        {formatSignature(tx.transaction.signatures[0])}
-                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 text-right flex flex-col justify-center">
+                      <div className="text-gray-500 uppercase tracking-wide">SLOT</div>
+                      <div className="font-mono font-bold text-white">{tx.slot}</div>
                     </div>
                   </div>
                   
                   <div className="text-xs text-gray-400 space-y-1">
-                    <div>Slot: {tx.slot}</div>
-                    {tx.meta && (
-                      <>
-                        <div>Fee: {tx.meta.fee} lamports</div>
-                        <div>Compute Units: {tx.meta.computeUnitsConsumed}</div>
-                      </>
-                    )}
                     {tx.meta?.err && (
                       <div className="text-red-400">
                         Error: {String(tx.meta.err)}

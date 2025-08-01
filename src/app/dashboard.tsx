@@ -11,13 +11,14 @@ import {
   DropdownMenu,
 } from '@/components/catalyst/dropdown'
 import { Navbar, NavbarItem, NavbarSection, NavbarSpacer } from '@/components/catalyst/navbar'
-import { Sidebar, SidebarHeader } from '@/components/catalyst/sidebar'
+import { Sidebar, SidebarHeader, SidebarItem, SidebarSection, SidebarBody } from '@/components/catalyst/sidebar'
 import { StackedLayout } from '@/components/catalyst/stacked-layout'
 import { useWorkspaceContext } from '@/contexts/workspace-context'
 import {
   ArrowRightStartOnRectangleIcon,
   PlayIcon,
 } from '@heroicons/react/16/solid'
+import { CommandLineIcon, CircleStackIcon } from '@heroicons/react/24/solid'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
@@ -79,8 +80,20 @@ export function Dashboard({ children }: { children: React.ReactNode }) {
         </Navbar>
       }
       sidebar={
-        <Sidebar>
+        <Sidebar className="!w-full lg:hidden">
           <SidebarHeader></SidebarHeader>
+          <SidebarBody className="!w-full">
+            <SidebarSection className="!w-full">
+                            <SidebarItem href="/" current={pathname === '/'} className="!w-full">
+                <CommandLineIcon className="h-5 w-5" data-slot="icon" />
+                Console
+              </SidebarItem>
+              <SidebarItem href="/subgraphs" current={pathname === '/subgraphs'} className="!w-full">
+                <CircleStackIcon className="h-5 w-5" data-slot="icon" />
+                Data Indexing
+              </SidebarItem>
+            </SidebarSection>
+          </SidebarBody>
         </Sidebar>
       }
     >

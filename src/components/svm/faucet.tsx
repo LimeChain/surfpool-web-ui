@@ -213,29 +213,29 @@ export default function Faucet() {
   }
 
   return (
-    <div className="faucet mx-auto flex min-h-[340px] w-full md:max-w-[340px] items-center justify-center rounded-xl bg-zinc-800 relative shadow-lg z-10 mt-3 md:mt-0">
+    <div className="faucet mx-auto flex min-h-[340px] w-full items-center justify-center rounded-xl bg-zinc-800 relative shadow-lg z-10 mt-3 md:mt-0">
       <div className="flex flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
         <Field className="w-full pl-4 uppercase">
-          <Label className="text-lg">Faucet</Label>
+          <Label className="text-sm sm:text-sm md:text-sm lg:text-sm">Faucet</Label>
         </Field>
 
         {tokenFundingRequests.map((tokenFundingRequest, index) => (
           <div key={index} className="flex flex-col items-center pr-1 pl-1">
             <Field className="rounded-xl bg-zinc-900 p-4">
-              <Label className="text-lg">Amount</Label>
+              <Label className="text-lg sm:text-lg md:text-lg lg:text-lg">Amount</Label>
               <div className="flex items-center space-x-2">
                 <input
                   id={`amount-${index}`}
                   type="text"
                   placeholder="0"
                   value={tokenFundingRequest.amount || ''}
-                  className="w-full border-none bg-transparent text-left text-4xl focus:outline-none"
+                  className="w-full border-none bg-transparent text-left sm:text-4xl md:text-4xl lg:text-4xl !text-4xl focus:outline-none"
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                   autoFocus
                 />
                 <div
-                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 p-2 text-xl uppercase hover:bg-zinc-800"
+                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 p-2 sm:text-xl md:text-xl lg:text-xl uppercase hover:bg-zinc-800"
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
@@ -259,7 +259,7 @@ export default function Faucet() {
         </div>
 
         <Field className="w-full pt-4 pl-4 uppercase">
-          <Label className="text-sm">Recipients</Label>
+          <Label className="sm:text-sm md:text-sm lg:text-sm">Recipients</Label>
         </Field>
 
         {reccipients.map((reccipient, index) => (
@@ -269,7 +269,7 @@ export default function Faucet() {
                 <input
                   type="text"
                   placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
-                  className="w-full border-none bg-transparent text-left text-[12px] focus:outline-none"
+                  className="w-full border-none bg-transparent text-left sm:text-[12px] md:text-[12px] lg:text-[12px] focus:outline-none"
                   value={reccipient.address}
                   onChange={(e) => {
                     const newRecipients = [...reccipients]

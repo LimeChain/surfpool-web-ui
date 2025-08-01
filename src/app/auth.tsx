@@ -169,7 +169,7 @@ export default function Auth() {
         <div className="flex h-full flex-col items-center justify-center">
           <div className="flex w-full items-start justify-between px-8">
             <div className="flex flex-col items-start">
-              <img src="/assets/txtx.svg" alt="Txtx Logo" className="mb-2" style={{ width: '64px', height: '64px' }} />
+              <img src="/assets/txtx.png" alt="Txtx Logo" className="mb-2" style={{ width: '64px', height: '64px' }} />
               <p className="text-white" style={{ opacity: 0.5 }}>
                 &copy; 2025 Txtx, Inc. All rights reserved.
               </p>

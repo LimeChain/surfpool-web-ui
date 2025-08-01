@@ -51,7 +51,7 @@ export const SlotsGrid: React.FC = () => {
   const [selectedEpoch, setSelectedEpoch] = useState<number>(1)
   const [selectedSlot, setSelectedSlot] = useState<number>(0)
   const [selectedTimeUnit, setSelectedTimeUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'years'>('days')
-  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number>(7)
+  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number | null>(null)
 
   
   // WebSocket refs
@@ -72,24 +72,29 @@ export const SlotsGrid: React.FC = () => {
   // Update blockchain clock
   const updateBlockchainClock = async () => {
     try {
-      let targetSlot: number
+      let timeTravelConfig: any
       
       switch (timeTravelMode) {
         case 'date':
-          // Convert date to slot (simplified calculation)
+          // Convert relative time to absolute timestamp
+          if (selectedTimeAmount === null || selectedTimeAmount === 0) {
+            console.error('❌ Please enter a valid time amount')
+            return
+          }
           const now = new Date()
-          const timeDiff = selectedDate.getTime() - now.getTime()
-          const slotDiff = Math.floor(timeDiff / 400) // Assuming 400ms per slot
-          targetSlot = currentSlot + slotDiff
+          const timeAmountMs = selectedTimeAmount * getTimeUnitInMs(selectedTimeUnit)
+          const targetTimestamp = Math.floor((now.getTime() + timeAmountMs) / 1000) // Convert to seconds
+          timeTravelConfig = { absoluteTimestamp: targetTimestamp }
           break
         case 'epoch':
-          targetSlot = selectedEpoch * slotsInEpoch
+          timeTravelConfig = { absoluteEpoch: selectedEpoch }
           break
         case 'slot':
-          targetSlot = selectedSlot
+          timeTravelConfig = { absoluteSlot: selectedSlot }
           break
         default:
-          targetSlot = currentSlot
+          console.error('Invalid time travel mode')
+          return
       }
 
       const response = await fetch(rpcUrl, {
@@ -100,20 +105,63 @@ export const SlotsGrid: React.FC = () => {
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
-          method: 'surfnet_setSlot',
-          params: [targetSlot],
+          method: 'surfnet_timeTravel',
+          params: [timeTravelConfig],
         }),
       })
 
       if (response.ok) {
         const data = await response.json()
-        if (data.result !== undefined) {
-          console.log('✅ Blockchain clock updated to slot:', targetSlot)
-          setShowTimeTravel(false)
+        console.log('📡 Time travel response:', data)
+        
+        if (data.result) {
+          console.log('✅ Time travel successful:', data.result)
+          
+          // Trigger full refresh of slot grid
+          console.log('🔄 Triggering full slot grid refresh after time travel')
+          
+          // Reset animation state
+          setRedRects(new Set())
+          setAnimationProgress(new Map())
+          setCurrentRect(0)
+          
+          // Fetch fresh epoch data from RPC
+          await fetchEpochData()
+          
+          // Update local state with the new epoch info
+          if (data.result.epoch !== undefined) {
+            setCurrentEpoch(data.result.epoch)
+          }
+          if (data.result.slot_index !== undefined) {
+            setCurrentSlot(data.result.slot_index)
+          }
+        } else {
+          console.error('❌ Time travel failed:', data.error)
         }
+      } else {
+        console.error('❌ HTTP error during time travel:', response.status)
       }
+      
+      // Always close the popup after attempting the request
+      setShowTimeTravel(false)
     } catch (error) {
-      console.error('Error updating blockchain clock:', error)
+      console.error('❌ Error during time travel:', error)
+      // Close popup even on error
+      setShowTimeTravel(false)
+    }
+  }
+
+  // Helper function to convert time units to milliseconds
+  const getTimeUnitInMs = (unit: string): number => {
+    switch (unit) {
+      case 'seconds': return 1000
+      case 'minutes': return 60 * 1000
+      case 'hours': return 60 * 60 * 1000
+      case 'days': return 24 * 60 * 60 * 1000
+      case 'weeks': return 7 * 24 * 60 * 60 * 1000
+      case 'months': return 30 * 24 * 60 * 60 * 1000 // Approximate
+      case 'years': return 365 * 24 * 60 * 60 * 1000 // Approximate
+      default: return 1000
     }
   }
 
@@ -654,7 +702,7 @@ export const SlotsGrid: React.FC = () => {
               onClick={() => setTimeTravelMode('date')}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 timeTravelMode === 'date'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-[#62D595] text-black'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
@@ -664,7 +712,7 @@ export const SlotsGrid: React.FC = () => {
               onClick={() => setTimeTravelMode('epoch')}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 timeTravelMode === 'epoch'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-[#62D595] text-black'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
@@ -674,7 +722,7 @@ export const SlotsGrid: React.FC = () => {
               onClick={() => setTimeTravelMode('slot')}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 timeTravelMode === 'slot'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-[#62D595] text-black'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
@@ -691,7 +739,7 @@ export const SlotsGrid: React.FC = () => {
                     <input
                       type="number"
                       value={selectedTimeAmount || ''}
-                      onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value) || 0)}
+                      onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value) || null)}
                       className="w-24 text-right text-2xl font-bold text-zinc-300 bg-transparent border-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       placeholder="7"
                       autoFocus
@@ -707,7 +755,7 @@ export const SlotsGrid: React.FC = () => {
                         <ListboxOption value="years">Years</ListboxOption>
                       </Listbox>
                     </div>
-                    <span className="text-sm text-zinc-400">from now</span>
+                    <span className="text-sm text-zinc-400">from clock</span>
                   </div>
                 </div>
               </div>
@@ -748,12 +796,13 @@ export const SlotsGrid: React.FC = () => {
         </DialogBody>
 
         <DialogActions className="!justify-center">
-          <Button
+          <button
             onClick={updateBlockchainClock}
-            className="px-6 py-2 bg-zinc-700 border border-zinc-600 rounded text-zinc-300 hover:bg-zinc-600 transition-colors font-medium"
+            className="px-6 py-2 bg-[#E034AE] border border-[#E034AE] rounded text-white hover:bg-[#C02A8F] transition-colors font-medium"
+            style={{ backgroundColor: '#E034AE', borderColor: '#E034AE' }}
           >
             Jump
-          </Button>
+          </button>
         </DialogActions>
         </div>
       </Dialog>
