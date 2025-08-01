@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAppConfig } from '@/hooks/use-app-config'
 import { solanaWebSocketService } from '@/lib/solana-websocket-service'
-import { PlayIcon, PauseIcon } from '@heroicons/react/24/outline'
+import { PlayIcon, PauseIcon, CalendarIcon } from '@heroicons/react/24/outline'
+import { Dialog, DialogBody, DialogTitle, DialogActions } from '@/components/catalyst/dialog'
+import { Button } from '../catalyst/button'
+import { Listbox, ListboxOption } from '@/components/catalyst/listbox'
+
+type TimeTravelMode = 'date' | 'epoch' | 'slot'
 
 export const SlotsGrid: React.FC = () => {
   const { rpcUrl, wsUrl, loading: configLoading, error: configError } = useAppConfig()
@@ -39,11 +44,78 @@ export const SlotsGrid: React.FC = () => {
   const [dimmingPhase, setDimmingPhase] = useState<number>(0)
   const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false)
 
+  // Time travel popup state
+  const [showTimeTravel, setShowTimeTravel] = useState<boolean>(false)
+  const [timeTravelMode, setTimeTravelMode] = useState<TimeTravelMode>('date')
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [selectedEpoch, setSelectedEpoch] = useState<number>(1)
+  const [selectedSlot, setSelectedSlot] = useState<number>(0)
+  const [selectedTimeUnit, setSelectedTimeUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'years'>('days')
+  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number>(7)
+
   
   // WebSocket refs
   const subscriptionIdRef = useRef<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
 
+
+  // Update selected epoch when current epoch changes
+  useEffect(() => {
+    setSelectedEpoch(currentEpoch + 1)
+  }, [currentEpoch])
+
+  // Toggle time travel popup
+  const toggleTimeTravel = () => {
+    setShowTimeTravel(!showTimeTravel)
+  }
+
+  // Update blockchain clock
+  const updateBlockchainClock = async () => {
+    try {
+      let targetSlot: number
+      
+      switch (timeTravelMode) {
+        case 'date':
+          // Convert date to slot (simplified calculation)
+          const now = new Date()
+          const timeDiff = selectedDate.getTime() - now.getTime()
+          const slotDiff = Math.floor(timeDiff / 400) // Assuming 400ms per slot
+          targetSlot = currentSlot + slotDiff
+          break
+        case 'epoch':
+          targetSlot = selectedEpoch * slotsInEpoch
+          break
+        case 'slot':
+          targetSlot = selectedSlot
+          break
+        default:
+          targetSlot = currentSlot
+      }
+
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_setSlot',
+          params: [targetSlot],
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.result !== undefined) {
+          console.log('✅ Blockchain clock updated to slot:', targetSlot)
+          setShowTimeTravel(false)
+        }
+      }
+    } catch (error) {
+      console.error('Error updating blockchain clock:', error)
+    }
+  }
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
@@ -358,11 +430,6 @@ export const SlotsGrid: React.FC = () => {
     }
   }, [isClient])
 
-
-
-
-
-
   
   // Start WebSocket subscription separately
   useEffect(() => {
@@ -431,20 +498,26 @@ export const SlotsGrid: React.FC = () => {
     return () => clearInterval(blinkInterval)
   }, [isClient, isClockPaused])
 
-
-
   // Don't render anything until client-side hydration is complete
   if (!isClient) {
     return (
       <div className="w-full -mt-2">
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
-          <button
-            disabled
-            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
-          >
-            <PauseIcon className="h-4 w-4 text-zinc-300" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <PauseIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <CalendarIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+          </div>
         </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded"></div>
@@ -464,12 +537,20 @@ export const SlotsGrid: React.FC = () => {
       <div className="w-full -mt-2">
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
-          <button
-            disabled
-            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
-          >
-            <PauseIcon className="h-4 w-4 text-zinc-300" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <PauseIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <CalendarIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+          </div>
         </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded flex items-center justify-center">
@@ -491,12 +572,20 @@ export const SlotsGrid: React.FC = () => {
       <div className="w-full -mt-2">
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
-          <button
-            disabled
-            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
-          >
-            <PauseIcon className="h-4 w-4 text-zinc-300" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <PauseIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+            <button
+              disabled
+              className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 opacity-50 cursor-not-allowed"
+            >
+              <CalendarIcon className="h-4 w-4 text-zinc-300" />
+            </button>
+          </div>
         </div>
         <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
           <div className="w-full h-full bg-[#2F2F32] rounded flex items-center justify-center">
@@ -516,17 +605,26 @@ export const SlotsGrid: React.FC = () => {
     <div ref={containerRef} className="w-full -mt-2">
       <div className="flex justify-between items-center mb-4">
         <div className="text-sm font-medium text-zinc-300 uppercase">SLOTS</div>
-        <button
-          onClick={toggleClock}
-          className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          title={isClockPaused ? 'Resume clock' : 'Pause clock'}
-        >
-          {isClockPaused ? (
-            <PlayIcon className="h-4 w-4 text-zinc-300" />
-          ) : (
-            <PauseIcon className="h-4 w-4 text-zinc-300" />
-          )}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={toggleClock}
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            title={isClockPaused ? 'Resume clock' : 'Pause clock'}
+          >
+            {isClockPaused ? (
+              <PlayIcon className="h-4 w-4 text-zinc-300" />
+            ) : (
+              <PauseIcon className="h-4 w-4 text-zinc-300" />
+            )}
+          </button>
+          <button
+            onClick={toggleTimeTravel}
+            className="flex items-center justify-center w-8 h-8 rounded-md border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            title="Time/Calendar controls"
+          >
+            <CalendarIcon className="h-4 w-4 text-zinc-300" />
+          </button>
+        </div>
       </div>
       <div className="overflow-hidden" style={{ height: canvasGridHeight, width: '100%' }}>
         <canvas ref={canvasRef} style={{ background: 'transparent', width: '100%', height: canvasGridHeight }} />
@@ -544,6 +642,121 @@ export const SlotsGrid: React.FC = () => {
           }}
         />
       </div>
+
+      {/* Time Travel Dialog */}
+      <Dialog open={showTimeTravel} onClose={() => setShowTimeTravel(false)} size="md">
+        <div className="text-center">
+          <DialogTitle className="text-center  uppercase tracking-wide mb-8">TIME TRAVEL</DialogTitle>
+          
+                    {/* Mode Selection */}
+          <div className="flex gap-2 mb-8 justify-center">
+            <button
+              onClick={() => setTimeTravelMode('date')}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                timeTravelMode === 'date'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+              }`}
+            >
+              DATE
+            </button>
+            <button
+              onClick={() => setTimeTravelMode('epoch')}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                timeTravelMode === 'epoch'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+              }`}
+            >
+              EPOCH
+            </button>
+            <button
+              onClick={() => setTimeTravelMode('slot')}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                timeTravelMode === 'slot'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+              }`}
+            >
+              SLOT
+            </button>
+          </div>
+
+        <DialogBody>
+          {timeTravelMode === 'date' && (
+            <div className="space-y-4">
+              <div>
+                <div className="relative">
+                  <div className="flex gap-3 items-center justify-center -ml-8">
+                    <input
+                      type="number"
+                      value={selectedTimeAmount || ''}
+                      onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value) || 0)}
+                      className="w-24 text-right text-2xl font-bold text-zinc-300 bg-transparent border-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="7"
+                      autoFocus
+                    />
+                    <div className="w-25">
+                      <Listbox value={selectedTimeUnit} onChange={setSelectedTimeUnit}>
+                        <ListboxOption value="seconds">Seconds</ListboxOption>
+                        <ListboxOption value="minutes">Minutes</ListboxOption>
+                        <ListboxOption value="hours">Hours</ListboxOption>
+                        <ListboxOption value="days">Days</ListboxOption>
+                        <ListboxOption value="weeks">Weeks</ListboxOption>
+                        <ListboxOption value="months">Months</ListboxOption>
+                        <ListboxOption value="years">Years</ListboxOption>
+                      </Listbox>
+                    </div>
+                    <span className="text-sm text-zinc-400">from now</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {timeTravelMode === 'epoch' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-2">Provide Epoch to set</label>
+                <input
+                  type="number"
+                  value={selectedEpoch || ''}
+                  onChange={(e) => setSelectedEpoch(parseInt(e.target.value) || 0)}
+                  className="w-full text-center text-5xl font-bold text-zinc-300 bg-transparent border-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  placeholder={`${currentEpoch + 1}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+          )}
+
+          {timeTravelMode === 'slot' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Provide Absolute Slot to set</label>
+                <input
+                  type="number"
+                  value={selectedSlot || ''}
+                  onChange={(e) => setSelectedSlot(parseInt(e.target.value) || 0)}
+                  className="w-full text-center text-3xl font-bold text-zinc-300 bg-transparent border-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  placeholder={`${currentSlot + currentEpoch * 432000}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+          )}
+        </DialogBody>
+
+        <DialogActions className="!justify-center">
+          <Button
+            onClick={updateBlockchainClock}
+            className="px-6 py-2 bg-zinc-700 border border-zinc-600 rounded text-zinc-300 hover:bg-zinc-600 transition-colors font-medium"
+          >
+            Jump
+          </Button>
+        </DialogActions>
+        </div>
+      </Dialog>
     </div>
   )
 }

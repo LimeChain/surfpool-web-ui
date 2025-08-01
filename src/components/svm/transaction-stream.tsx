@@ -6,6 +6,7 @@ import { Dialog, DialogBody, DialogTitle } from '@/components/catalyst/dialog';
 import { useTransactionStream, formatSignature, getTransactionStatus, getTransactionPrograms } from '@/lib/solana-transaction-stream';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { useState } from 'react';
+import { CheckIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import * as jsonDiff from 'json-diff';
 
 interface TransactionStreamProps {
@@ -196,6 +197,7 @@ export default function TransactionStream({
   const [expandedAccounts, setExpandedAccounts] = useState<Map<string, boolean>>(new Map());
   const [accountViewModes, setAccountViewModes] = useState<Map<string, 'parsed' | 'hex'>>(new Map());
   const [expandedInstructions, setExpandedInstructions] = useState<Set<number>>(new Set());
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
@@ -257,6 +259,24 @@ export default function TransactionStream({
       }
       return newSet;
     });
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedStates((prev) => ({ ...prev, [id]: true }));
+    setTimeout(() => {
+      setCopiedStates((prev) => ({ ...prev, [id]: false }));
+    }, 2000);
+  };
+
+  const truncateAddress = (address: string) => {
+    if (address.length <= 16) return address;
+    return `${address.slice(0, 8)}⋯${address.slice(-8)}`;
+  };
+
+  const truncateOwnerAddress = (address: string) => {
+    if (address.length <= 8) return address;
+    return `${address.slice(0, 4)}⋯${address.slice(-4)}`;
   };
 
   const getHexData = (data: any) => {
@@ -832,7 +852,25 @@ export default function TransactionStream({
                                             <span className="text-gray-500 mr-2">
                                               {isAccountExpanded(index, address, hasChanges) ? '▼' : '▶'}
                                             </span>
-                                            <span className="text-gray-500">Account</span> <span className="text-gray-300 font-semibold ml-1">{address}</span>
+                                            <span className="text-gray-500">Account</span> 
+                                            <span className="text-gray-300 font-semibold ml-1">
+                                              <span className="hidden sm:inline">{address}</span>
+                                              <span className="sm:hidden">{truncateAddress(address)}</span>
+                                            </span>
+                                            <button
+                                              onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                copyToClipboard(address, `account-${address}`);
+                                              }}
+                                              aria-label={`Copy account address ${address}`}
+                                              className="sm:hidden flex h-4 w-4 items-center justify-center ml-1 text-gray-400 hover:text-gray-300 transition-colors"
+                                            >
+                                              {copiedStates[`account-${address}`] ? (
+                                                <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+                                              ) : (
+                                                <ClipboardIcon className="h-2.5 w-2.5" />
+                                              )}
+                                            </button>
                                           </div>
                                           <div className="flex items-center gap-2">
                                                                                                   <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${isWritable ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/30' : 'bg-gray-700/30 text-gray-300 border border-gray-500/30'}`}>
@@ -845,10 +883,18 @@ export default function TransactionStream({
                                                 accountState.accountChange.type === 'delete' ? 'bg-red-900/30 text-red-300 border border-red-500/30' :
                                                 'bg-gray-700/30 text-gray-300 border border-gray-500/30'
                                               }`}>
-                                                {accountState.accountChange.type === 'create' ? 'ACCOUNT CREATION' :
-                                                 accountState.accountChange.type === 'update' ? 'ACCOUNT UPDATE' :
-                                                 accountState.accountChange.type === 'delete' ? 'ACCOUNT DELETION' :
-                                                 accountState.accountChange.type.toUpperCase()}
+                                                <span className="hidden sm:inline">
+                                                  {accountState.accountChange.type === 'create' ? 'ACCOUNT CREATION' :
+                                                   accountState.accountChange.type === 'update' ? 'ACCOUNT UPDATE' :
+                                                   accountState.accountChange.type === 'delete' ? 'ACCOUNT DELETION' :
+                                                   accountState.accountChange.type.toUpperCase()}
+                                                </span>
+                                                <span className="sm:hidden">
+                                                  {accountState.accountChange.type === 'create' ? 'CREATION' :
+                                                   accountState.accountChange.type === 'update' ? 'UPDATE' :
+                                                   accountState.accountChange.type === 'delete' ? 'DELETION' :
+                                                   accountState.accountChange.type.toUpperCase()}
+                                                </span>
                                               </span>
                                             )}
                                           </div>
@@ -867,7 +913,26 @@ export default function TransactionStream({
                                                     {accountState.accountChange.data.owner && (
                                                       <div className="flex justify-between items-center">
                                                         <span className="inline-block w-16 text-left">Owner:</span>
-                                                        <span className="text-right">{accountState.accountChange.data.owner}</span>
+                                                        <div className="flex items-center gap-1">
+                                                          <button
+                                                            onClick={(e: React.MouseEvent) => {
+                                                              e.stopPropagation();
+                                                              copyToClipboard(accountState.accountChange.data.owner, `owner-${accountState.accountChange.data.owner}`);
+                                                            }}
+                                                            aria-label={`Copy owner address ${accountState.accountChange.data.owner}`}
+                                                            className="sm:hidden flex h-4 w-4 items-center justify-center text-gray-400 hover:text-gray-300 transition-colors"
+                                                          >
+                                                            {copiedStates[`owner-${accountState.accountChange.data.owner}`] ? (
+                                                              <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+                                                            ) : (
+                                                              <ClipboardIcon className="h-2.5 w-2.5" />
+                                                            )}
+                                                          </button>
+                                                          <span className="text-right">
+                                                            <span className="hidden sm:inline">{accountState.accountChange.data.owner}</span>
+                                                            <span className="sm:hidden">{truncateOwnerAddress(accountState.accountChange.data.owner)}</span>
+                                                          </span>
+                                                        </div>
                                                       </div>
                                                     )}
                                                     <div>
@@ -900,11 +965,31 @@ export default function TransactionStream({
                                                            <div className={`${accountState.accountChange.data[0].lamports !== accountState.accountChange.data[1].lamports ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
                                                              <span className="inline-block w-16 text-left">Lamports:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].lamports, accountState.accountChange.data[1].lamports, true)}</span>
                                                            </div>
-                                                                                                                        {accountState.accountChange.data[0].owner && (
-                                                               <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
-                                                                 <span className="inline-block w-16 text-left">Owner:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, true)}</span>
+                                                                                                                                                                                   {accountState.accountChange.data[0].owner && (
+                                                             <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-red-200 bg-red-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                               <span className="inline-block w-16 text-left">Owner:</span> 
+                                                               <div className="flex items-center gap-1">
+                                                                 <button
+                                                                   onClick={(e: React.MouseEvent) => {
+                                                                     e.stopPropagation();
+                                                                     copyToClipboard(accountState.accountChange.data[0].owner, `owner-pre-${accountState.accountChange.data[0].owner}`);
+                                                                   }}
+                                                                   aria-label={`Copy owner address ${accountState.accountChange.data[0].owner}`}
+                                                                   className="sm:hidden flex h-4 w-4 items-center justify-center text-gray-400 hover:text-gray-300 transition-colors"
+                                                                 >
+                                                                   {copiedStates[`owner-pre-${accountState.accountChange.data[0].owner}`] ? (
+                                                                     <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+                                                                   ) : (
+                                                                     <ClipboardIcon className="h-2.5 w-2.5" />
+                                                                   )}
+                                                                 </button>
+                                                                 <span className="text-right">
+                                                                   <span className="hidden sm:inline">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, true)}</span>
+                                                                   <span className="sm:hidden">{truncateOwnerAddress(accountState.accountChange.data[0].owner)}</span>
+                                                                 </span>
                                                                </div>
-                                                             )}
+                                                             </div>
+                                                           )}
                                                            <div>
                                                              <div className="inline-block w-16 text-left">Data:</div>
                                                              {getAccountViewMode(address) === 'parsed' 
@@ -926,7 +1011,7 @@ export default function TransactionStream({
                                                   <div>
                                                     <div className="text-xs text-gray-400 mb-1 flex justify-between items-center">
                                                       POST-EXECUTION
-                                                      <div className="flex text-xs gap-2">
+                                                      <div className="hidden sm:flex text-xs gap-2">
                                                         <button
                                                           onClick={(e) => {
                                                             e.stopPropagation();
@@ -969,11 +1054,31 @@ export default function TransactionStream({
                                                            <div className={`${accountState.accountChange.data[0].lamports !== accountState.accountChange.data[1].lamports ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
                                                              <span className="inline-block w-16 text-left">Lamports:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].lamports, accountState.accountChange.data[1].lamports, false)}</span>
                                                            </div>
-                                                                                                                        {accountState.accountChange.data[1].owner && (
-                                                               <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
-                                                                 <span className="inline-block w-16 text-left">Owner:</span> <span className="text-right">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, false)}</span>
+                                                                                                                                                                                   {accountState.accountChange.data[1].owner && (
+                                                             <div className={`${accountState.accountChange.data[0].owner !== accountState.accountChange.data[1].owner ? 'text-green-200 bg-green-900/40 rounded' : ''} px-1 flex justify-between items-center`}>
+                                                               <span className="inline-block w-16 text-left">Owner:</span> 
+                                                               <div className="flex items-center gap-1">
+                                                                 <button
+                                                                   onClick={(e: React.MouseEvent) => {
+                                                                     e.stopPropagation();
+                                                                     copyToClipboard(accountState.accountChange.data[1].owner, `owner-post-${accountState.accountChange.data[1].owner}`);
+                                                                   }}
+                                                                   aria-label={`Copy owner address ${accountState.accountChange.data[1].owner}`}
+                                                                   className="sm:hidden flex h-4 w-4 items-center justify-center text-gray-400 hover:text-gray-300 transition-colors"
+                                                                 >
+                                                                   {copiedStates[`owner-post-${accountState.accountChange.data[1].owner}`] ? (
+                                                                     <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+                                                                   ) : (
+                                                                     <ClipboardIcon className="h-2.5 w-2.5" />
+                                                                   )}
+                                                                 </button>
+                                                                 <span className="text-right">
+                                                                   <span className="hidden sm:inline">{highlightDifferences(accountState.accountChange.data[0].owner, accountState.accountChange.data[1].owner, false)}</span>
+                                                                   <span className="sm:hidden">{truncateOwnerAddress(accountState.accountChange.data[1].owner)}</span>
+                                                                 </span>
                                                                </div>
-                                                             )}
+                                                             </div>
+                                                           )}
                                                            <div>
                                                              <div className="inline-block w-16 text-left">Data:</div>
                                                              {getAccountViewMode(address) === 'parsed' 
@@ -1007,7 +1112,26 @@ export default function TransactionStream({
                                                     {accountState.accountChange.data.owner && (
                                                       <div className="flex justify-between items-center">
                                                         <span className="inline-block w-16 text-left">Owner:</span>
-                                                        <span className="text-right">{accountState.accountChange.data.owner}</span>
+                                                        <div className="flex items-center gap-1">
+                                                          <button
+                                                            onClick={(e: React.MouseEvent) => {
+                                                              e.stopPropagation();
+                                                              copyToClipboard(accountState.accountChange.data.owner, `owner-${accountState.accountChange.data.owner}`);
+                                                            }}
+                                                            aria-label={`Copy owner address ${accountState.accountChange.data.owner}`}
+                                                            className="sm:hidden flex h-4 w-4 items-center justify-center text-gray-400 hover:text-gray-300 transition-colors"
+                                                          >
+                                                            {copiedStates[`owner-${accountState.accountChange.data.owner}`] ? (
+                                                              <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+                                                            ) : (
+                                                              <ClipboardIcon className="h-2.5 w-2.5" />
+                                                            )}
+                                                          </button>
+                                                          <span className="text-right">
+                                                            <span className="hidden sm:inline">{accountState.accountChange.data.owner}</span>
+                                                            <span className="sm:hidden">{truncateOwnerAddress(accountState.accountChange.data.owner)}</span>
+                                                          </span>
+                                                        </div>
                                                       </div>
                                                     )}
                                                     <div>

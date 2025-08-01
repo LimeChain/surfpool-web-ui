@@ -37,8 +37,14 @@ export function LabeledLink({ endpoint, className = '' }: LabeledLinkProps) {
           <div className={`flex h-[38px] items-center justify-between overflow-hidden border border-zinc-700 bg-zinc-800 pr-[6px] font-mono text-xs ${className}`}>
             {' '}
             <div className="flex h-full items-center gap-2">
-              <span className="flex h-full w-[72px] items-center justify-center border-r border-zinc-600 bg-zinc-900 p-1 text-zinc-300 uppercase">
-                {endpoint.name}
+              <span className="flex h-full w-[40px] sm:w-[72px] items-center justify-center border-r border-zinc-600 bg-zinc-900 p-1 text-zinc-300 uppercase">
+                <span className="hidden sm:inline">{endpoint.name}</span>
+                <span className="sm:hidden">
+                  {endpoint.name === 'RPC URL' ? 'RPC' :
+                   endpoint.name === 'WS URL' ? 'WS' :
+                   endpoint.name === 'SOURCE' ? 'SRC' :
+                   endpoint.name}
+                </span>
               </span>
               <span className="flex h-full items-center text-xs">{endpoint.url}</span>
             </div>
