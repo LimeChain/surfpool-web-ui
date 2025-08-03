@@ -21,6 +21,7 @@
     "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
     "confetti": "^2.0.6",
+    "fast-myers-diff": "^3.2.0",
     "framer-motion": "12.23.6",
     "graphiql": "5.0.6",
     "graphql": "16.11.0",
@@ -28,6 +29,7 @@
     "jose": "^6.0.10",
     "json-diff": "^1.0.6",
     "next": "15.4.1",
+    "pretty-json-custom-element": "^1.1.19",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

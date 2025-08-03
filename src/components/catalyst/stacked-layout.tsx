@@ -299,7 +299,7 @@ export function StackedLayout({
 
                   <div className="flex items-start gap-8">
                     <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                      Build, test, and deploy your programs locally with all the tools you need to succeed.
+                      Build, test, and deploy your programs locally with all the features you need to succeed.
                     </p>
                   </div>
                 </div>

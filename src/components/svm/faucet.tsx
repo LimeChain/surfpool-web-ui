@@ -232,7 +232,6 @@ export default function Faucet() {
                   value={tokenFundingRequest.amount || ''}
                   className="w-full border-none bg-transparent text-left sm:text-4xl md:text-4xl lg:text-4xl !text-4xl focus:outline-none"
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
-                  autoFocus
                 />
                 <div
                   className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 p-2 sm:text-xl md:text-xl lg:text-xl uppercase hover:bg-zinc-800"
@@ -311,7 +310,6 @@ export default function Faucet() {
           placeholder="Search for ticker (WSOL, $TRUMP, etc.)"
           className="w-full border-none bg-transparent text-left text-xl focus:outline-none"
           onChange={(e) => handleTokenSearch(e.target.value)}
-          autoFocus
           ref={(input) => {
             if (tokenDialogOpen > 0 && input) {
               input.focus();
