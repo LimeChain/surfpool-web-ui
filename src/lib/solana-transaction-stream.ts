@@ -83,6 +83,33 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
   const subscriptionIdRef = useRef<string | null>(null);
   const processedSignaturesRef = useRef<Set<string>>(new Set());
 
+  const processTransactionSignature = useCallback(async (signature: string, err?: any) => {
+    // Check if we've already processed this signature
+    if (processedSignaturesRef.current.has(signature)) {
+      console.log('🔄 Signature already processed, skipping:', signature);
+      return;
+    }
+    
+    // Mark signature as processed
+    processedSignaturesRef.current.add(signature);
+    
+    // If transaction has an error, just update stats
+    if (err) {
+      console.log('❌ Transaction failed:', signature, err);
+      setStats(prev => ({
+        ...prev,
+        totalReceived: prev.totalReceived + 1,
+        failed: prev.failed + 1,
+        lastUpdate: new Date()
+      }));
+      return;
+    }
+    
+    // Fetch full transaction details
+    console.log('🔄 Fetching transaction details for signature:', signature);
+    await fetchTransactionDetails(signature);
+  }, []);
+
   const fetchTransactionDetails = useCallback(async (signature: string) => {
     try {
       console.log('🌐 Fetching transaction details from:', rpcUrl);
@@ -226,6 +253,49 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     }
   }, [isStreaming, startStreaming, stopStreaming]);
 
+  const fetchLocalSignatures = useCallback(async () => {
+    try {
+      console.log('🔍 Fetching local signatures from RPC endpoint...');
+      
+      const requestBody = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'surfnet_getLocalSignatures',
+        params: []
+      };
+      
+      console.log('📤 Request body:', requestBody);
+      
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
+
+      const data = await response.json();
+      console.log('📥 Local signatures response:', data);
+      
+      if (data.result && data.result.value && Array.isArray(data.result.value)) {
+        console.log('✅ Local signatures received:', data.result.value.length, 'signatures');
+        
+        // Process each signature using the unified processor
+        for (const signatureData of data.result.value) {
+          const signature = signatureData.signature;
+          await processTransactionSignature(signature, signatureData.err);
+        }
+      } else {
+        console.log('❌ No local signatures found or invalid response');
+      }
+    } catch (err) {
+      console.error('Error fetching local signatures:', err);
+    }
+  }, [rpcUrl, fetchTransactionDetails]);
+
   const clearTransactions = useCallback(() => {
     setTransactions([]);
     processedSignaturesRef.current.clear();
@@ -248,18 +318,8 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
         console.log('✅ SIGNATURE FOUND:', signature);
         console.log('📊 Log data:', data.value);
         
-        // Check if we've already processed this signature
-        if (processedSignaturesRef.current.has(signature)) {
-          console.log('🔄 Signature already processed, skipping:', signature);
-          return;
-        }
-        
-        // Mark signature as processed
-        processedSignaturesRef.current.add(signature);
-        
-        // Fetch full transaction details
-        console.log('🔄 Fetching transaction details for signature:', signature);
-        fetchTransactionDetails(signature);
+        // Use the unified processor
+        processTransactionSignature(signature, data.value.err);
       } else {
         console.log('⚠️ No signature found in log notification');
         console.log('🔍 Full log data:', data);
@@ -271,7 +331,7 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     return () => {
       solanaWebSocketService.off('transaction', handleTransaction);
     };
-  }, [fetchTransactionDetails]);
+  }, [processTransactionSignature]);
 
   // Listen for connection status changes
   useEffect(() => {
@@ -312,6 +372,14 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     };
   }, [autoStart, startStreaming, stopStreaming]);
 
+  // Fetch local signatures when transaction list is empty
+  useEffect(() => {
+    if (transactions.length === 0 && isStreaming && stats.connectionStatus === 'connected') {
+      console.log('📭 Transaction list is empty, fetching local signatures...');
+      fetchLocalSignatures();
+    }
+  }, [transactions.length, isStreaming, stats.connectionStatus, fetchLocalSignatures]);
+
   return {
     transactions,
     isStreaming,
@@ -320,7 +388,8 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     startStreaming,
     stopStreaming,
     toggleStreaming,
-    clearTransactions
+    clearTransactions,
+    fetchLocalSignatures
   };
 }
 

@@ -204,7 +204,7 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
   className = ""
 }) => {
   return (
-    <div className={`w-full overflow-x-auto bg-zinc-950 p-2 font-mono text-xs whitespace-pre ${className}`}>
+    <div className={`w-full overflow-x-auto bg-zinc-950 p-2 pl-5 pr-5 pb-4 font-mono text-xs whitespace-pre ${className}`}>
       {getAccountViewMode(address, context) === 'parsed' ? (
         <div 
           ref={(el) => {
@@ -218,9 +218,12 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
           }}
         />
       ) : (
-        <div className="font-mono text-xs">
-          {getHexDataResponsive(data)}
-        </div>
+        <div 
+          className="font-mono text-xs space-y-1"
+          dangerouslySetInnerHTML={{
+            __html: getHexDataResponsive(data)
+          }}
+        />
       )}
       
       {/* IDL Drop Zone - Only show if no JSON data */}
@@ -1085,7 +1088,7 @@ export default function TransactionStream({
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
   const wsUrl = propWsUrl || configWsUrl;
-  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions } = useTransactionStream({
+  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } = useTransactionStream({
     rpcUrl,
     wsUrl,
     maxTransactions,
@@ -1281,14 +1284,15 @@ export default function TransactionStream({
       // Line number (offset)
       const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
-      // Create line with ASCII pushed to extreme right
-      const hexSection = `${offset}: ${hexPart}`;
-      const asciiSection = `|${asciiPart}|`;
+      // Create line with HTML styling and proper layout
+      const hexSection = `<span class="text-gray-500">${offset}:</span> <span class="text-white">${hexPart}</span>`;
+      const asciiSection = `<span class="text-gray-400">|${asciiPart}|</span>`;
 
-      lines.push(`${hexSection.padEnd(70)}${asciiSection}`);
+      // Use flexbox layout to push ASCII to the right
+      lines.push(`<div class="flex justify-between items-start"><div>${hexSection}</div><div>${asciiSection}</div></div>`);
     }
 
-    return lines.join('\n');
+    return lines.join('');
   };
 
   const formatHexOnly = (data: string) => {
@@ -1630,7 +1634,7 @@ export default function TransactionStream({
               return (
                 <div
                   key={`${tx.transaction.signatures[0]}-${index}`}
-                  className={`bg-zinc-800 p-4 ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
+                  className={`bg-zinc-800 p-4 rounded ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
                   onClick={() => handleTransactionClick(tx)}
                 >
                   <div className="mb-0 flex items-start justify-between">
@@ -1904,7 +1908,7 @@ export default function TransactionStream({
                               {/* Account States */}
                               {profile.accountStates && (
                                 <div>
-                                  <div className="mb-2 text-xs font-semibold text-gray-500">ACCOUNT STATES</div>
+                                  <div className="mb-2 text-xs font-semibold text-gray-500">ACCOUNTS STATE TRANSITIONS</div>
                                   <div className="rounded border border-zinc-600 bg-zinc-900/30 overflow-hidden">
                                     {Object.entries(profile.accountStates).map(
                                       ([address, accountState]: [string, any], accountIndex: number) => {
