@@ -4,12 +4,232 @@ import { Badge } from '@/components/catalyst/badge';
 import { Dialog, DialogBody } from '@/components/catalyst/dialog';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { formatSignature, getTransactionStatus, useTransactionStream } from '@/lib/solana-transaction-stream';
-import { TrashIcon, ClipboardIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { diff } from 'fast-myers-diff';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
+
+// TypeScript interfaces based on the transaction profile structure
+interface AccountData {
+  lamports: number;
+  data: {
+    program: string;
+    parsed: Record<string, any>;
+    space: number;
+  } | [string, string] | number[]; // Can be parsed JSON, [data, encoding], or decoded bytes
+  owner: string;
+  executable: boolean;
+  rentEpoch: number;
+  space: number;
+}
+
+interface AccountChange {
+  type: 'create' | 'update' | 'delete' | 'unchanged';
+  data?: AccountData | AccountData[];
+}
+
+interface AccountState {
+  type: 'writable' | 'readonly';
+  accountChange?: AccountChange;
+}
+
+interface InstructionProfile {
+  accountStates: Record<string, AccountState>;
+  computeUnitsConsumed: number;
+  logMessages: string[];
+  errorMessage: string | null;
+}
+
+interface TransactionProfileData {
+  accountStates: Record<string, AccountState>;
+  computeUnitsConsumed: number;
+  logMessages: string[];
+  errorMessage: string | null;
+}
+
+interface ReadonlyAccountState {
+  lamports: number;
+  data: [string, string]; // [data, encoding]
+  owner: string;
+  executable: boolean;
+  rentEpoch: number;
+  space: number;
+}
+
+interface TransactionProfile {
+  slot: number;
+  key: string;
+  instructionProfiles: InstructionProfile[];
+  transactionProfile: TransactionProfileData;
+  readonlyAccountStates: Record<string, ReadonlyAccountState>;
+}
+
+// Utility functions for decoding account data
+const decodeAccountData = (data: any): any => {
+  // If data is already an array of numbers (decoded bytes), return as is
+  if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+    return data;
+  }
+  
+  // If data is an array with encoding info [data, encoding]
+  if (Array.isArray(data) && data.length === 2 && typeof data[0] === 'string' && typeof data[1] === 'string') {
+    const [encodedData, encoding] = data;
+    
+    try {
+      switch (encoding) {
+        case 'base64':
+          // Decode base64 to bytes
+          const base64Bytes = atob(encodedData);
+          return Array.from(base64Bytes, char => char.charCodeAt(0));
+        
+        case 'base58':
+          // For base58, we'll keep it as a string for now since it's typically used for addresses
+          // If you need actual base58 decoding, you'd need a base58 library
+          return encodedData;
+        
+        default:
+          // Unknown encoding, return as is
+          return data;
+      }
+    } catch (error) {
+      console.warn('Failed to decode data:', error);
+      return data;
+    }
+  }
+  
+  // If data is already parsed JSON, return as is
+  return data;
+};
+
+const mergeTransactionProfiles = (jsonParsedProfile: any, base58Profile: any): any => {
+  // Deep clone the jsonParsed profile as the base
+  const mergedProfile = JSON.parse(JSON.stringify(jsonParsedProfile));
+  
+  // Helper function to merge account data
+  const mergeAccountData = (jsonParsedData: any, base58Data: any): any => {
+    if (!jsonParsedData || !base58Data) return jsonParsedData || base58Data;
+    
+    const merged = { ...jsonParsedData };
+    
+    // Add rawBytes from base58 profile
+    if (base58Data.data) {
+      merged.rawBytes = decodeAccountData(base58Data.data);
+    }
+    
+    // Keep jsonParsedBytes from jsonParsed profile
+    if (jsonParsedData.data) {
+      merged.jsonParsedBytes = jsonParsedData.data;
+    }
+    
+    return merged;
+  };
+  
+  // Helper function to merge account states
+  const mergeAccountStates = (jsonParsedStates: any, base58States: any): any => {
+    if (!jsonParsedStates || !base58States) return jsonParsedStates || base58States;
+    
+    const mergedStates = { ...jsonParsedStates };
+    
+    Object.keys(base58States).forEach(address => {
+      if (mergedStates[address]) {
+        const jsonParsedState = mergedStates[address];
+        const base58State = base58States[address];
+        
+        if (jsonParsedState.accountChange?.data && base58State.accountChange?.data) {
+          if (Array.isArray(jsonParsedState.accountChange.data)) {
+            // Handle update case where data is an array
+            mergedStates[address].accountChange.data = jsonParsedState.accountChange.data.map((item: any, index: number) => {
+              const base58Item = Array.isArray(base58State.accountChange.data) ? base58State.accountChange.data[index] : base58State.accountChange.data;
+              return mergeAccountData(item, base58Item);
+            });
+          } else {
+            // Handle single data object
+            mergedStates[address].accountChange.data = mergeAccountData(
+              jsonParsedState.accountChange.data,
+              base58State.accountChange.data
+            );
+          }
+        }
+      }
+    });
+    
+    return mergedStates;
+  };
+  
+  // Merge instruction profiles
+  if (mergedProfile.instructionProfiles && base58Profile.instructionProfiles) {
+    mergedProfile.instructionProfiles = mergedProfile.instructionProfiles.map((instruction: any, index: number) => {
+      const base58Instruction = base58Profile.instructionProfiles[index];
+      if (base58Instruction) {
+        return {
+          ...instruction,
+          accountStates: mergeAccountStates(instruction.accountStates, base58Instruction.accountStates)
+        };
+      }
+      return instruction;
+    });
+  }
+  
+  // Merge readonly account states
+  if (mergedProfile.readonlyAccountStates && base58Profile.readonlyAccountStates) {
+    Object.keys(base58Profile.readonlyAccountStates).forEach(address => {
+      if (mergedProfile.readonlyAccountStates[address]) {
+        mergedProfile.readonlyAccountStates[address] = mergeAccountData(
+          mergedProfile.readonlyAccountStates[address],
+          base58Profile.readonlyAccountStates[address]
+        );
+      }
+    });
+  }
+  
+  return mergedProfile;
+};
+
+const processTransactionProfile = (profile: any): TransactionProfile => {
+  // Deep clone the profile to avoid mutating the original
+  const processedProfile = JSON.parse(JSON.stringify(profile));
+  
+  // Process instruction profiles
+  if (processedProfile.instructionProfiles) {
+    processedProfile.instructionProfiles.forEach((instruction: any) => {
+      if (instruction.accountStates) {
+        Object.keys(instruction.accountStates).forEach(address => {
+          const accountState = instruction.accountStates[address];
+          if (accountState.accountChange?.data) {
+            if (Array.isArray(accountState.accountChange.data)) {
+              // Handle update case where data is an array
+              accountState.accountChange.data = accountState.accountChange.data.map((item: any) => {
+                if (item.data) {
+                  item.data = decodeAccountData(item.data);
+                }
+                return item;
+              });
+            } else {
+              // Handle single data object
+              if (accountState.accountChange.data.data) {
+                accountState.accountChange.data.data = decodeAccountData(accountState.accountChange.data.data);
+              }
+            }
+          }
+        });
+      }
+    });
+  }
+  
+  // Process readonly account states
+  if (processedProfile.readonlyAccountStates) {
+    Object.keys(processedProfile.readonlyAccountStates).forEach(address => {
+      const accountState = processedProfile.readonlyAccountStates[address];
+      if (accountState.data) {
+        accountState.data = decodeAccountData(accountState.data);
+      }
+    });
+  }
+  
+  return processedProfile;
+};
 
 // Enhanced diff algorithm using fast-myers-diff
 const computeSmartDiff = (beforeBytes: number[], afterBytes: number[]) => {
@@ -338,20 +558,48 @@ const DataComparison: React.FC<DataComparisonProps> = ({
               </div>
             </div>
           ) : (
-            <div>
-              <div className="mb-1 text-xs text-gray-500">AFTER</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
               <div>
-                <div 
-                  ref={(el) => {
-                    if (el && typeof window !== 'undefined') {
-                      try {
-                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractProgramData(afterData)}</pretty-json>`;
-                      } catch (error) {
-                        el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractProgramData(afterData), null, 2)}</pre>`;
+                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
+                <div className="pr-0 md:pr-2">
+                  <div 
+                    ref={(el) => {
+                      if (el && typeof window !== 'undefined') {
+                        const extractedData = extractProgramData(beforeData);
+                        if (extractedData === '<none>') {
+                          el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
+                        } else {
+                          try {
+                            el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
+                          } catch (error) {
+                            el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
+                          }
+                        }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
+                <div className="mb-1 text-xs text-gray-500">AFTER</div>
+                <div>
+                  <div 
+                    ref={(el) => {
+                      if (el && typeof window !== 'undefined') {
+                        const extractedData = extractProgramData(afterData);
+                        if (extractedData === '<none>') {
+                          el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
+                        } else {
+                          try {
+                            el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
+                          } catch (error) {
+                            el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -492,10 +740,30 @@ const DataComparison: React.FC<DataComparisonProps> = ({
               </div>
             </div>
           ) : (
-            <div>
-              <div className="mb-1 text-xs text-gray-500">AFTER</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
               <div>
-                {getHexDataForUpdates(afterData)}
+                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
+                <div className="pr-0 md:pr-2">
+                  {(() => {
+                    const hexData = getHexDataForUpdates(beforeData);
+                    if (hexData === '<none>') {
+                      return <div className="text-gray-500 text-xs italic">No data</div>;
+                    }
+                    return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
+                  })()}
+                </div>
+              </div>
+              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
+                <div className="mb-1 text-xs text-gray-500">AFTER</div>
+                <div>
+                  {(() => {
+                    const hexData = getHexDataForUpdates(afterData);
+                    if (hexData === '<none>') {
+                      return <div className="text-gray-500 text-xs italic">No data</div>;
+                    }
+                    return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
+                  })()}
+                </div>
               </div>
             </div>
           )}
@@ -664,57 +932,79 @@ const AccountDetails: React.FC<AccountDetailsProps> = ({
           />
         </div>
       )}
-      <div className="space-y-0">
-        <div className="flex items-center justify-between px-5 pb-2">
-          <div className="text-xs font-semibold text-gray-500">DATA</div>
-          <div className="flex items-center gap-2 text-xs">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleAccountViewMode(address, context);
-              }}
-              className={`transition-colors ${
-                getAccountViewMode(address, context) === 'parsed'
-                  ? 'font-medium text-white'
-                  : 'text-gray-500 hover:text-gray-400'
-              }`}
-            >
-              Pretty
-            </button>
-            <span className="text-gray-600">|</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleAccountViewMode(address, context);
-              }}
-              className={`transition-colors ${
-                getAccountViewMode(address, context) === 'hex'
-                  ? 'font-medium text-white'
-                  : 'text-gray-500 hover:text-gray-400'
-              }`}
-            >
-              Hex
-            </button>
+      {accountData.executable ? (
+        <div className="space-y-0">
+          <div className="flex items-center justify-between px-5 pb-2">
+            <div className="text-xs font-semibold text-gray-500">DATA</div>
+            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-900/30 px-2 py-1 text-xs font-medium text-purple-300">
+                  {(() => {
+                    const isSystemProgram = address.includes('11111111111');
+                    const isTokenProgram = address.startsWith('Token');
+                    const isAssociatedTokenProgram = address.startsWith('AToken');
+                    
+                    if (isSystemProgram) return 'SYSTEM PROGRAM';
+                    if (isAssociatedTokenProgram) return 'ASSOCIATED TOKEN PROGRAM';
+                    if (isTokenProgram) return 'TOKEN PROGRAM';
+                    return 'PROGRAM';
+                  })()}
+                </span>
+            </div>
           </div>
         </div>
-        <DataDisplay
-          data={accountData.data}
-          address={address}
-          context={context}
-          getAccountViewMode={getAccountViewMode}
-          extractProgramData={extractProgramData}
-          getHexData={getHexData}
-          getHexDataResponsive={getHexDataResponsive}
-          hasJsonData={hasJsonData}
-          isDragOver={isDragOver}
-          droppedIdl={droppedIdl}
-          handleDragOver={handleDragOver}
-          handleDragLeave={handleDragLeave}
-          handleDrop={handleDrop}
-          registerIdl={registerIdl}
-          toggleAccountViewMode={toggleAccountViewMode}
-        />
-      </div>
+      ) : (
+        <div className="space-y-0">
+          <div className="flex items-center justify-between px-5 pb-2">
+            <div className="text-xs font-semibold text-gray-500">DATA</div>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAccountViewMode(address, context);
+                }}
+                className={`transition-colors ${
+                  getAccountViewMode(address, context) === 'parsed'
+                    ? 'font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-400'
+                }`}
+              >
+                Pretty
+              </button>
+              <span className="text-gray-600">|</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAccountViewMode(address, context);
+                }}
+                className={`transition-colors ${
+                  getAccountViewMode(address, context) === 'hex'
+                    ? 'font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-400'
+                }`}
+              >
+                Hex
+              </button>
+            </div>
+          </div>
+          <DataDisplay
+            data={accountData.data}
+            address={address}
+            context={context}
+            getAccountViewMode={getAccountViewMode}
+            extractProgramData={extractProgramData}
+            getHexData={getHexData}
+            getHexDataResponsive={getHexDataResponsive}
+            hasJsonData={hasJsonData}
+            isDragOver={isDragOver}
+            droppedIdl={droppedIdl}
+            handleDragOver={handleDragOver}
+            handleDragLeave={handleDragLeave}
+            handleDrop={handleDrop}
+            registerIdl={registerIdl}
+            toggleAccountViewMode={toggleAccountViewMode}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -770,64 +1060,88 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
         )}
 
         {/* Data Field */}
-        <div className="space-y-0">
-          <div className="flex items-center justify-between px-5 pb-2">
-            <div className={`text-xs font-semibold ${
-              (getAccountViewMode(address) === 'parsed' 
-                ? JSON.stringify(extractProgramData(accountData[0].data)) !== JSON.stringify(extractProgramData(accountData[1].data))
-                : getHexData(accountData[0].data) !== getHexData(accountData[1].data)
-              ) ? 'text-yellow-400' : 'text-gray-400'
-            }`}>DATA</div>
-            <div className="flex items-center gap-2 text-xs">
-                          <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleAccountViewMode(address, context);
-              }}
-              className={`transition-colors ${
-                getAccountViewMode(address, context) === 'parsed'
-                  ? 'font-medium text-white'
-                  : 'text-gray-500 hover:text-gray-400'
-              }`}
-            >
-              Pretty
-            </button>
-            <span className="text-gray-600">|</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleAccountViewMode(address, context);
-              }}
-              className={`transition-colors ${
-                getAccountViewMode(address, context) === 'hex'
-                  ? 'font-medium text-white'
-                  : 'text-gray-500 hover:text-gray-400'
-              }`}
-            >
-              Hex
-            </button>
+        {accountData[0].executable || accountData[1].executable ? (
+          <div className="space-y-0">
+            <div className="flex items-center justify-between px-5 pb-2">
+              <div className={`text-xs font-semibold ${
+                accountData[0].executable !== accountData[1].executable ? 'text-yellow-400' : 'text-gray-400'
+              }`}>DATA</div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-900/30 px-2 py-1 text-xs font-medium text-purple-300">
+                  {(() => {
+                    const isSystemProgram = address.includes('11111111111');
+                    const isTokenProgram = address.startsWith('Token');
+                    const isAssociatedTokenProgram = address.startsWith('AToken');
+                    
+                    if (isSystemProgram) return 'SYSTEM PROGRAM';
+                    if (isAssociatedTokenProgram) return 'ASSOCIATED TOKEN PROGRAM';
+                    if (isTokenProgram) return 'TOKEN PROGRAM';
+                    return 'PROGRAM';
+                  })()}
+                </span>
+              </div>
             </div>
           </div>
-          <DataComparison
-            beforeData={accountData[0].data}
-            afterData={accountData[1].data}
-            address={address}
-            context={context}
-            getAccountViewMode={getAccountViewMode}
-            extractProgramData={extractProgramData}
-            getHexData={getHexData}
-            getHexDataForUpdates={getHexDataForUpdates}
-            hasJsonData={hasJsonData}
-            isDragOver={isDragOver}
-            droppedIdl={droppedIdl}
-            handleDragOver={handleDragOver}
-            handleDragLeave={handleDragLeave}
-            handleDrop={handleDrop}
-            registerIdl={registerIdl}
-            toggleAccountViewMode={toggleAccountViewMode}
-            renderJsonDiff={renderJsonDiff}
-          />
-        </div>
+        ) : (
+          <div className="space-y-0">
+            <div className="flex items-center justify-between px-5 pb-2">
+              <div className={`text-xs font-semibold ${
+                (getAccountViewMode(address) === 'parsed' 
+                  ? JSON.stringify(extractProgramData(accountData[0].data)) !== JSON.stringify(extractProgramData(accountData[1].data))
+                  : getHexData(accountData[0].data) !== getHexData(accountData[1].data)
+                ) ? 'text-yellow-400' : 'text-gray-400'
+              }`}>DATA</div>
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAccountViewMode(address, context);
+                  }}
+                  className={`transition-colors ${
+                    getAccountViewMode(address, context) === 'parsed'
+                      ? 'font-medium text-white'
+                      : 'text-gray-500 hover:text-gray-400'
+                  }`}
+                >
+                  Pretty
+                </button>
+                <span className="text-gray-600">|</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAccountViewMode(address, context);
+                  }}
+                  className={`transition-colors ${
+                    getAccountViewMode(address, context) === 'hex'
+                      ? 'font-medium text-white'
+                      : 'text-gray-500 hover:text-gray-400'
+                  }`}
+                >
+                  Hex
+                </button>
+              </div>
+            </div>
+            <DataComparison
+              beforeData={accountData[0].data}
+              afterData={accountData[1].data}
+              address={address}
+              context={context}
+              getAccountViewMode={getAccountViewMode}
+              extractProgramData={extractProgramData}
+              getHexData={getHexData}
+              getHexDataForUpdates={getHexDataForUpdates}
+              hasJsonData={hasJsonData}
+              isDragOver={isDragOver}
+              droppedIdl={droppedIdl}
+              handleDragOver={handleDragOver}
+              handleDragLeave={handleDragLeave}
+              handleDrop={handleDrop}
+              registerIdl={registerIdl}
+              toggleAccountViewMode={toggleAccountViewMode}
+              renderJsonDiff={renderJsonDiff}
+            />
+          </div>
+        )}
       </div>
   );
 };
@@ -871,7 +1185,7 @@ export default function TransactionStream({
   const [isDragOver, setIsDragOver] = useState<{ [address: string]: boolean }>({});
 
   // Move the large JSON object inside the component and memoize it
-  const mockTransactionProfile = useMemo(() => ({
+  const mockTransactionProfile: TransactionProfile = useMemo(() => ({
     slot: 123,
     key: '0c2441a4-85b4-4eed-802e-855a66da721d',
     instructionProfiles: [
@@ -1137,6 +1451,20 @@ export default function TransactionStream({
           return data[0] || '<none>';
         }
       }
+      
+      // If it's our merged data structure with rawBytes, use that
+      if (data.rawBytes && Array.isArray(data.rawBytes)) {
+        const bytes = data.rawBytes;
+        const bytesString = String.fromCharCode(...bytes);
+        return formatHexDump(bytesString);
+      }
+      
+      // If it's an array of numbers (decoded bytes), convert to hex
+      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+        const bytesString = String.fromCharCode(...data);
+        return formatHexDump(bytesString);
+      }
+      
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
       return formatHexDump(jsonStr);
@@ -1158,6 +1486,20 @@ export default function TransactionStream({
           return data[0] || '<none>';
         }
       }
+      
+      // If it's our merged data structure with rawBytes, use that
+      if (data.rawBytes && Array.isArray(data.rawBytes)) {
+        const bytes = data.rawBytes;
+        const bytesString = String.fromCharCode(...bytes);
+        return formatHexDump(bytesString);
+      }
+      
+      // If it's an array of numbers (decoded bytes), convert to hex
+      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+        const bytesString = String.fromCharCode(...data);
+        return formatHexDump(bytesString);
+      }
+      
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
       return formatHexDump(jsonStr);
@@ -1174,13 +1516,45 @@ export default function TransactionStream({
       if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
         try {
           const decoded = atob(data[0]);
-          return formatHexOnly(decoded);
+          return decoded === '' ? '<none>' : formatHexOnly(decoded);
         } catch (error) {
-          return data[0] || '<none>';
+          return data[0] === '' ? '<none>' : (data[0] || '<none>');
         }
       }
+      
+      // If it's our merged data structure with rawBytes, use that
+      if (data.rawBytes && Array.isArray(data.rawBytes)) {
+        if (data.rawBytes.length === 0) {
+          return '<none>';
+        }
+        const bytes = data.rawBytes;
+        const bytesString = String.fromCharCode(...bytes);
+        return formatHexOnly(bytesString);
+      }
+      
+      // If it's an array of numbers (decoded bytes), convert to hex
+      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+        if (data.length === 0) {
+          return '<none>';
+        }
+        const bytesString = String.fromCharCode(...data);
+        return formatHexOnly(bytesString);
+      }
+      
+      // Check if it's an empty array or empty object
+      if (Array.isArray(data) && data.length === 0) {
+        return '<none>';
+      }
+      
+      if (Object.keys(data).length === 0) {
+        return '<none>';
+      }
+      
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
+      if (jsonStr === '[]' || jsonStr === '{}' || jsonStr === 'null' || jsonStr === 'undefined') {
+        return '<none>';
+      }
       return formatHexOnly(jsonStr);
     }
     // For strings, convert to hex
@@ -1296,9 +1670,23 @@ export default function TransactionStream({
         }
       }
 
+      // Check if it's an empty array or empty object
+      if (Array.isArray(data) && data.length === 0) {
+        return '<none>';
+      }
+      
+      if (Object.keys(data).length === 0) {
+        return '<none>';
+      }
+
       // Pretty print JSON objects
       try {
-        return JSON.stringify(data, null, 2);
+        const jsonStr = JSON.stringify(data, null, 2);
+        // Check if the JSON string represents empty data
+        if (jsonStr === '[]' || jsonStr === '{}' || jsonStr === 'null' || jsonStr === 'undefined') {
+          return '<none>';
+        }
+        return jsonStr;
       } catch (error) {
         return JSON.stringify(data);
       }
@@ -1356,6 +1744,66 @@ export default function TransactionStream({
     );
   };
 
+  // Helper function to find changed paths in objects
+  const findChangedPaths = (beforeObj: any, afterObj: any, currentPath: string[] = []): Set<string> => {
+    const changedPaths = new Set<string>();
+    
+    if (typeof beforeObj !== typeof afterObj) {
+      // Different types - mark current path as changed
+      changedPaths.add(currentPath.join('.'));
+      return changedPaths;
+    }
+    
+    if (typeof beforeObj !== 'object' || beforeObj === null || afterObj === null) {
+      // Primitive values - compare directly
+      if (beforeObj !== afterObj) {
+        changedPaths.add(currentPath.join('.'));
+      }
+      return changedPaths;
+    }
+    
+    if (Array.isArray(beforeObj) !== Array.isArray(afterObj)) {
+      // One is array, other is object
+      changedPaths.add(currentPath.join('.'));
+      return changedPaths;
+    }
+    
+    if (Array.isArray(beforeObj)) {
+      // Arrays - compare each element
+      const maxLength = Math.max(beforeObj.length, afterObj.length);
+      for (let i = 0; i < maxLength; i++) {
+        const beforeItem = beforeObj[i];
+        const afterItem = afterObj[i];
+        const itemPath = [...currentPath, i.toString()];
+        const itemChanges = findChangedPaths(beforeItem, afterItem, itemPath);
+        itemChanges.forEach(path => changedPaths.add(path));
+      }
+    } else {
+      // Objects - compare each property
+      const allKeys = new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]);
+      for (const key of allKeys) {
+        const beforeValue = beforeObj[key];
+        const afterValue = afterObj[key];
+        const keyPath = [...currentPath, key];
+        
+        // Check if property exists in both objects
+        const beforeExists = key in beforeObj;
+        const afterExists = key in afterObj;
+        
+        if (!beforeExists || !afterExists) {
+          // Property was added or removed
+          changedPaths.add(keyPath.join('.'));
+        } else {
+          // Property exists in both - compare values
+          const keyChanges = findChangedPaths(beforeValue, afterValue, keyPath);
+          keyChanges.forEach(path => changedPaths.add(path));
+        }
+      }
+    }
+    
+    return changedPaths;
+  };
+
   // Helper function to render JSON diff with proper color coding
   const renderJsonDiff = (beforeJson: any, afterJson: any, isRed: boolean) => {
     try {
@@ -1367,31 +1815,56 @@ export default function TransactionStream({
       const jsonToShow = isRed ? beforeObj : afterObj;
       const jsonString = JSON.stringify(jsonToShow, null, 2);
 
-      // Use json-diff to get the diff string and parse it to find changed paths
-      const diffString = jsonDiff.diffString(beforeObj, afterObj);
+      // Find all changed paths
+      const changedPaths = findChangedPaths(beforeObj, afterObj);
 
-      // Extract changed field names from the diff string
-      const changedFields = new Set<string>();
-      const lines = diffString.split('\n');
-      lines.forEach((line: string) => {
-        if (line.startsWith('-') || line.startsWith('+')) {
-          // Extract field name from lines like: -    field1: "value1"
-          const match = line.match(/^\s*[-+]\s*(\w+):/);
-          if (match) {
-            changedFields.add(match[1]);
+      // Helper function to get the path for a specific line in the JSON
+      const getPathForLine = (jsonLines: string[], targetIndex: number): string[] => {
+        const path: string[] = [];
+        const stack: { indent: number; key: string }[] = [];
+        
+        for (let i = 0; i <= targetIndex; i++) {
+          const line = jsonLines[i];
+          const indent = (line.match(/^\s*/)?.[0].length || 0) / 2;
+          const trimmed = line.trim();
+          
+          // Remove items from stack that are deeper than current indent
+          while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+            stack.pop();
+          }
+          
+          // If this line starts an object, add it to the stack
+          if (trimmed.endsWith('{')) {
+            const match = trimmed.match(/^"?([^":]+)"?\s*:\s*{$/);
+            if (match) {
+              stack.push({ indent, key: match[1] });
+            }
+          }
+          
+          // If this is the target line and it has a key, extract it
+          if (i === targetIndex) {
+            const fieldMatch = trimmed.match(/^"?([^":]+)"?\s*:/);
+            if (fieldMatch) {
+              return [...stack.map(item => item.key), fieldMatch[1]];
+            }
           }
         }
-      });
-
+        
+        return stack.map(item => item.key);
+      };
 
       // Split into lines and process each line
       const jsonLines = jsonString.split('\n');
       const processedLines = jsonLines.map((line, index) => {
         const trimmedLine = line.trim();
-
+        
+        // Get the path for this line
+        const linePath = getPathForLine(jsonLines, index);
+        
         // Check if this line contains a changed field
-        const hasChangedValue = Array.from(changedFields).some((field) => {
-          return trimmedLine.includes(`"${field}"`);
+        const hasChangedValue = Array.from(changedPaths).some((path) => {
+          const pathParts = path.split('.');
+          return pathParts.join('.') === linePath.join('.');
         });
 
         if (hasChangedValue) {
@@ -1430,19 +1903,59 @@ export default function TransactionStream({
 
       console.log('🔍 Fetching transaction profile for signature:', signature);
 
-      // Mock response using the memoized transaction profile
-      const mockResponse = mockTransactionProfile;
+      // Fetch transaction profile with both jsonParsed and base58 encodings in parallel
+      const [jsonParsedResponse, base58Response] = await Promise.all([
+        fetch(rpcUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'surfnet_getTransactionProfile',
+            params: [signature, { encoding: 'jsonParsed' }]
+          })
+        }),
+        fetch(rpcUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'surfnet_getTransactionProfile',
+            params: [signature, { encoding: 'base58' }]
+          })
+        })
+      ]);
 
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (!jsonParsedResponse.ok || !base58Response.ok) {
+        throw new Error(`HTTP error! status: jsonParsed=${jsonParsedResponse.status}, base58=${base58Response.status}`);
+      }
 
-      console.log('📊 Mock transaction profile response:', mockResponse);
-      setTransactionProfile(mockResponse);
-      
-      // Expand all instructions by default
-      if (mockResponse.instructionProfiles && mockResponse.instructionProfiles.length > 0) {
-        const allInstructionIndices = new Set(mockResponse.instructionProfiles.map((_: any, index: number) => index));
-        setExpandedInstructions(allInstructionIndices);
+      const [jsonParsedData, base58Data] = await Promise.all([
+        jsonParsedResponse.json(),
+        base58Response.json()
+      ]);
+
+      console.log('📊 JSON Parsed response:', jsonParsedData);
+      console.log('📊 Base58 response:', base58Data);
+
+      if (jsonParsedData.result?.value && base58Data.result?.value) {
+        // Merge the results to include both jsonParsedBytes and rawBytes
+        const mergedProfile = mergeTransactionProfiles(jsonParsedData.result.value, base58Data.result.value);
+        let transactionProfile = processTransactionProfile(mergedProfile);
+        setTransactionProfile(transactionProfile);
+        
+        // Expand all instructions by default
+        if (transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0) {
+          const allInstructionIndices = new Set<number>(transactionProfile.instructionProfiles.map((_: any, index: number) => index));
+          setExpandedInstructions(allInstructionIndices);
+        }
+      } else {
+        throw new Error('No result in one or both responses');
       }
     } catch (error) {
       console.error('❌ Error fetching transaction profile:', error);
@@ -1452,7 +1965,7 @@ export default function TransactionStream({
     }
   };
 
-  const handleTransactionClick = (tx: any) => {
+  const handleTransactionClick = async (tx: any) => {
     try {
       console.log('🖱️ Transaction clicked:', tx);
       setSelectedTransaction(tx);
@@ -1461,6 +1974,39 @@ export default function TransactionStream({
       // Fetch transaction profile if we have a signature
       if (tx.transaction?.signatures?.[0]) {
         fetchTransactionProfile(tx.transaction.signatures[0]);
+        
+        // Also fetch the actual transaction details to get the real fee
+        try {
+          const response = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'getTransaction',
+              params: [
+                tx.transaction.signatures[0],
+                { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }
+              ]
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.result?.value) {
+              // Update the selected transaction with the real fee
+              setSelectedTransaction((prev: any) => ({
+                ...prev,
+                meta: {
+                  ...prev.meta,
+                  fee: data.result.value.meta?.fee || prev.meta?.fee
+                }
+              }));
+            }
+          }
+        } catch (feeError) {
+          console.warn('⚠️ Could not fetch real fee:', feeError);
+        }
       }
     } catch (error) {
       console.error('❌ Error handling transaction click:', error);
@@ -1615,7 +2161,7 @@ export default function TransactionStream({
           {selectedTransaction ? (
             <div className="space-y-6">
               {/* Basic Transaction Info */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="rounded-lg bg-zinc-800/50 p-4">
                   <div className="mb-2 text-xs text-gray-500">Status</div>
                   <Badge
@@ -1655,6 +2201,24 @@ export default function TransactionStream({
                     <div className="font-mono text-sm">0 lamports</div>
                   </div>
                 )}
+
+                <div className="rounded-lg bg-zinc-800/50 p-4">
+                  <div className="mb-2 text-xs text-gray-500">Open in Explorer</div>
+                  <button
+                    onClick={() => {
+                      const signature = selectedTransaction.transaction?.signatures?.[0];
+                      if (signature) {
+                        const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
+                        window.open(explorerUrl, '_blank');
+                      }
+                    }}
+                    className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                    disabled={!selectedTransaction.transaction?.signatures?.[0]}
+                  >
+                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                    <span>View</span>
+                  </button>
+                </div>
               </div>
 
               {/* Transaction Header */}
@@ -1728,11 +2292,11 @@ export default function TransactionStream({
                               key={index}
                               className={`${colorClass} group relative cursor-pointer transition-all duration-200 hover:brightness-110`}
                               style={{ width: `${percentage}%` }}
-                              title={`Instruction ${index}: ${cu} CU (${percentage.toFixed(1)}%)`}
+                              title={`Instruction ${index + 1}: ${cu} CU (${percentage.toFixed(1)}%)`}
                             >
                               {/* Tooltip on hover */}
                               <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 transform rounded bg-black/90 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                                Instruction {index}: {cu} CU
+                                Instruction {index + 1}: {cu} CU
                               </div>
                             </div>
                           );
@@ -1759,7 +2323,7 @@ export default function TransactionStream({
                           return (
                             <div key={index} className="flex items-center gap-2 text-xs">
                               <div className={`h-3 w-3 rounded ${colorClass}`}></div>
-                              <span className="text-gray-300">Instruction #{index}:</span>
+                              <span className="text-gray-300">Instruction #{index + 1}:</span>
                               <span className="text-gray-400">{cu} CU</span>
                             </div>
                           );
@@ -1816,7 +2380,7 @@ export default function TransactionStream({
                                   >
                                     {expandedInstructions.has(index) ? '▼' : '▶'}
                                   </span>
-                                  <div className="text-sm font-semibold text-zinc-200">Instruction #{index}</div>
+                                  <div className="text-sm font-semibold text-zinc-200">Instruction #{index + 1}</div>
                                 </div>
 
                                 {profile.errorMessage && (
@@ -1891,11 +2455,74 @@ export default function TransactionStream({
                                                       DELETED ACCOUNT
                                                     </span>
                                                   )}
-                                                  {!hasChanges && !isWritable && (
-                                                    <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-500/30 text-gray-300">
-                                                      READ ACCOUNT
-                                                    </span>
-                                                  )}
+
+                                                  {(() => {
+                                                    // Check if this is an executable account (program)
+                                                    let isExecutable = false;
+                                                    
+                                                    // Check all possible sources for executable flag
+                                                    if (hasChanges && accountState.accountChange.data) {
+                                                      if (Array.isArray(accountState.accountChange.data)) {
+                                                        // Update case - check both before and after
+                                                        isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+                                                      } else {
+                                                        // Create/Delete case - check the single account
+                                                        isExecutable = accountState.accountChange.data.executable;
+                                                      }
+                                                    } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
+                                                      // Read-only account case
+                                                      isExecutable = transactionProfile.readonlyAccountStates[address].executable;
+                                                    }
+                                                    
+                                                    // Additional check: if we have instruction profiles, check if this address appears as a program
+                                                    if (!isExecutable && transactionProfile.instructionProfiles) {
+                                                      for (const instructionProfile of transactionProfile.instructionProfiles) {
+                                                        if (instructionProfile.accountStates && instructionProfile.accountStates[address]) {
+                                                          const accountState = instructionProfile.accountStates[address];
+                                                          if (accountState.accountChange?.data) {
+                                                            if (Array.isArray(accountState.accountChange.data)) {
+                                                              isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+                                                            } else {
+                                                              isExecutable = accountState.accountChange.data.executable;
+                                                            }
+                                                          }
+                                                          if (isExecutable) break;
+                                                        }
+                                                      }
+                                                    }
+                                                    
+                                                    // Fallback check: look at the transaction's instruction data to identify program accounts
+                                                    if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
+                                                      for (const instruction of selectedTransaction.transaction.message.instructions) {
+                                                        if (instruction.programId === address) {
+                                                          isExecutable = true;
+                                                          break;
+                                                        }
+                                                      }
+                                                    }
+                                                    
+                                                    if (isExecutable) {
+                                                      const isSystemProgram = address.includes('11111111111');
+                                                      const isTokenProgram = address.startsWith('Token');
+                                                      const isAssociatedTokenProgram = address.startsWith('AToken');
+                                                      
+                                                      let programLabel = 'PROGRAM';
+                                                      if (isSystemProgram) {
+                                                        programLabel = 'SYSTEM PROGRAM';
+                                                      } else if (isAssociatedTokenProgram) {
+                                                        programLabel = 'ASSOCIATED TOKEN PROGRAM';
+                                                      } else if (isTokenProgram) {
+                                                        programLabel = 'TOKEN PROGRAM';
+                                                      }
+                                                      
+                                                      return (
+                                                        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-purple-500/30 bg-purple-900/30 text-purple-300">
+                                                          {programLabel}
+                                                        </span>
+                                                      );
+                                                    }
+                                                    return null;
+                                                  })()}
                                                   <AddressDisplay
                                                     address={address}
                                                     copiedStates={copiedStates}
@@ -2070,7 +2697,7 @@ export default function TransactionStream({
                       {selectedTransaction.transaction.message.instructions.map((instruction: any, index: number) => (
                         <div key={index} className="border-l-2 border-zinc-600 pl-3">
                           <div className="mb-1 font-mono text-xs text-gray-300">
-                            <span className="text-gray-500">#{index}:</span>{' '}
+                            <span className="text-gray-500">#{index + 1}:</span>{' '}
                             {instruction.programId || 'Unknown Program'}
                           </div>
                           {instruction.accounts && instruction.accounts.length > 0 && (
