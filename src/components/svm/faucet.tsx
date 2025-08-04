@@ -246,6 +246,19 @@ export default function Faucet() {
     setTokenFundingRequest(newTokenFundingRequests)
   }
 
+  // Check if the faucet can be activated (has amount and address)
+  const canActivateFaucet = () => {
+    // Check if any token has a valid amount
+    const hasValidAmount = tokenFundingRequests.some(request => request.amount > 0)
+    
+    // Check if any recipient has a valid address
+    const hasValidAddress = reccipients.some(recipient => 
+      recipient.address && recipient.address.trim() !== ''
+    )
+    
+    return hasValidAmount && hasValidAddress
+  }
+
   return (
     <div className="faucet mx-auto flex min-h-[340px] w-full items-center justify-center rounded-xl bg-zinc-800 relative shadow-lg z-10 mt-3 md:mt-0">
       <div className="flex flex-col items-center space-y-2 pt-1">
@@ -325,8 +338,16 @@ export default function Faucet() {
 
         <div className="absolute bottom-0 right-8 transform translate-y-1/2">
             <div
-              className="flex gap-2 rounded-full bg-[#E034AE] p-4 text-center text-sm uppercase cursor-pointer"
-              onClick={() => handleClaimTokens()}
+              className={`flex gap-2 rounded-full p-4 text-center text-sm uppercase transition-colors ${
+                canActivateFaucet() 
+                  ? 'bg-[#E034AE] cursor-pointer hover:bg-[#C02A8F]' 
+                  : 'bg-zinc-600 cursor-not-allowed'
+              }`}
+              onClick={() => {
+                if (canActivateFaucet()) {
+                  handleClaimTokens()
+                }
+              }}
             >
               <PlayIcon className="h-5 w-5" />
             </div>

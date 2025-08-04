@@ -97,6 +97,7 @@ const OwnerDisplay: React.FC<OwnerDisplayProps> = ({
       truncateAddress={truncateAddress}
       copyId={copyId}
       className={className}
+      aggressiveTruncate={false}
     />
   );
 };
@@ -1569,36 +1570,32 @@ export default function TransactionStream({
                   className={`bg-zinc-800 p-4 rounded ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
                   onClick={() => handleTransactionClick(tx)}
                 >
-                  <div className="mb-0 flex items-start justify-between">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1">
-                        <span className="hidden font-mono text-sm text-gray-300 lg:inline">
+                  <div className="mb-0 flex flex-col gap-1">
+                    <div className="flex items-center gap-1">
+                                              <span className="font-mono text-[8px] sm:text-xs md:text-sm text-gray-300">
                           {formatSignature(tx.transaction.signatures[0])}
                         </span>
-                        <span className="font-mono text-sm text-gray-300 lg:hidden">
-                          {formatSignature(tx.transaction.signatures[0]).slice(0, 8)}⋯
-                          {formatSignature(tx.transaction.signatures[0]).slice(-8)}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyToClipboard(
-                              formatSignature(tx.transaction.signatures[0]),
-                              `sig-${tx.transaction.signatures[0]}`
-                            );
-                          }}
-                          className="ml-1 flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300 sm:hidden"
-                        >
-                          <ClipboardIcon className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(
+                            formatSignature(tx.transaction.signatures[0]),
+                            `sig-${tx.transaction.signatures[0]}`
+                          );
+                        }}
+                        className="ml-1 flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300 sm:hidden"
+                      >
+                        <ClipboardIcon className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <Badge color={badgeColors[status as keyof typeof badgeColors] as any} className="w-fit text-xs">
                         {status.toUpperCase()}
                       </Badge>
-                    </div>
-                    <div className="flex flex-col justify-center text-right text-xs text-gray-400">
-                      <div className="tracking-wide text-gray-500 uppercase">SLOT</div>
-                      <div className="font-mono font-bold text-white">{tx.slot}</div>
+                      <div className="flex items-center gap-1 text-xs text-gray-400">
+                        <span className="tracking-wide text-gray-500 uppercase">SLOT</span>
+                        <span className="font-mono font-bold text-white">{tx.slot}</span>
+                      </div>
                     </div>
                   </div>
 

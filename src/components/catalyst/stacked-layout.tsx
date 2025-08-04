@@ -367,6 +367,11 @@ export function StackedLayout({
                                         color="dark"
                                         className={`text-sm py-2 px-4 ${plan.mostPopular ? '!bg-white hover:!bg-gray-100 !border-white hover:!border-gray-100 !text-black' : ''}`}
                                         disabled={!plan.available}
+                                        onClick={() => {
+                                          if (plan.available) {
+                                            window.open(`https://cloud.txtx.run/?price_id=${plan.price_id}`, '_blank');
+                                          }
+                                        }}
                                       >
                                         {plan.available ? 'Get started' : 'Coming Soon'}
                                       </Button>

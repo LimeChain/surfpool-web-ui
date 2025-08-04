@@ -5,6 +5,11 @@ export const truncateAddress = (address: string) => {
   return `${address.slice(0, 8)}⋯${address.slice(-8)}`;
 };
 
+export const aggressiveTruncateAddress = (address: string) => {
+  if (address.length <= 8) return address;
+  return `${address.slice(0, 4)}⋯${address.slice(-4)}`;
+};
+
 export const copyToClipboard = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);

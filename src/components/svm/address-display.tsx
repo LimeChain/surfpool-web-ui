@@ -3,6 +3,7 @@
 import { CheckIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import React from 'react';
 import { useAppConfig } from '@/hooks/use-app-config';
+import { aggressiveTruncateAddress } from '@/lib/address-utils';
 
 interface AddressDisplayProps {
   address: string;
@@ -37,12 +38,18 @@ const AddressDisplay: React.FC<AddressDisplayProps> = ({
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       <span className="text-xs text-gray-300 font-mono">
-        {/* Show full address on larger screens, truncated on small screens */}
-        <span className="hidden sm:inline">
-          {address}
-        </span>
+        {/* Show truncated address when aggressiveTruncate is true, otherwise show full on larger screens */}
+        {aggressiveTruncate ? (
+          <span className="hidden sm:inline">
+            {truncateAddress(address)}
+          </span>
+        ) : (
+          <span className="hidden sm:inline">
+            {address}
+          </span>
+        )}
         <span className="sm:hidden">
-          {truncateAddress(address)}
+          {aggressiveTruncate ? aggressiveTruncateAddress(address) : truncateAddress(address)}
         </span>
       </span>
       {showCopyButton && (

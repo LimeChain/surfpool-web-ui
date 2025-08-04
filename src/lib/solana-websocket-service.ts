@@ -289,7 +289,7 @@ class SolanaWebSocketService extends EventEmitter {
         // Timeout after 10 seconds (increased from 5)
         setTimeout(() => {
           this.removeListener('subscription', onSubscription);
-          console.error(`⏰ ${type} subscription timeout - no response received`);
+          console.warn(`⏰ ${type} subscription timeout - no response received`);
           reject(new Error(`${type} subscription timeout`));
         }, 10000);
 
