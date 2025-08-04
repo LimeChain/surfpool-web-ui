@@ -91,7 +91,7 @@ export const SlotsGrid: React.FC = () => {
           }
           const now = new Date()
           const timeAmountMs = selectedTimeAmount * getTimeUnitInMs(selectedTimeUnit)
-          const targetTimestamp = Math.floor((now.getTime() + timeAmountMs) / 1000) // Convert to seconds
+          const targetTimestamp = Math.floor(now.getTime() + timeAmountMs) // Keep in milliseconds
           timeTravelConfig = { absoluteTimestamp: targetTimestamp }
           break
         case 'epoch':
