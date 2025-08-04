@@ -171,7 +171,7 @@ export function StackedLayout({
       console.log('Fetching plans and stars...');
       
       // Fetch plans
-      fetch('https://cloud.txtx.run/api/subscriptions/plans')
+      fetch('https://cloud.txtx.run/api/subscriptions/plans?origin=studio')
         .then(res => {
           console.log('Plans response status:', res.status);
           return res.json();
@@ -369,7 +369,7 @@ export function StackedLayout({
                                         disabled={!plan.available}
                                         onClick={() => {
                                           if (plan.available) {
-                                            window.open(`https://cloud.txtx.run/?price_id=${plan.price_id}`, '_blank');
+                                            window.open(`https://cloud.txtx.run/?price_id=${plan.price_id}&origin=studio`, '_blank');
                                           }
                                         }}
                                       >
