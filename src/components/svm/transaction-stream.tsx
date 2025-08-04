@@ -4,9 +4,12 @@ import { Badge } from '@/components/catalyst/badge';
 import { Dialog, DialogBody } from '@/components/catalyst/dialog';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { formatSignature, getTransactionStatus, useTransactionStream } from '@/lib/solana-transaction-stream';
-import { CheckIcon, ClipboardIcon, TrashIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { diff } from 'fast-myers-diff';
+import AddressDisplay from './address-display';
+import TokenAmountDisplay from './token-amount-display';
+import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 
 // Enhanced diff algorithm using fast-myers-diff
 const computeSmartDiff = (beforeBytes: number[], afterBytes: number[]) => {
@@ -52,14 +55,18 @@ interface LamportsDisplayProps {
 }
 
 const LamportsDisplay: React.FC<LamportsDisplayProps> = ({ lamports, label, className = "" }) => {
-  const formattedValue = lamports >= 1000000 
-    ? `${(lamports / 1000000000).toFixed(9).replace(/\.?0+$/, '')} SOL`
-    : lamports;
-
   return (
-    <span className={`rounded px-2 py-0.5 text-[12px] font-medium border border-gray-500/30 text-gray-300 ${className}`}>
-      {formattedValue}
-    </span>
+    <TokenAmountDisplay
+      amount={lamports}
+      decimals={9}
+      symbol="SOL"
+      className={className}
+      variant="badge"
+      formatOptions={{
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 9
+      }}
+    />
   );
 };
 
@@ -72,79 +79,7 @@ interface OwnerDisplayProps {
   className?: string;
 }
 
-interface AddressDisplayProps {
-  address: string;
-  copiedStates: Record<string, boolean>;
-  copyToClipboard: (text: string, id: string) => void;
-  truncateAddress: (address: string) => string;
-  copyId: string;
-  className?: string;
-  showCopyButton?: boolean;
-  aggressiveTruncate?: boolean;
-}
 
-const AddressDisplay: React.FC<AddressDisplayProps> = ({ 
-  address, 
-  copiedStates, 
-  copyToClipboard, 
-  truncateAddress, 
-  copyId,
-  className = "",
-  showCopyButton = true,
-  aggressiveTruncate = false
-}) => {
-  const { rpcUrl } = useAppConfig();
-  const displayAddress = aggressiveTruncate 
-    ? address.length <= 8 ? address : `${address.slice(0, 4)}⋯${address.slice(-4)}`
-    : truncateAddress(address);
-
-  const explorerUrl = `https://explorer.solana.com/address/${address}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
-
-  return (
-    <div className={`flex items-center gap-1 ${className}`}>
-      <span className="text-xs text-gray-300 font-mono">
-        {aggressiveTruncate ? (
-          <>
-            <span className="md:hidden">
-              {address.length <= 8 ? address : `${address.slice(0, 4)}⋯${address.slice(-4)}`}
-            </span>
-            <span className="hidden md:inline">
-              {truncateAddress(address)}
-            </span>
-          </>
-        ) : (
-          displayAddress
-        )}
-      </span>
-      {showCopyButton && (
-        <button
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            copyToClipboard(address, copyId);
-          }}
-          aria-label={`Copy address ${address}`}
-          className="flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
-        >
-          {copiedStates[copyId] ? (
-            <CheckIcon className="h-2.5 w-2.5 text-green-500" />
-          ) : (
-            <ClipboardIcon className="h-2.5 w-2.5" />
-          )}
-        </button>
-      )}
-      <button
-        onClick={(e: React.MouseEvent) => {
-          e.stopPropagation();
-          window.open(explorerUrl, '_blank');
-        }}
-        aria-label={`Open ${address} in Solana Explorer`}
-        className="flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
-      >
-        <ArrowTopRightOnSquareIcon className="h-2.5 w-2.5" />
-      </button>
-    </div>
-  );
-};
 
 const OwnerDisplay: React.FC<OwnerDisplayProps> = ({ 
   owner, 
@@ -1188,10 +1123,7 @@ export default function TransactionStream({
     alert(`IDL registered for ${address}`);
   };
 
-  const truncateAddress = (address: string) => {
-    if (address.length <= 16) return address;
-    return `${address.slice(0, 8)}⋯${address.slice(-8)}`;
-  };
+  const truncateAddress = truncateAddressUtil;
 
   const getHexData = (data: any) => {
     if (typeof data === 'object' && data !== null) {

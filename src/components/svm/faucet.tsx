@@ -8,6 +8,9 @@ import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog'
 import { Field, Label } from '../catalyst/fieldset'
 import { useWorkspaceContext } from '@/contexts/workspace-context'
 import { useAppConfig } from '@/hooks/use-app-config'
+import AddressDisplay from './address-display'
+import TokenAmountDisplay from './token-amount-display'
+import { truncateAddress as truncateAddressUtil, convertToRawAmount } from '@/lib/address-utils'
 
 export type Network = {
   id: string,
@@ -49,6 +52,7 @@ export default function Faucet() {
   const [tokenMatches, setTokenMatches] = useState<Token[]>([])
   const [claimedTokens, setClaimedTokens] = useState(0)
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest])
+  const [inputValues, setInputValues] = useState<string[]>([''])
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([])
   const [processedRecipients, setProcessedRecipients] = useState<{address: string | undefined}[]>([])
   const [reccipients, setReccipients] = useState<
@@ -65,9 +69,21 @@ export default function Faucet() {
   const [tokens, setTokens] = useState<any[]>([])
 
   const [networkStatuses, setNetworkStatuses] = useState<Record<string, boolean>>({})
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({})
 
   const workspaceContext = useWorkspaceContext()
   const { rpcUrl, loading: configLoading, error: configError } = useAppConfig()
+
+  // Helper functions for AddressDisplay
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedStates((prev) => ({ ...prev, [id]: true }));
+    setTimeout(() => {
+      setCopiedStates((prev) => ({ ...prev, [id]: false }));
+    }, 2000);
+  };
+
+  const truncateAddress = truncateAddressUtil;
 
   async function fetchData() {
     // Fetch tokens from Jupiter API only once
@@ -139,6 +155,7 @@ export default function Faucet() {
 
   const resetToInitialState = () => {
     setTokenFundingRequest([defaultFundingRequest])
+    setInputValues([''])
     setReccipients([{ address: '' }])
   }
 
@@ -166,14 +183,14 @@ export default function Faucet() {
             id: 1,
             jsonrpc: '2.0',
             method: 'surfnet_setTokenAccount',
-            params: [recipient.address, tokenFundingRequest.token.address, { amount: tokenFundingRequest.amount * tokenFundingRequest.token.decimals }],
+            params: [recipient.address, tokenFundingRequest.token.address, { amount: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) }],
           }
         } else {
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
             method: 'surfnet_setAccount',
-            params: [recipient.address, { lamports: tokenFundingRequest.amount * tokenFundingRequest.token.decimals }],
+            params: [recipient.address, { lamports: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) }],
           }
         }
 
@@ -200,6 +217,7 @@ export default function Faucet() {
 
   const handleAddFundingRequest = () => {
     setTokenFundingRequest([...tokenFundingRequests, defaultFundingRequest])
+    setInputValues([...inputValues, ''])
   }
 
   const handleAddAddress = () => {
@@ -207,8 +225,24 @@ export default function Faucet() {
   }
 
   const handleTokenFundingRequestChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const value = e.target.value
+    
+    // Update the input display value
+    const newInputValues = [...inputValues]
+    newInputValues[index] = value
+    setInputValues(newInputValues)
+    
+    // Update the actual amount if it's a valid number
     const newTokenFundingRequests = [...tokenFundingRequests]
-    newTokenFundingRequests[index].amount = parseFloat(e.target.value)
+    if (value === '') {
+      newTokenFundingRequests[index].amount = 0
+    } else {
+      const parsedValue = parseFloat(value)
+      if (!isNaN(parsedValue)) {
+        newTokenFundingRequests[index].amount = parsedValue
+      }
+    }
+    
     setTokenFundingRequest(newTokenFundingRequests)
   }
 
@@ -229,7 +263,7 @@ export default function Faucet() {
                   id={`amount-${index}`}
                   type="text"
                   placeholder="0"
-                  value={tokenFundingRequest.amount || ''}
+                  value={inputValues[index] || ''}
                   className="w-full border-none bg-transparent text-left sm:text-4xl md:text-4xl lg:text-4xl !text-4xl focus:outline-none"
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                 />
@@ -356,31 +390,60 @@ export default function Faucet() {
       <Dialog open={successDialogOpen} onClose={() => setSuccessDialogOpen(false)} size="3xl">
         <DialogTitle>Token Accounts Updated</DialogTitle>
         <DialogDescription>{''}</DialogDescription>
+        <div className="space-y-4">
           {processedTokens.map((fundingRequest, tokenIndex) => (
             processedRecipients.map((recipient, recipientIndex) => (
-              <div key={`${tokenIndex}-${recipientIndex}`} className="flex items-center gap-4 mt-4 p-4 rounded-lg bg-zinc-800/50">
+              <div key={`${tokenIndex}-${recipientIndex}`} className="flex items-center gap-4 p-4 rounded-lg bg-zinc-800/50">
                 <img 
                   src={fundingRequest.token.imageUrl} 
                   alt={fundingRequest.token.ticker} 
                   className="h-8 w-8 rounded-full"
                 />
-                <div className="flex flex-col">
+                <div className="flex flex-col flex-1">
                   <div className="font-medium">
                     {fundingRequest.token.ticker}
                   </div>
-                  <div className="text-sm text-zinc-400">
-                    {fundingRequest.token.address} 
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    To: {recipient.address}
+                  {fundingRequest.token.address && fundingRequest.token.address.trim() !== '' && (
+                    <div className="text-sm text-zinc-400">
+                      <AddressDisplay
+                        address={fundingRequest.token.address}
+                        copiedStates={copiedStates}
+                        copyToClipboard={copyToClipboard}
+                        truncateAddress={truncateAddress}
+                        copyId={`token-${tokenIndex}-${recipientIndex}`}
+                        showCopyButton={true}
+                        aggressiveTruncate={false}
+                      />
+                    </div>
+                  )}
+                  <div className="text-xs text-zinc-500 mt-1">
+                    To: {recipient.address ? (
+                      <AddressDisplay
+                        address={recipient.address}
+                        copiedStates={copiedStates}
+                        copyToClipboard={copyToClipboard}
+                        truncateAddress={truncateAddress}
+                        copyId={`recipient-${tokenIndex}-${recipientIndex}`}
+                        showCopyButton={true}
+                        aggressiveTruncate={false}
+                      />
+                    ) : (
+                      <span className="text-zinc-600">No address provided</span>
+                    )}
                   </div>
                 </div>
-                <div className="ml-auto font-bold text-green-400">
-                  {fundingRequest.amount} {fundingRequest.token.ticker}
+                <div className="ml-auto">
+                  <TokenAmountDisplay
+                    amount={convertToRawAmount(fundingRequest.amount, fundingRequest.token.decimals)}
+                    decimals={fundingRequest.token.decimals}
+                    symbol={fundingRequest.token.ticker}
+                    variant="default"
+                  />
                 </div>
               </div>
             ))
           ))}
+        </div>
       </Dialog>
     </div>
   )
