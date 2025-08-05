@@ -7,6 +7,7 @@ import { formatSignature, getTransactionStatus, useTransactionStream } from '@/l
 import { TrashIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { diff } from 'fast-myers-diff';
+import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
@@ -232,36 +233,38 @@ const processTransactionProfile = (profile: any): TransactionProfile => {
 };
 
 // Enhanced diff algorithm using fast-myers-diff
-const computeSmartDiff = (beforeBytes: number[], afterBytes: number[]) => {
-  const diffResult = Array.from(diff(beforeBytes, afterBytes));
-  const diffMap = new Map<number, { type: 'insert' | 'delete' | 'modify' | 'unchanged', value?: number, beforeValue?: number, afterValue?: number }>();
+const computeHexDiff = (beforeBytes: number[], afterBytes: number[]) => {
+  const diffResult = analyzeHexDiff(beforeBytes, afterBytes);
   
-  // Process each diff region
-  for (const [sx, ex, sy, ey] of diffResult) {
-    if (sx === ex && sy !== ey) {
-      // Pure insertion: no bytes deleted, new bytes inserted
-      for (let i = sy; i < ey; i++) {
-        diffMap.set(i, { type: 'insert', value: afterBytes[i] });
-      }
-    } else if (sx !== ex && sy === ey) {
-      // Pure deletion: bytes deleted, no new bytes inserted
-      for (let i = sx; i < ex; i++) {
-        diffMap.set(i, { type: 'delete', value: beforeBytes[i] });
-      }
-    } else if (sx !== ex && sy !== ey) {
-      // Replacement: bytes deleted and new bytes inserted
-      // Mark deleted bytes
-      for (let i = sx; i < ex; i++) {
-        diffMap.set(i, { type: 'delete', value: beforeBytes[i] });
-      }
-      // Mark inserted bytes
-      for (let i = sy; i < ey; i++) {
-        diffMap.set(i, { type: 'insert', value: afterBytes[i] });
-      }
+  // Create maps for easy lookup during rendering
+  const beforeDiffMap = new Map<number, { type: 'removal' | 'update', range?: { start: number, end: number } }>();
+  const afterDiffMap = new Map<number, { type: 'addition' | 'update', range?: { start: number, end: number } }>();
+  
+  // Mark removals (red highlighting in before view)
+  diffResult.removals.forEach(removal => {
+    for (let i = removal.beforeRange.start; i <= removal.beforeRange.end; i++) {
+      beforeDiffMap.set(i, { type: 'removal', range: removal.beforeRange });
     }
-  }
+  });
   
-  return diffMap;
+  // Mark additions (green highlighting in after view)
+  diffResult.additions.forEach(addition => {
+    for (let i = addition.afterRange.start; i <= addition.afterRange.end; i++) {
+      afterDiffMap.set(i, { type: 'addition', range: addition.afterRange });
+    }
+  });
+  
+  // Mark updates (yellow highlighting in both views)
+  diffResult.updates.forEach(update => {
+    for (let i = update.beforeRange.start; i <= update.beforeRange.end; i++) {
+      beforeDiffMap.set(i, { type: 'update', range: update.beforeRange });
+    }
+    for (let i = update.afterRange.start; i <= update.afterRange.end; i++) {
+      afterDiffMap.set(i, { type: 'update', range: update.afterRange });
+    }
+  });
+  
+  return { beforeDiffMap, afterDiffMap, diffResult };
 };
 
 
@@ -731,13 +734,18 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   renderJsonDiff,
   renderUnifiedJsonDiff,
 }) => {
-  const hasChange = getAccountViewMode(address, context) === 'parsed' 
-    ? JSON.stringify(extractProgramData(beforeData)) !== JSON.stringify(extractProgramData(afterData))
-    : getHexData(beforeData) !== getHexData(afterData);
+  // Use original before/after data
+  const tempBeforeData = beforeData;
+  const tempAfterData = afterData;
+  
+  const viewMode = getAccountViewMode(address, context);
+  const hasChange = viewMode === 'parsed' 
+    ? JSON.stringify(extractProgramData(tempBeforeData)) !== JSON.stringify(extractProgramData(tempAfterData))
+    : getHexData(tempBeforeData) !== getHexData(tempAfterData);
 
   return (
     <div className="w-full overflow-x-auto border-t border-gray-600/30 bg-black/20 p-3 font-mono text-xs whitespace-pre">
-      {getAccountViewMode(address, context) === 'parsed' ? (
+      {viewMode === 'parsed' ? (
         <div>
           {hasChange ? (
             <div>
@@ -767,67 +775,175 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       ) : (
         <div>
           {hasChange ? (
-            <div>
-              <div 
-                className="font-mono text-xs"
-                dangerouslySetInnerHTML={{
-                  __html: (() => {
-                    // Convert data to strings for comparison
-                    const getDataString = (data: any) => {
-                      if (typeof data === 'object' && data !== null) {
-                        if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
-                          try {
-                            return atob(data[0]);
-                          } catch (error) {
-                            return data[0] || '';
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-2">BEFORE</div>
+                <div 
+                  className="font-mono text-xs"
+                  dangerouslySetInnerHTML={{
+                    __html: (() => {
+                      // Convert data to strings for comparison
+                      const getDataString = (data: any) => {
+                        if (typeof data === 'object' && data !== null) {
+                          if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
+                            try {
+                              return atob(data[0]);
+                            } catch (error) {
+                              return data[0] || '';
+                            }
                           }
+                          return JSON.stringify(data);
                         }
-                        return JSON.stringify(data);
+                        return String(data);
+                      };
+                      
+                      const beforeStr = getDataString(tempBeforeData);
+                      const afterStr = getDataString(tempAfterData);
+                      
+                      // Generate hex dump with analyzeHexDiff highlighting
+                      const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
+                      const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
+                      const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
+                      const lines = [];
+
+                      for (let i = 0; i < beforeBytes.length; i += 16) {
+                        const beforeLineBytes = beforeBytes.slice(i, i + 16);
+
+                        // Hex representation with analyzeHexDiff highlighting
+                        const beforeHexParts = beforeLineBytes.map((byte, index) => {
+                          const globalIndex = i + index;
+                          const diffEntry = beforeDiffMap.get(globalIndex);
+                          
+                          let highlightClass = '';
+                          let borderClass = '';
+                          
+                          if (diffEntry) {
+                            if (diffEntry.type === 'removal') {
+                              // Show removals in red
+                              highlightClass = 'text-red-600 bg-red-900/20';
+                            } else if (diffEntry.type === 'update') {
+                              // Show updates in yellow
+                              highlightClass = 'text-yellow-600 bg-yellow-900/20';
+                            }
+                          } else {
+                            // Check if this byte follows an addition (for green border in before view)
+                            if (diffResult.additions.length > 0) {
+                              for (const addition of diffResult.additions) {
+                                if (globalIndex === addition.beforeIndex) {
+                                  borderClass = 'border-l-2 border-green-500';
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                          
+                          const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                          const combinedClass = highlightClass || borderClass;
+                          return combinedClass ? `<span class="${combinedClass}">${hex}</span>` : hex;
+                        });
+
+                        const beforeHexPart = beforeHexParts.join(' ');
+
+                        // Line number (offset)
+                        const offset = i.toString(16).padStart(4, '0').toUpperCase();
+
+                        // Create line with only hex (no ASCII)
+                        lines.push(`<span class="text-gray-500">${offset}:</span> ${beforeHexPart}`);
                       }
-                      return String(data);
-                    };
-                    
-                    const beforeStr = getDataString(beforeData);
-                    const afterStr = getDataString(afterData);
-                    
-                    // Generate hex dump with fast-myers-diff highlighting
-                    const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
-                    const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
-                    const diffMap = computeSmartDiff(beforeBytes, afterBytes);
-                    const lines = [];
 
-                    for (let i = 0; i < afterBytes.length; i += 16) {
-                      const afterLineBytes = afterBytes.slice(i, i + 16);
-
-                      // Hex representation with fast-myers-diff highlighting
-                      const afterHexParts = afterLineBytes.map((byte, index) => {
-                        const globalIndex = i + index;
-                        const diffEntry = diffMap.get(globalIndex);
-                        
-                        let highlightClass = '';
-                        if (diffEntry) {
-                          if (diffEntry.type === 'insert') {
-                            highlightClass = 'text-green-600 bg-green-900/20';
+                      return lines.join('\n').replace(/\n/g, '<br>');
+                    })()
+                  }}
+                />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-2">AFTER</div>
+                <div 
+                  className="font-mono text-xs"
+                  dangerouslySetInnerHTML={{
+                    __html: (() => {
+                      // Convert data to strings for comparison
+                      const getDataString = (data: any) => {
+                        if (typeof data === 'object' && data !== null) {
+                          if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
+                            try {
+                              return atob(data[0]);
+                            } catch (error) {
+                              return data[0] || '';
+                            }
                           }
+                          return JSON.stringify(data);
                         }
-                        
-                        const hex = byte.toString(16).padStart(2, '0').toUpperCase();
-                        return highlightClass ? `<span class="${highlightClass}">${hex}</span>` : hex;
-                      });
+                        return String(data);
+                      };
+                      
+                      const beforeStr = getDataString(tempBeforeData);
+                      const afterStr = getDataString(tempAfterData);
+                      
+                      // Generate hex dump with analyzeHexDiff highlighting
+                      const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
+                      const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
+                      const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
+                      const lines = [];
 
-                      const afterHexPart = afterHexParts.join(' ');
+                      for (let i = 0; i < afterBytes.length; i += 16) {
+                        const afterLineBytes = afterBytes.slice(i, i + 16);
 
-                      // Line number (offset)
-                      const offset = i.toString(16).padStart(4, '0').toUpperCase();
+                        // Hex representation with analyzeHexDiff highlighting
+                        const afterHexParts = afterLineBytes.map((byte, index) => {
+                          const globalIndex = i + index;
+                          const diffEntry = afterDiffMap.get(globalIndex);
+                          
+                          let highlightClass = '';
+                          let borderClass = '';
+                          
+                          if (diffEntry) {
+                            if (diffEntry.type === 'addition') {
+                              // Show additions in green
+                              highlightClass = 'text-green-600 bg-green-900/20';
+                            } else if (diffEntry.type === 'update') {
+                              // Show updates in yellow
+                              highlightClass = 'text-yellow-600 bg-yellow-900/20';
+                            }
+                          } else {
+                            // Check if this byte follows a removal (for red border)
+                            if (diffResult.removals.length > 0) {
+                              for (const removal of diffResult.removals) {
+                                // Calculate the correct position accounting for all previous removals
+                                // Each removal shifts the positions in the after view
+                                const removedBeforeThis = diffResult.removals
+                                  .filter(r => r.beforeRange.start < removal.beforeRange.start)
+                                  .reduce((sum, r) => sum + (r.beforeRange.end - r.beforeRange.start + 1), 0);
+                                
+                                const correctAfterPosition = removal.beforeRange.start - removedBeforeThis;
+                                
+                                if (globalIndex === correctAfterPosition) {
+                                  borderClass = 'border-l-2 border-red-500';
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                          
+                          const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                          const combinedClass = highlightClass || borderClass;
+                          return combinedClass ? `<span class="${combinedClass}">${hex}</span>` : hex;
+                        });
 
-                      // Create line with only hex (no ASCII)
-                      lines.push(`<span class="text-gray-500">${offset}:</span> ${afterHexPart}`);
-                    }
+                        const afterHexPart = afterHexParts.join(' ');
 
-                    return lines.join('\n').replace(/\n/g, '<br>');
-                  })()
-                }}
-              />
+                        // Line number (offset)
+                        const offset = i.toString(16).padStart(4, '0').toUpperCase();
+
+                        // Create line with only hex (no ASCII)
+                        lines.push(`<span class="text-gray-500">${offset}:</span> ${afterHexPart}`);
+                      }
+
+                      return lines.join('\n').replace(/\n/g, '<br>');
+                    })()
+                  }}
+                />
+              </div>
             </div>
           ) : (
             <div>
