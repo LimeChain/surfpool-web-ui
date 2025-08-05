@@ -29,5 +29,14 @@
   top: 0;
   bottom: 0;
   width: 2px;
+}
+
+/* Red borders for removals */
+.hex-grid span[class*="border-red-500"]::before {
   background-color: #ef4444; /* red-500 */
+}
+
+/* Green borders for additions */
+.hex-grid span[class*="border-green-500"]::before {
+  background-color: #22c55e; /* green-500 */
 }

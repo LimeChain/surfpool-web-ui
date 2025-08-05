@@ -712,6 +712,7 @@ interface DataComparisonProps {
   toggleAccountViewMode: (address: string, context?: string) => void;
   renderJsonDiff: (beforeJson: any, afterJson: any, isRed: boolean) => any;
   renderUnifiedJsonDiff: (beforeJson: any, afterJson: any) => any;
+  copyToClipboard: (text: string, id: string) => void;
 }
 
 const DataComparison: React.FC<DataComparisonProps> = ({
@@ -733,10 +734,47 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   toggleAccountViewMode,
   renderJsonDiff,
   renderUnifiedJsonDiff,
+  copyToClipboard,
 }) => {
   // Use original before/after data
   const tempBeforeData = beforeData;
   const tempAfterData = afterData;
+
+  // Helper function to generate hex data from account data
+  const generateHexData = (data: any) => {
+    const getDataString = (data: any) => {
+      if (typeof data === 'object' && data !== null) {
+        if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
+          try {
+            return atob(data[0]);
+          } catch (error) {
+            return data[0] || '';
+          }
+        }
+        return JSON.stringify(data);
+      }
+      return String(data);
+    };
+    
+    const dataStr = getDataString(data);
+    const bytes = Array.from(dataStr).map((char) => (char as string).charCodeAt(0));
+    return bytes.map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
+  };
+
+  // Copy button component
+  const CopyButton = ({ data, label }: { data: any; label: string }) => (
+    <button
+      onClick={() => {
+        const hexData = generateHexData(data);
+        copyToClipboard(hexData, `${label.toLowerCase()}-hex-${address}`);
+      }}
+      className="text-gray-400 hover:text-white transition-colors mr-6"
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+    </button>
+  );
   
   const viewMode = getAccountViewMode(address, context);
   const hasChange = viewMode === 'parsed' 
@@ -777,7 +815,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
           {hasChange ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <div className="text-xs font-semibold text-gray-500 mb-2">BEFORE</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-gray-500">BEFORE</div>
+                  <CopyButton data={tempBeforeData} label="before" />
+                </div>
                 <div 
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
@@ -858,7 +899,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                 />
               </div>
               <div>
-                <div className="text-xs font-semibold text-gray-500 mb-2">AFTER</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-gray-500">AFTER</div>
+                  <CopyButton data={tempAfterData} label="after" />
+                </div>
                 <div 
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
@@ -1299,6 +1343,7 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
               toggleAccountViewMode={toggleAccountViewMode}
               renderJsonDiff={renderJsonDiff}
               renderUnifiedJsonDiff={renderUnifiedJsonDiff}
+              copyToClipboard={copyToClipboard}
             />
           </div>
         )}
