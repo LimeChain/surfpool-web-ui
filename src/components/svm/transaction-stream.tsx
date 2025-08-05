@@ -513,6 +513,7 @@ interface DataComparisonProps {
   registerIdl: (address: string) => void;
   toggleAccountViewMode: (address: string, context?: string) => void;
   renderJsonDiff: (beforeJson: any, afterJson: any, isRed: boolean) => any;
+  renderUnifiedJsonDiff: (beforeJson: any, afterJson: any) => any;
 }
 
 const DataComparison: React.FC<DataComparisonProps> = ({
@@ -533,6 +534,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   registerIdl,
   toggleAccountViewMode,
   renderJsonDiff,
+  renderUnifiedJsonDiff,
 }) => {
   const hasChange = getAccountViewMode(address, context) === 'parsed' 
     ? JSON.stringify(extractProgramData(beforeData)) !== JSON.stringify(extractProgramData(afterData))
@@ -543,228 +545,104 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       {getAccountViewMode(address, context) === 'parsed' ? (
         <div>
           {hasChange ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-              <div>
-                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
-                <div className="pr-0 md:pr-2">
-                  {renderJsonDiff(extractProgramData(beforeData), extractProgramData(afterData), true)}
-                </div>
-              </div>
-              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
-                <div className="mb-1 text-xs text-gray-500">AFTER</div>
-                <div>
-                  {renderJsonDiff(extractProgramData(beforeData), extractProgramData(afterData), false)}
-                </div>
-              </div>
+            <div>
+              {renderUnifiedJsonDiff(extractProgramData(beforeData), extractProgramData(afterData))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-              <div>
-                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
-                <div className="pr-0 md:pr-2">
-                  <div 
-                    ref={(el) => {
-                      if (el && typeof window !== 'undefined') {
-                        const extractedData = extractProgramData(beforeData);
-                        if (extractedData === '<none>') {
-                          el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
-                        } else {
-                          try {
-                            el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
-                          } catch (error) {
-                            el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
-                          }
-                        }
+            <div>
+              <div 
+                ref={(el) => {
+                  if (el && typeof window !== 'undefined') {
+                    const extractedData = extractProgramData(afterData);
+                    if (extractedData === '<none>') {
+                      el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
+                    } else {
+                      try {
+                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
+                      } catch (error) {
+                        el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
                       }
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
-                <div className="mb-1 text-xs text-gray-500">AFTER</div>
-                <div>
-                  <div 
-                    ref={(el) => {
-                      if (el && typeof window !== 'undefined') {
-                        const extractedData = extractProgramData(afterData);
-                        if (extractedData === '<none>') {
-                          el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
-                        } else {
-                          try {
-                            el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
-                          } catch (error) {
-                            el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
-                          }
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
+                    }
+                  }
+                }}
+              />
             </div>
           )}
         </div>
       ) : (
         <div>
           {hasChange ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-              <div>
-                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
-                <div className="pr-0 md:pr-2">
-                  <div 
-                    className="font-mono text-xs"
-                    dangerouslySetInnerHTML={{
-                      __html: (() => {
-                        // Convert data to strings for comparison
-                        const getDataString = (data: any) => {
-                          if (typeof data === 'object' && data !== null) {
-                            if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
-                              try {
-                                return atob(data[0]);
-                              } catch (error) {
-                                return data[0] || '';
-                              }
-                            }
-                            return JSON.stringify(data);
+            <div>
+              <div 
+                className="font-mono text-xs"
+                dangerouslySetInnerHTML={{
+                  __html: (() => {
+                    // Convert data to strings for comparison
+                    const getDataString = (data: any) => {
+                      if (typeof data === 'object' && data !== null) {
+                        if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
+                          try {
+                            return atob(data[0]);
+                          } catch (error) {
+                            return data[0] || '';
                           }
-                          return String(data);
-                        };
-                        
-                                                 const beforeStr = getDataString(beforeData);
-                         const afterStr = getDataString(afterData);
-                         
-                         // Generate hex dump with fast-myers-diff highlighting
-                         const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
-                         const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
-                        const diffMap = computeSmartDiff(beforeBytes, afterBytes);
-                        const lines = [];
-
-                        for (let i = 0; i < beforeBytes.length; i += 16) {
-                          const beforeLineBytes = beforeBytes.slice(i, i + 16);
-
-                          // Hex representation with fast-myers-diff highlighting
-                          const beforeHexParts = beforeLineBytes.map((byte, index) => {
-                            const globalIndex = i + index;
-                            const diffEntry = diffMap.get(globalIndex);
-                            
-                            let highlightClass = '';
-                            if (diffEntry) {
-                              if (diffEntry.type === 'delete') {
-                                highlightClass = 'text-red-600 bg-red-900/20';
-                              }
-                            }
-                            
-                            const hex = byte.toString(16).padStart(2, '0').toUpperCase();
-                            return highlightClass ? `<span class="${highlightClass}">${hex}</span>` : hex;
-                          });
-
-                          const beforeHexPart = beforeHexParts.join(' ');
-
-                          // Line number (offset)
-                          const offset = i.toString(16).padStart(4, '0').toUpperCase();
-
-                          // Create line with only hex (no ASCII)
-                          lines.push(`<span class="text-gray-500">${offset}:</span> ${beforeHexPart}`);
                         }
+                        return JSON.stringify(data);
+                      }
+                      return String(data);
+                    };
+                    
+                    const beforeStr = getDataString(beforeData);
+                    const afterStr = getDataString(afterData);
+                    
+                    // Generate hex dump with fast-myers-diff highlighting
+                    const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
+                    const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
+                    const diffMap = computeSmartDiff(beforeBytes, afterBytes);
+                    const lines = [];
 
-                        return lines.join('\n').replace(/\n/g, '<br>');
-                      })()
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
-                <div className="mb-1 text-xs text-gray-500">AFTER</div>
-                <div>
-                  <div 
-                    className="font-mono text-xs"
-                    dangerouslySetInnerHTML={{
-                      __html: (() => {
-                        // Convert data to strings for comparison
-                        const getDataString = (data: any) => {
-                          if (typeof data === 'object' && data !== null) {
-                            if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
-                              try {
-                                return atob(data[0]);
-                              } catch (error) {
-                                return data[0] || '';
-                              }
-                            }
-                            return JSON.stringify(data);
+                    for (let i = 0; i < afterBytes.length; i += 16) {
+                      const afterLineBytes = afterBytes.slice(i, i + 16);
+
+                      // Hex representation with fast-myers-diff highlighting
+                      const afterHexParts = afterLineBytes.map((byte, index) => {
+                        const globalIndex = i + index;
+                        const diffEntry = diffMap.get(globalIndex);
+                        
+                        let highlightClass = '';
+                        if (diffEntry) {
+                          if (diffEntry.type === 'insert') {
+                            highlightClass = 'text-green-600 bg-green-900/20';
                           }
-                          return String(data);
-                        };
-                        
-                        const beforeStr = getDataString(beforeData);
-                        const afterStr = getDataString(afterData);
-                        
-                                                 // Generate hex dump with fast-myers-diff highlighting
-                                                 const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
-                         const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
-                        const diffMap = computeSmartDiff(beforeBytes, afterBytes);
-                        const lines = [];
-
-                        for (let i = 0; i < afterBytes.length; i += 16) {
-                          const afterLineBytes = afterBytes.slice(i, i + 16);
-
-                          // Hex representation with fast-myers-diff highlighting
-                          const afterHexParts = afterLineBytes.map((byte, index) => {
-                            const globalIndex = i + index;
-                            const diffEntry = diffMap.get(globalIndex);
-                            
-                            let highlightClass = '';
-                            if (diffEntry) {
-                              if (diffEntry.type === 'insert') {
-                                highlightClass = 'text-green-600 bg-green-900/20';
-                              }
-                            }
-                            
-                            const hex = byte.toString(16).padStart(2, '0').toUpperCase();
-                            return highlightClass ? `<span class="${highlightClass}">${hex}</span>` : hex;
-                          });
-
-                          const afterHexPart = afterHexParts.join(' ');
-
-                          // Line number (offset)
-                          const offset = i.toString(16).padStart(4, '0').toUpperCase();
-
-                          // Create line with only hex (no ASCII)
-                          lines.push(`<span class="text-gray-500">${offset}:</span> ${afterHexPart}`);
                         }
+                        
+                        const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                        return highlightClass ? `<span class="${highlightClass}">${hex}</span>` : hex;
+                      });
 
-                        return lines.join('\n').replace(/\n/g, '<br>');
-                      })()
-                    }}
-                  />
-                </div>
-              </div>
+                      const afterHexPart = afterHexParts.join(' ');
+
+                      // Line number (offset)
+                      const offset = i.toString(16).padStart(4, '0').toUpperCase();
+
+                      // Create line with only hex (no ASCII)
+                      lines.push(`<span class="text-gray-500">${offset}:</span> ${afterHexPart}`);
+                    }
+
+                    return lines.join('\n').replace(/\n/g, '<br>');
+                  })()
+                }}
+              />
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-              <div>
-                <div className="mb-1 text-xs text-gray-500">BEFORE</div>
-                <div className="pr-0 md:pr-2">
-                  {(() => {
-                    const hexData = getHexDataForUpdates(beforeData);
-                    if (hexData === '<none>') {
-                      return <div className="text-gray-500 text-xs italic">No data</div>;
-                    }
-                    return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
-                  })()}
-                </div>
-              </div>
-              <div className="border-t md:border-t-0 md:border-l border-gray-600/30 pt-2 md:pt-0 md:pl-2 mt-2 md:mt-0">
-                <div className="mb-1 text-xs text-gray-500">AFTER</div>
-                <div>
-                  {(() => {
-                    const hexData = getHexDataForUpdates(afterData);
-                    if (hexData === '<none>') {
-                      return <div className="text-gray-500 text-xs italic">No data</div>;
-                    }
-                    return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
-                  })()}
-                </div>
-              </div>
+            <div>
+              {(() => {
+                const hexData = getHexDataForUpdates(afterData);
+                if (hexData === '<none>') {
+                  return <div className="text-gray-500 text-xs italic">No data</div>;
+                }
+                return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
+              })()}
             </div>
           )}
         </div>
@@ -872,6 +750,7 @@ interface UpdateAccountDetailsProps {
   truncateAddress: (address: string) => string;
   highlightDifferences: (beforeValue: any, afterValue: any, isRed: boolean) => any;
   renderJsonDiff: (beforeJson: any, afterJson: any, isRed: boolean) => any;
+  renderUnifiedJsonDiff: (beforeJson: any, afterJson: any) => any;
   isDragOver: Record<string, boolean>;
   droppedIdl: Record<string, any>;
   handleDragOver: (e: React.DragEvent, address: string) => void;
@@ -933,24 +812,8 @@ const AccountDetails: React.FC<AccountDetailsProps> = ({
         </div>
       )}
       {accountData.executable ? (
-        <div className="space-y-0">
-          <div className="flex items-center justify-between px-5 pb-2">
-            <div className="text-xs font-semibold text-gray-500">DATA</div>
-            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-900/30 px-2 py-1 text-xs font-medium text-purple-300">
-                  {(() => {
-                    const isSystemProgram = address.includes('11111111111');
-                    const isTokenProgram = address.startsWith('Token');
-                    const isAssociatedTokenProgram = address.startsWith('AToken');
-                    
-                    if (isSystemProgram) return 'SYSTEM PROGRAM';
-                    if (isAssociatedTokenProgram) return 'ASSOCIATED TOKEN PROGRAM';
-                    if (isTokenProgram) return 'TOKEN PROGRAM';
-                    return 'PROGRAM';
-                  })()}
-                </span>
-            </div>
-          </div>
+        <div className="space-y-0 pb-2">
+          {/* No content for executable accounts */}
         </div>
       ) : (
         <div className="space-y-0">
@@ -1022,6 +885,7 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
   truncateAddress,
   highlightDifferences,
   renderJsonDiff,
+  renderUnifiedJsonDiff,
   isDragOver,
   droppedIdl,
   handleDragOver,
@@ -1062,25 +926,7 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
         {/* Data Field */}
         {accountData[0].executable || accountData[1].executable ? (
           <div className="space-y-0">
-            <div className="flex items-center justify-between px-5 pb-2">
-              <div className={`text-xs font-semibold ${
-                accountData[0].executable !== accountData[1].executable ? 'text-yellow-400' : 'text-gray-400'
-              }`}>DATA</div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-900/30 px-2 py-1 text-xs font-medium text-purple-300">
-                  {(() => {
-                    const isSystemProgram = address.includes('11111111111');
-                    const isTokenProgram = address.startsWith('Token');
-                    const isAssociatedTokenProgram = address.startsWith('AToken');
-                    
-                    if (isSystemProgram) return 'SYSTEM PROGRAM';
-                    if (isAssociatedTokenProgram) return 'ASSOCIATED TOKEN PROGRAM';
-                    if (isTokenProgram) return 'TOKEN PROGRAM';
-                    return 'PROGRAM';
-                  })()}
-                </span>
-              </div>
-            </div>
+            {/* No content for executable accounts */}
           </div>
         ) : (
           <div className="space-y-0">
@@ -1139,6 +985,7 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
               registerIdl={registerIdl}
               toggleAccountViewMode={toggleAccountViewMode}
               renderJsonDiff={renderJsonDiff}
+              renderUnifiedJsonDiff={renderUnifiedJsonDiff}
             />
           </div>
         )}
@@ -1895,6 +1742,126 @@ export default function TransactionStream({
     }
   };
 
+  const renderUnifiedJsonDiff = (beforeJson: any, afterJson: any) => {
+    try {
+      // Ensure we're working with actual objects, not strings
+      const beforeObj = typeof beforeJson === 'string' ? JSON.parse(beforeJson) : beforeJson;
+      const afterObj = typeof afterJson === 'string' ? JSON.parse(afterJson) : afterJson;
+
+      // Find all changed paths
+      const changedPaths = findChangedPaths(beforeObj, afterObj);
+
+      // Helper function to get the path for a specific line in the JSON
+      const getPathForLine = (jsonLines: string[], targetIndex: number): string[] => {
+        const path: string[] = [];
+        const stack: { indent: number; key: string }[] = [];
+        
+        for (let i = 0; i <= targetIndex; i++) {
+          const line = jsonLines[i];
+          const indent = (line.match(/^\s*/)?.[0].length || 0) / 2;
+          const trimmed = line.trim();
+          
+          // Remove items from stack that are deeper than current indent
+          while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+            stack.pop();
+          }
+          
+          // If this line starts an object, add it to the stack
+          if (trimmed.endsWith('{')) {
+            const match = trimmed.match(/^"?([^":]+)"?\s*:\s*{$/);
+            if (match) {
+              stack.push({ indent, key: match[1] });
+            }
+          }
+          
+          // If this is the target line and it has a key, extract it
+          if (i === targetIndex) {
+            const fieldMatch = trimmed.match(/^"?([^":]+)"?\s*:/);
+            if (fieldMatch) {
+              return [...stack.map(item => item.key), fieldMatch[1]];
+            }
+          }
+        }
+        
+        return stack.map(item => item.key);
+      };
+
+      // Use the after data as the base for display
+      const jsonToShow = afterObj;
+      const jsonString = JSON.stringify(jsonToShow, null, 2);
+
+      // Split into lines and process each line
+      const jsonLines = jsonString.split('\n');
+      const processedLines: React.ReactNode[] = [];
+
+      for (let index = 0; index < jsonLines.length; index++) {
+        const line = jsonLines[index];
+        const trimmedLine = line.trim();
+        
+        // Get the path for this line
+        const linePath = getPathForLine(jsonLines, index);
+        
+        // Check if this line contains a changed field
+        const hasChangedValue = Array.from(changedPaths).some((path) => {
+          const pathParts = path.split('.');
+          return pathParts.join('.') === linePath.join('.');
+        });
+
+        if (hasChangedValue) {
+          // Find the corresponding line in the before data
+          const beforeJsonString = JSON.stringify(beforeObj, null, 2);
+          const beforeJsonLines = beforeJsonString.split('\n');
+          
+          // Try to find the matching line in before data
+          let beforeLine = '';
+          for (let beforeIndex = 0; beforeIndex < beforeJsonLines.length; beforeIndex++) {
+            const beforeLinePath = getPathForLine(beforeJsonLines, beforeIndex);
+            if (beforeLinePath.join('.') === linePath.join('.')) {
+              beforeLine = beforeJsonLines[beforeIndex];
+              break;
+            }
+          }
+
+          // Show both old and new values
+          if (beforeLine && beforeLine !== line) {
+            // Show old value in red
+            processedLines.push(
+              <div key={`${index}-before`} className="text-red-500 bg-red-900/30 font-bold">
+                {beforeLine}
+              </div>
+            );
+            // Show new value in green
+            processedLines.push(
+              <div key={`${index}-after`} className="text-green-500 bg-green-900/30 font-bold">
+                {line}
+              </div>
+            );
+          } else {
+            // Fallback: just show the new value in green
+            processedLines.push(
+              <div key={index} className="text-green-500 bg-green-900/30 font-bold">
+                {line}
+              </div>
+            );
+          }
+        } else {
+          // Unchanged line
+          processedLines.push(
+            <div key={index} className="text-gray-300">
+              {line}
+            </div>
+          );
+        }
+      }
+
+      return <div className="font-mono text-xs">{processedLines}</div>;
+    } catch (error) {
+      console.error('Error rendering unified JSON diff:', error);
+      // Fallback to simple string comparison
+      return <pre className="text-gray-300">{JSON.stringify(afterJson, null, 2)}</pre>;
+    }
+  };
+
   const fetchTransactionProfile = async (signature: string) => {
     try {
       setProfileLoading(true);
@@ -2018,7 +1985,7 @@ export default function TransactionStream({
     return (
       <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
         <div className="mb-0 flex items-center justify-between">
-          <h2 className="text-sm font-medium tracking-wide text-white uppercase">Recent Transactions</h2>
+          <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
         </div>
         <div className="flex h-[280px] items-center justify-center rounded-lg border border-zinc-600">
           <div className="text-center">
@@ -2037,7 +2004,7 @@ export default function TransactionStream({
   return (
     <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
       <div className="mb-0 flex items-center justify-between">
-        <h2 className="text-sm font-medium tracking-wide text-white uppercase">Recent Transactions</h2>
+        <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
         <div className="flex items-center gap-2">
           <div className="flex h-8 items-center gap-2 rounded-md border border-zinc-600 bg-zinc-800 px-3">
             <div
@@ -2575,6 +2542,7 @@ export default function TransactionStream({
                                                     truncateAddress={truncateAddress}
                                                     highlightDifferences={highlightDifferences}
                                                     renderJsonDiff={renderJsonDiff}
+                                                    renderUnifiedJsonDiff={renderUnifiedJsonDiff}
                                                     isDragOver={isDragOver}
                                                     droppedIdl={droppedIdl}
                                                     handleDragOver={handleDragOver}

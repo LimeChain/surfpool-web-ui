@@ -284,7 +284,9 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
         console.log('✅ Local signatures received:', data.result.value.length, 'signatures');
         
         // Process each signature using the unified processor
-        for (const signatureData of data.result.value) {
+        // Process in reverse order so most recent appear at the top
+        for (let i = data.result.value.length - 1; i >= 0; i--) {
+          const signatureData = data.result.value[i];
           const signature = signatureData.signature;
           await processTransactionSignature(signature, signatureData.err);
         }

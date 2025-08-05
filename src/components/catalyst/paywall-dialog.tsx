@@ -84,7 +84,6 @@ function parseFeatureMetadata(metadata: PlanMetadata): Array<{key: string; secti
         }
       });
       
-      console.log('Parsed features (ordered):', orderedFeatures);
       return orderedFeatures;
     } catch (error) {
       console.error('Failed to parse features order array:', error);
@@ -97,7 +96,6 @@ function parseFeatureMetadata(metadata: PlanMetadata): Array<{key: string; secti
     section: value
   }));
   
-  console.log('Parsed features:', featuresArray);
   return featuresArray;
 }
 
@@ -185,7 +183,6 @@ export function PaywallDialog({ open, onClose, plans, loading, stars }: PaywallD
                   // Get all plans with metadata
                   const plansWithMetadata = plans.filter(plan => plan.metadata);
                   const allParsedFeatures = plansWithMetadata.map(plan => parseFeatureMetadata(plan.metadata!));
-                  console.log('Parsed features for all plans:', plansWithMetadata.map(plan => ({ name: plan.name, features: parseFeatureMetadata(plan.metadata!) })));
                   
                   // Get all unique feature keys from all plans
                   const allFeatureKeys = new Set<string>();
