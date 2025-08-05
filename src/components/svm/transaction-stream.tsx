@@ -451,6 +451,201 @@ const LamportsComparison: React.FC<LamportsComparisonProps> = ({ beforeLamports,
   );
 };
 
+interface PermissionsBoxProps {
+  accountState: any;
+  address: string;
+  hasChanges: boolean;
+  transactionProfile: any;
+  selectedTransaction: any;
+}
+
+const PermissionsBox: React.FC<PermissionsBoxProps> = ({
+  accountState,
+  address,
+  hasChanges,
+  transactionProfile,
+  selectedTransaction,
+}) => {
+  // Check if this is an executable account (program)
+  const isExecutable = (() => {
+    let isExecutable = false;
+    
+    // Check all possible sources for executable flag
+    if (hasChanges && accountState.accountChange.data) {
+      if (Array.isArray(accountState.accountChange.data)) {
+        // Update case - check both before and after
+        isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+      } else {
+        // Create/Delete case - check the single account
+        isExecutable = accountState.accountChange.data.executable;
+      }
+    } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
+      // Read-only account case
+      isExecutable = transactionProfile.readonlyAccountStates[address].executable;
+    }
+    
+    // Additional check: if we have instruction profiles, check if this address appears as a program
+    if (!isExecutable && transactionProfile.instructionProfiles) {
+      for (const instructionProfile of transactionProfile.instructionProfiles) {
+        if (instructionProfile.accountStates && instructionProfile.accountStates[address]) {
+          const accountState = instructionProfile.accountStates[address];
+          if (accountState.accountChange?.data) {
+            if (Array.isArray(accountState.accountChange.data)) {
+              isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+            } else {
+              isExecutable = accountState.accountChange.data.executable;
+            }
+          }
+          if (isExecutable) break;
+        }
+      }
+    }
+    
+    // Fallback check: look at the transaction's instruction data to identify program accounts
+    if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
+      for (const instruction of selectedTransaction.transaction.message.instructions) {
+        if (instruction.programId === address) {
+          isExecutable = true;
+          break;
+        }
+      }
+    }
+    
+    return isExecutable;
+  })();
+
+  return (
+    <div className="mr-3 flex items-center rounded-md bg-clip-border">
+      <div className="border border-gray-600/50 bg-gray-800/50 text-xs font-mono rounded-[2px] h-6">
+        <span className={`inline-block w-6 text-center border-r border-gray-600/50 h-full ${accountState.type === 'readonly' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>R</span>
+        <span className={`inline-block w-6 text-center border-r border-gray-600/50 h-full ${accountState.type === 'writable' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>W</span>
+        <span className={`inline-block w-6 text-center h-full ${isExecutable ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>X</span>
+      </div>
+    </div>
+  );
+};
+
+interface AccountLabelsProps {
+  accountState: any;
+  address: string;
+  hasChanges: boolean;
+  transactionProfile: any;
+  selectedTransaction: any;
+}
+
+const AccountLabels: React.FC<AccountLabelsProps> = ({
+  accountState,
+  address,
+  hasChanges,
+  transactionProfile,
+  selectedTransaction,
+}) => {
+  // Check if account has a change label (NEW, UPDATED, DELETED)
+  const hasChangeLabel = hasChanges && (
+    accountState.accountChange.type === 'create' ||
+    accountState.accountChange.type === 'update' ||
+    accountState.accountChange.type === 'delete'
+  );
+
+  return (
+    <div className="flex items-center">
+      {hasChanges && accountState.accountChange.type === 'create' && (
+        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-green-500/30 bg-green-900/30 text-green-300">
+          NEW ACCOUNT
+        </span>
+      )}
+      {hasChanges && accountState.accountChange.type === 'update' && (
+        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-yellow-500/30 bg-yellow-900/30 text-yellow-300">
+          UPDATED ACCOUNT
+        </span>
+      )}
+      {hasChanges && accountState.accountChange.type === 'delete' && (
+        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-red-500/30 bg-red-900/30 text-red-300">
+          DELETED ACCOUNT
+        </span>
+      )}
+
+      {(() => {
+        // Check if this is an executable account (program)
+        let isExecutable = false;
+        
+        // Check all possible sources for executable flag
+        if (hasChanges && accountState.accountChange.data) {
+          if (Array.isArray(accountState.accountChange.data)) {
+            // Update case - check both before and after
+            isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+          } else {
+            // Create/Delete case - check the single account
+            isExecutable = accountState.accountChange.data.executable;
+          }
+        } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
+          // Read-only account case
+          isExecutable = transactionProfile.readonlyAccountStates[address].executable;
+        }
+        
+        // Additional check: if we have instruction profiles, check if this address appears as a program
+        if (!isExecutable && transactionProfile.instructionProfiles) {
+          for (const instructionProfile of transactionProfile.instructionProfiles) {
+            if (instructionProfile.accountStates && instructionProfile.accountStates[address]) {
+              const accountState = instructionProfile.accountStates[address];
+              if (accountState.accountChange?.data) {
+                if (Array.isArray(accountState.accountChange.data)) {
+                  isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+                } else {
+                  isExecutable = accountState.accountChange.data.executable;
+                }
+              }
+              if (isExecutable) break;
+            }
+          }
+        }
+        
+        // Fallback check: look at the transaction's instruction data to identify program accounts
+        if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
+          for (const instruction of selectedTransaction.transaction.message.instructions) {
+            if (instruction.programId === address) {
+              isExecutable = true;
+              break;
+            }
+          }
+        }
+        
+        if (isExecutable) {
+          const isSystemProgram = address.includes('11111111111');
+          const isTokenProgram = address.startsWith('Token');
+          const isAssociatedTokenProgram = address.startsWith('AToken');
+          
+          let programLabel = 'PROGRAM';
+          if (isSystemProgram) {
+            programLabel = 'SYSTEM PROGRAM';
+          } else if (isAssociatedTokenProgram) {
+            programLabel = 'ASSOCIATED TOKEN PROGRAM';
+          } else if (isTokenProgram) {
+            programLabel = 'TOKEN PROGRAM';
+          }
+          
+          return (
+            <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-400/30 bg-gray-800/30 text-gray-200">
+              {programLabel}
+            </span>
+          );
+        }
+        
+        // If no other label applies and no change label exists, show READ ACCOUNT badge
+        if (!hasChangeLabel) {
+          return (
+            <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-500/30 bg-gray-900/30 text-gray-300">
+              READ ACCOUNT
+            </span>
+          );
+        }
+        
+        return null;
+      })()}
+    </div>
+  );
+};
+
 interface OwnerComparisonProps {
   beforeOwner: string;
   afterOwner: string;
@@ -2383,7 +2578,7 @@ export default function TransactionStream({
                                           if (hasChanges && accountState.accountChange.type === 'create') {
                                             return "hover:bg-green-900/40";
                                           } else if (hasChanges && accountState.accountChange.type === 'update') {
-                                            return "hover:bg-blue-900/40";
+                                            return "hover:bg-yellow-900/40";
                                           } else if (hasChanges && accountState.accountChange.type === 'delete') {
                                             return "hover:bg-red-900/40";
                                           } else if (!hasChanges && !isWritable) {
@@ -2406,90 +2601,7 @@ export default function TransactionStream({
                                                 className="flex cursor-pointer items-center justify-between px-2 py-1 font-mono text-xs text-gray-400"
                                                 onClick={() => toggleAccountExpansion(index, address)}
                                               >
-                                                <div className="flex items-center">
-                                                  {hasChanges && accountState.accountChange.type === 'create' && (
-                                                    <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-green-500/30 bg-green-900/30 text-green-300">
-                                                      NEW ACCOUNT
-                                                    </span>
-                                                  )}
-                                                  {hasChanges && accountState.accountChange.type === 'update' && (
-                                                    <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-blue-500/30 bg-blue-900/30 text-blue-300">
-                                                      UPDATED ACCOUNT
-                                                    </span>
-                                                  )}
-                                                  {hasChanges && accountState.accountChange.type === 'delete' && (
-                                                    <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-red-500/30 bg-red-900/30 text-red-300">
-                                                      DELETED ACCOUNT
-                                                    </span>
-                                                  )}
-
-                                                  {(() => {
-                                                    // Check if this is an executable account (program)
-                                                    let isExecutable = false;
-                                                    
-                                                    // Check all possible sources for executable flag
-                                                    if (hasChanges && accountState.accountChange.data) {
-                                                      if (Array.isArray(accountState.accountChange.data)) {
-                                                        // Update case - check both before and after
-                                                        isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
-                                                      } else {
-                                                        // Create/Delete case - check the single account
-                                                        isExecutable = accountState.accountChange.data.executable;
-                                                      }
-                                                    } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
-                                                      // Read-only account case
-                                                      isExecutable = transactionProfile.readonlyAccountStates[address].executable;
-                                                    }
-                                                    
-                                                    // Additional check: if we have instruction profiles, check if this address appears as a program
-                                                    if (!isExecutable && transactionProfile.instructionProfiles) {
-                                                      for (const instructionProfile of transactionProfile.instructionProfiles) {
-                                                        if (instructionProfile.accountStates && instructionProfile.accountStates[address]) {
-                                                          const accountState = instructionProfile.accountStates[address];
-                                                          if (accountState.accountChange?.data) {
-                                                            if (Array.isArray(accountState.accountChange.data)) {
-                                                              isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
-                                                            } else {
-                                                              isExecutable = accountState.accountChange.data.executable;
-                                                            }
-                                                          }
-                                                          if (isExecutable) break;
-                                                        }
-                                                      }
-                                                    }
-                                                    
-                                                    // Fallback check: look at the transaction's instruction data to identify program accounts
-                                                    if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
-                                                      for (const instruction of selectedTransaction.transaction.message.instructions) {
-                                                        if (instruction.programId === address) {
-                                                          isExecutable = true;
-                                                          break;
-                                                        }
-                                                      }
-                                                    }
-                                                    
-                                                    if (isExecutable) {
-                                                      const isSystemProgram = address.includes('11111111111');
-                                                      const isTokenProgram = address.startsWith('Token');
-                                                      const isAssociatedTokenProgram = address.startsWith('AToken');
-                                                      
-                                                      let programLabel = 'PROGRAM';
-                                                      if (isSystemProgram) {
-                                                        programLabel = 'SYSTEM PROGRAM';
-                                                      } else if (isAssociatedTokenProgram) {
-                                                        programLabel = 'ASSOCIATED TOKEN PROGRAM';
-                                                      } else if (isTokenProgram) {
-                                                        programLabel = 'TOKEN PROGRAM';
-                                                      }
-                                                      
-                                                      return (
-                                                        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-purple-500/30 bg-purple-900/30 text-purple-300">
-                                                          {programLabel}
-                                                        </span>
-                                                      );
-                                                    }
-                                                    return null;
-                                                  })()}
+                                                <div className="flex items-center">                                                  
                                                   <AddressDisplay
                                                     address={address}
                                                     copiedStates={copiedStates}
@@ -2500,6 +2612,14 @@ export default function TransactionStream({
                                                     showCopyButton={true}
                                                   />
                                                 </div>
+                                                
+                                                <AccountLabels
+                                                  accountState={accountState}
+                                                  address={address}
+                                                  hasChanges={hasChanges}
+                                                  transactionProfile={transactionProfile}
+                                                  selectedTransaction={selectedTransaction}
+                                                />
                                               </div>
                                             </div>
 
