@@ -775,7 +775,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       ) : (
         <div>
           {hasChange ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs font-semibold text-gray-500 mb-2">BEFORE</div>
                 <div 
@@ -820,10 +820,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           if (diffEntry) {
                             if (diffEntry.type === 'removal') {
                               // Show removals in red
-                              highlightClass = 'text-red-600 bg-red-900/20';
+                              highlightClass = 'text-red-500 bg-red-900/30';
                             } else if (diffEntry.type === 'update') {
                               // Show updates in yellow
-                              highlightClass = 'text-yellow-600 bg-yellow-900/20';
+                              highlightClass = 'text-yellow-500 bg-yellow-900/30';
                             }
                           } else {
                             // Check if this byte follows an addition (for green border in before view)
@@ -839,16 +839,17 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           
                           const hex = byte.toString(16).padStart(2, '0').toUpperCase();
                           const combinedClass = highlightClass || borderClass;
-                          return combinedClass ? `<span class="${combinedClass}">${hex}</span>` : hex;
+                          return combinedClass ? `<span class="${combinedClass} hex-grid">${hex}</span>` : `<span class="hex-grid">${hex}</span>`;
                         });
 
-                        const beforeHexPart = beforeHexParts.join(' ');
+                        // Join hex bytes directly since they're already wrapped in spans
+                        const beforeHexPart = beforeHexParts.join('');
 
                         // Line number (offset)
                         const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
-                        // Create line with only hex (no ASCII)
-                        lines.push(`<span class="text-gray-500">${offset}:</span> ${beforeHexPart}`);
+                        // Create line with only hex (no ASCII) - use CSS for spacing between pairs
+                        lines.push(`<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${beforeHexPart}</span>`);
                       }
 
                       return lines.join('\n').replace(/\n/g, '<br>');
@@ -900,10 +901,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           if (diffEntry) {
                             if (diffEntry.type === 'addition') {
                               // Show additions in green
-                              highlightClass = 'text-green-600 bg-green-900/20';
+                              highlightClass = 'text-green-500 bg-green-900/30';
                             } else if (diffEntry.type === 'update') {
                               // Show updates in yellow
-                              highlightClass = 'text-yellow-600 bg-yellow-900/20';
+                              highlightClass = 'text-yellow-500 bg-yellow-900/30';
                             }
                           } else {
                             // Check if this byte follows a removal (for red border)
@@ -927,16 +928,17 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           
                           const hex = byte.toString(16).padStart(2, '0').toUpperCase();
                           const combinedClass = highlightClass || borderClass;
-                          return combinedClass ? `<span class="${combinedClass}">${hex}</span>` : hex;
+                          return combinedClass ? `<span class="${combinedClass} hex-grid">${hex}</span>` : `<span class="hex-grid">${hex}</span>`;
                         });
 
-                        const afterHexPart = afterHexParts.join(' ');
+                        // Join hex bytes directly since they're already wrapped in spans
+                        const afterHexPart = afterHexParts.join('');
 
                         // Line number (offset)
                         const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
-                        // Create line with only hex (no ASCII)
-                        lines.push(`<span class="text-gray-500">${offset}:</span> ${afterHexPart}`);
+                        // Create line with only hex (no ASCII) - use CSS for spacing between pairs
+                        lines.push(`<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${afterHexPart}</span>`);
                       }
 
                       return lines.join('\n').replace(/\n/g, '<br>');
@@ -1732,8 +1734,8 @@ export default function TransactionStream({
     for (let i = 0; i < bytes.length; i += 16) {
       const lineBytes = bytes.slice(i, i + 16);
 
-      // Hex representation
-      const hexPart = lineBytes.map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      // Hex representation - join bytes with span elements for CSS padding
+      const hexPart = lineBytes.map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`).join('');
 
       // ASCII representation
       const asciiPart = lineBytes
@@ -1749,8 +1751,8 @@ export default function TransactionStream({
       // Line number (offset)
       const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
-      // Create line with HTML styling and proper layout
-      const hexSection = `<span class="text-gray-500">${offset}:</span> <span class="text-white">${hexPart}</span>`;
+      // Create line with HTML styling and proper layout - use CSS for spacing
+      const hexSection = `<span class="text-gray-500">${offset}:</span> <span class="text-white hex-grid">${hexPart}</span>`;
       const asciiSection = `<span class="text-gray-400">|${asciiPart}|</span>`;
 
       // Use flexbox layout to push ASCII to the right
@@ -1767,14 +1769,14 @@ export default function TransactionStream({
     for (let i = 0; i < bytes.length; i += 16) {
       const lineBytes = bytes.slice(i, i + 16);
 
-      // Hex representation
-      const hexPart = lineBytes.map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      // Hex representation - join bytes with span elements for CSS padding
+      const hexPart = lineBytes.map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`).join('');
 
       // Line number (offset)
       const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
-      // Create line with only hex (no ASCII)
-      lines.push(`${offset}: ${hexPart}`);
+      // Create line with only hex (no ASCII) - use CSS for spacing
+      lines.push(`${offset}: <span class="hex-grid">${hexPart}</span>`);
     }
 
     return lines.join('\n');
