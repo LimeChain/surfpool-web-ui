@@ -40,3 +40,5 @@
 .hex-grid span[class*="border-green-500"]::before {
   background-color: #22c55e; /* green-500 */
 }
+
+@custom-variant dark (&:where(.dark, .dark *));
