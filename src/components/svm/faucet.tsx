@@ -322,7 +322,7 @@ export default function Faucet() {
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                 />
                 <div
-                  className="flex cursor-pointer items-center justify-between rounded-full border border-zinc-700 p-2 uppercase hover:bg-zinc-800 sm:text-xl md:text-xl lg:text-xl"
+                  className="flex cursor-pointer items-center justify-between rounded-full border-2 border-dashed border-zinc-600 p-2 uppercase hover:bg-zinc-800 hover:border-zinc-500 sm:text-xl md:text-xl lg:text-xl"
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
