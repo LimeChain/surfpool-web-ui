@@ -15,11 +15,12 @@ import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 // TypeScript interfaces based on the transaction profile structure
 interface AccountData {
   lamports: number;
-  data: {
+  json?: {
     program: string;
     parsed: Record<string, any>;
     space: number;
-  } | [string, string] | number[]; // Can be parsed JSON, [data, encoding], or decoded bytes
+  } | [string, string]; // Can be parsed JSON, [data, encoding], or decoded bytes
+  bytes: number[];
   owner: string;
   executable: boolean;
   rentEpoch: number;
@@ -104,39 +105,39 @@ const decodeAccountData = (data: any): any => {
   return data;
 };
 
-const mergeTransactionProfiles = (jsonParsedProfile: any, base58Profile: any): any => {
+const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): any => {
   // Deep clone the jsonParsed profile as the base
   const mergedProfile = JSON.parse(JSON.stringify(jsonParsedProfile));
   
   // Helper function to merge account data
-  const mergeAccountData = (jsonParsedData: any, base58Data: any): any => {
-    if (!jsonParsedData || !base58Data) return jsonParsedData || base58Data;
+  const mergeAccountData = (jsonParsedData: any, base64Data: any): any => {
+    if (!jsonParsedData || !base64Data) return jsonParsedData || base64Data;
     
     const merged = { ...jsonParsedData };
     
-    // Add rawBytes from base58 profile
-    if (base58Data.data) {
-      merged.rawBytes = decodeAccountData(base58Data.data);
+    // Set the json field from jsonParsed profile
+    if (jsonParsedData.data) {
+      merged.json = jsonParsedData.data;
     }
     
-    // Keep jsonParsedBytes from jsonParsed profile
-    if (jsonParsedData.data) {
-      merged.jsonParsedBytes = jsonParsedData.data;
+    // Set the bytes field from base64 profile
+    if (base64Data.data) {
+      merged.bytes = decodeAccountData(base64Data.data);
     }
     
     return merged;
   };
   
   // Helper function to merge account states
-  const mergeAccountStates = (jsonParsedStates: any, base58States: any): any => {
-    if (!jsonParsedStates || !base58States) return jsonParsedStates || base58States;
+  const mergeAccountStates = (jsonParsedStates: any, base64States: any): any => {
+    if (!jsonParsedStates || !base64States) return jsonParsedStates || base64States;
     
     const mergedStates = { ...jsonParsedStates };
     
-    Object.keys(base58States).forEach(address => {
+    Object.keys(base64States).forEach(address => {
       if (mergedStates[address]) {
         const jsonParsedState = mergedStates[address];
-        const base58State = base58States[address];
+        const base58State = base64States[address];
         
         if (jsonParsedState.accountChange?.data && base58State.accountChange?.data) {
           if (Array.isArray(jsonParsedState.accountChange.data)) {
@@ -156,17 +157,18 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base58Profile: any): a
       }
     });
     
+    console.log('🔍 Merged states:', mergedStates);
     return mergedStates;
   };
   
   // Merge instruction profiles
-  if (mergedProfile.instructionProfiles && base58Profile.instructionProfiles) {
+  if (mergedProfile.instructionProfiles && base64Profile.instructionProfiles) {
     mergedProfile.instructionProfiles = mergedProfile.instructionProfiles.map((instruction: any, index: number) => {
-      const base58Instruction = base58Profile.instructionProfiles[index];
-      if (base58Instruction) {
+      const base64Instruction = base64Profile.instructionProfiles[index];
+      if (base64Instruction) {
         return {
           ...instruction,
-          accountStates: mergeAccountStates(instruction.accountStates, base58Instruction.accountStates)
+          accountStates: mergeAccountStates(instruction.accountStates, base64Instruction.accountStates)
         };
       }
       return instruction;
@@ -174,12 +176,12 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base58Profile: any): a
   }
   
   // Merge readonly account states
-  if (mergedProfile.readonlyAccountStates && base58Profile.readonlyAccountStates) {
-    Object.keys(base58Profile.readonlyAccountStates).forEach(address => {
+  if (mergedProfile.readonlyAccountStates && base64Profile.readonlyAccountStates) {
+    Object.keys(base64Profile.readonlyAccountStates).forEach(address => {
       if (mergedProfile.readonlyAccountStates[address]) {
         mergedProfile.readonlyAccountStates[address] = mergeAccountData(
           mergedProfile.readonlyAccountStates[address],
-          base58Profile.readonlyAccountStates[address]
+          base64Profile.readonlyAccountStates[address]
         );
       }
     });
@@ -369,7 +371,10 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
           ref={(el) => {
             if (el && typeof window !== 'undefined') {
               try {
-                el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractProgramData(data)}</pretty-json>`;
+                const extractedData = extractProgramData(data);
+                // Ensure we pass a properly serialized JSON string to pretty-json
+                const jsonString = typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+                el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
               } catch (error) {
                 el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractProgramData(data), null, 2)}</pre>`;
               }
@@ -823,27 +828,38 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
                     __html: (() => {
-                      // Convert data to strings for comparison
-                      const getDataString = (data: any) => {
+                      // Get raw bytes from the data
+                      const getRawBytes = (data: any) => {
                         if (typeof data === 'object' && data !== null) {
+                          // If it's our new data structure with bytes field, use that
+                          if (data.bytes && Array.isArray(data.bytes)) {
+                            return data.bytes;
+                          }
+                          
+                          // If it's a base64 array, decode it
                           if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
                             try {
-                              return atob(data[0]);
+                              const decoded = atob(data[0]);
+                              return Array.from(decoded).map((char) => (char as string).charCodeAt(0));
                             } catch (error) {
-                              return data[0] || '';
+                              return [];
                             }
                           }
-                          return JSON.stringify(data);
+                          
+                          // If it's already an array of numbers, use it directly
+                          if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+                            return data;
+                          }
+                          
+                          // Fallback: convert to JSON string and then to bytes
+                          const jsonStr = JSON.stringify(data);
+                          return Array.from(jsonStr).map((char) => (char as string).charCodeAt(0));
                         }
-                        return String(data);
+                        return [];
                       };
                       
-                      const beforeStr = getDataString(tempBeforeData);
-                      const afterStr = getDataString(tempAfterData);
-                      
-                      // Generate hex dump with analyzeHexDiff highlighting
-                      const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
-                      const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
+                      const beforeBytes = getRawBytes(tempBeforeData);
+                      const afterBytes = getRawBytes(tempAfterData);
                       const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
                       const lines = [];
 
@@ -851,7 +867,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const beforeLineBytes = beforeBytes.slice(i, i + 16);
 
                         // Hex representation with analyzeHexDiff highlighting
-                        const beforeHexParts = beforeLineBytes.map((byte, index) => {
+                        const beforeHexParts = beforeLineBytes.map((byte: number, index: number) => {
                           const globalIndex = i + index;
                           const diffEntry = beforeDiffMap.get(globalIndex);
                           
@@ -907,27 +923,38 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
                     __html: (() => {
-                      // Convert data to strings for comparison
-                      const getDataString = (data: any) => {
+                      // Get raw bytes from the data
+                      const getRawBytes = (data: any) => {
                         if (typeof data === 'object' && data !== null) {
+                          // If it's our new data structure with bytes field, use that
+                          if (data.bytes && Array.isArray(data.bytes)) {
+                            return data.bytes;
+                          }
+                          
+                          // If it's a base64 array, decode it
                           if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
                             try {
-                              return atob(data[0]);
+                              const decoded = atob(data[0]);
+                              return Array.from(decoded).map((char) => (char as string).charCodeAt(0));
                             } catch (error) {
-                              return data[0] || '';
+                              return [];
                             }
                           }
-                          return JSON.stringify(data);
+                          
+                          // If it's already an array of numbers, use it directly
+                          if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+                            return data;
+                          }
+                          
+                          // Fallback: convert to JSON string and then to bytes
+                          const jsonStr = JSON.stringify(data);
+                          return Array.from(jsonStr).map((char) => (char as string).charCodeAt(0));
                         }
-                        return String(data);
+                        return [];
                       };
                       
-                      const beforeStr = getDataString(tempBeforeData);
-                      const afterStr = getDataString(tempAfterData);
-                      
-                      // Generate hex dump with analyzeHexDiff highlighting
-                      const beforeBytes = Array.from(beforeStr).map((char) => (char as string).charCodeAt(0));
-                      const afterBytes = Array.from(afterStr).map((char) => (char as string).charCodeAt(0));
+                      const beforeBytes = getRawBytes(tempBeforeData);
+                      const afterBytes = getRawBytes(tempAfterData);
                       const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
                       const lines = [];
 
@@ -935,7 +962,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const afterLineBytes = afterBytes.slice(i, i + 16);
 
                         // Hex representation with analyzeHexDiff highlighting
-                        const afterHexParts = afterLineBytes.map((byte, index) => {
+                        const afterHexParts = afterLineBytes.map((byte: number, index: number) => {
                           const globalIndex = i + index;
                           const diffEntry = afterDiffMap.get(globalIndex);
                           
@@ -1207,7 +1234,7 @@ const AccountDetails: React.FC<AccountDetailsProps> = ({
             </div>
           </div>
           <DataDisplay
-            data={accountData.data}
+            data={accountData}
             address={address}
             context={context}
             getAccountViewMode={getAccountViewMode}
@@ -1325,8 +1352,8 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
               </div>
             </div>
             <DataComparison
-              beforeData={accountData[0].data}
-              afterData={accountData[1].data}
+              beforeData={accountData[0]}
+              afterData={accountData[1]}
               address={address}
               context={context}
               getAccountViewMode={getAccountViewMode}
@@ -1390,155 +1417,6 @@ export default function TransactionStream({
   const [isDragOver, setIsDragOver] = useState<{ [address: string]: boolean }>({});
 
   // Move the large JSON object inside the component and memoize it
-  const mockTransactionProfile: TransactionProfile = useMemo(() => ({
-    slot: 123,
-    key: '0c2441a4-85b4-4eed-802e-855a66da721d',
-    instructionProfiles: [
-      {
-        accountStates: {
-          '1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM': {
-            type: 'writable',
-            accountChange: {
-              type: 'create',
-              data: {
-                lamports: 10000000001,
-                data: {
-                  program: 'custom-program',
-                  parsed: {
-                    field1: 'value1',
-                    field2: 'value2',
-                  },
-                  space: 50,
-                },
-                owner: '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh',
-                executable: false,
-                rentEpoch: 0,
-                space: 100,
-              },
-            },
-          },
-          '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh': {
-            type: 'readonly',
-          },
-        },
-        computeUnitsConsumed: 50000,
-        logMessages: ['Log message: Creating Account', 'Log message: Account created'],
-        errorMessage: null,
-      },
-      {
-        accountStates: {
-          '1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM': {
-            type: 'writable',
-            accountChange: {
-              type: 'update',
-              data: [
-                {
-                  lamports: 10000000001,
-                  data: {
-                    program: 'custom-program',
-                    parsed: {
-                      field1: 'value1',
-                      field2: 'value2',
-                    },
-                    space: 50,
-                  },
-                  owner: '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdx',
-                  executable: false,
-                  rentEpoch: 0,
-                  space: 100,
-                },
-                {
-                  lamports: 90,
-                  data: {
-                    program: 'custom-program',
-                    parsed: {
-                      field1: 'updated-value1',
-                      field2: 'updated-value2',
-                    },
-                    space: 50,
-                  },
-                  owner: '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh',
-                  executable: false,
-                  rentEpoch: 0,
-                  space: 100,
-                },
-              ],
-            },
-          },
-          '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh': {
-            type: 'readonly',
-          },
-        },
-        computeUnitsConsumed: 20000,
-        logMessages: ['Log message: Updating Account', 'Log message: Account updated'],
-        errorMessage: null,
-      },
-      {
-        accountStates: {
-          '1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM': {
-            type: 'writable',
-            accountChange: {
-              type: 'delete',
-              data: {
-                lamports: 100,
-                data: {
-                  program: 'custom-program',
-                  parsed: {
-                    field1: 'updated-value1',
-                    field2: 'updated-value2',
-                  },
-                  space: 50,
-                },
-                owner: '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh',
-                executable: false,
-                rentEpoch: 0,
-                space: 100,
-              },
-            },
-          },
-          '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh': {
-            type: 'readonly',
-          },
-        },
-        computeUnitsConsumed: 10000,
-        logMessages: ['Log message: Deleting Account', 'Log message: Account deleted'],
-        errorMessage: null,
-      },
-    ],
-    transactionProfile: {
-      accountStates: {
-        '1111111QLbz7JHiBTspS962RLKV8GndWFwiEaqKM': {
-          type: 'writable',
-          accountChange: {
-            type: 'unchanged',
-          },
-        },
-        '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh': {
-          type: 'readonly',
-        },
-      },
-      computeUnitsConsumed: 10000,
-      logMessages: [
-        'Log message: Creating Account',
-        'Log message: Account created',
-        'Log message: Updating Account',
-        'Log message: Account updated',
-        'Log message: Deleting Account',
-        'Log message: Account deleted',
-      ],
-      errorMessage: null,
-    },
-    readonlyAccountStates: {
-      '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh': {
-        lamports: 100,
-        data: ['ABCDEFG', 'base64'],
-        owner: '1111111ogCyDbaRMvkdsHB3qfdyFYaG1WtRUAfdh',
-        executable: false,
-        rentEpoch: 0,
-        space: 100,
-      },
-    },
-  }), []);
 
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
@@ -1657,9 +1535,9 @@ export default function TransactionStream({
         }
       }
       
-      // If it's our merged data structure with rawBytes, use that
-      if (data.rawBytes && Array.isArray(data.rawBytes)) {
-        const bytes = data.rawBytes;
+      // If it's our new data structure with bytes field, use that
+      if (data.bytes && Array.isArray(data.bytes)) {
+        const bytes = data.bytes;
         const bytesString = String.fromCharCode(...bytes);
         return formatHexDump(bytesString);
       }
@@ -1692,9 +1570,9 @@ export default function TransactionStream({
         }
       }
       
-      // If it's our merged data structure with rawBytes, use that
-      if (data.rawBytes && Array.isArray(data.rawBytes)) {
-        const bytes = data.rawBytes;
+      // If it's our new data structure with bytes field, use that
+      if (data.bytes && Array.isArray(data.bytes)) {
+        const bytes = data.bytes;
         const bytesString = String.fromCharCode(...bytes);
         return formatHexDump(bytesString);
       }
@@ -1727,12 +1605,12 @@ export default function TransactionStream({
         }
       }
       
-      // If it's our merged data structure with rawBytes, use that
-      if (data.rawBytes && Array.isArray(data.rawBytes)) {
-        if (data.rawBytes.length === 0) {
+      // If it's our new data structure with bytes field, use that
+      if (data.bytes && Array.isArray(data.bytes)) {
+        if (data.bytes.length === 0) {
           return '<none>';
         }
-        const bytes = data.rawBytes;
+        const bytes = data.bytes;
         const bytesString = String.fromCharCode(...bytes);
         return formatHexOnly(bytesString);
       }
@@ -1830,6 +1708,11 @@ export default function TransactionStream({
   // Helper function to extract programData from parsed data
   const hasJsonData = (data: any) => {
     if (typeof data === 'object' && data !== null) {
+      // Check if it has the new structure with json field
+      if (data.json) {
+        return true;
+      }
+
       // Check if it has the parsed structure with programData
       if (data.parsed && data.parsed.info && data.parsed.info.programData) {
         return true;
@@ -1859,6 +1742,11 @@ export default function TransactionStream({
 
   const extractProgramData = (data: any) => {
     if (typeof data === 'object' && data !== null) {
+      // Check if it has the new structure with json field
+      if (data.json) {
+        return data.json;
+      }
+
       // Check if it has the parsed structure with programData
       if (data.parsed && data.parsed.info && data.parsed.info.programData) {
         return data.parsed.info.programData;
@@ -2228,8 +2116,8 @@ export default function TransactionStream({
 
       console.log('🔍 Fetching transaction profile for signature:', signature);
 
-      // Fetch transaction profile with both jsonParsed and base58 encodings in parallel
-      const [jsonParsedResponse, base58Response] = await Promise.all([
+      // Fetch transaction profile with both jsonParsed and base64 encodings in parallel
+      const [jsonParsedResponse, base64Response] = await Promise.all([
         fetch(rpcUrl, {
           method: 'POST',
           headers: {
@@ -2251,26 +2139,26 @@ export default function TransactionStream({
             jsonrpc: '2.0',
             id: 1,
             method: 'surfnet_getTransactionProfile',
-            params: [signature, { encoding: 'base58' }]
+            params: [signature, { encoding: 'base64' }]
           })
         })
       ]);
 
-      if (!jsonParsedResponse.ok || !base58Response.ok) {
-        throw new Error(`HTTP error! status: jsonParsed=${jsonParsedResponse.status}, base58=${base58Response.status}`);
+      if (!jsonParsedResponse.ok || !base64Response.ok) {
+        throw new Error(`HTTP error! status: jsonParsed=${jsonParsedResponse.status}, base58=${base64Response.status}`);
       }
 
-      const [jsonParsedData, base58Data] = await Promise.all([
+      const [jsonParsedData, base64Data] = await Promise.all([
         jsonParsedResponse.json(),
-        base58Response.json()
+        base64Response.json()
       ]);
 
       console.log('📊 JSON Parsed response:', jsonParsedData);
-      console.log('📊 Base58 response:', base58Data);
+      console.log('📊 Base64 response:', base64Data);
 
-      if (jsonParsedData.result?.value && base58Data.result?.value) {
+      if (jsonParsedData.result?.value && base64Data.result?.value) {
         // Merge the results to include both jsonParsedBytes and rawBytes
-        const mergedProfile = mergeTransactionProfiles(jsonParsedData.result.value, base58Data.result.value);
+        const mergedProfile = mergeTransactionProfiles(jsonParsedData.result.value, base64Data.result.value);
         let transactionProfile = processTransactionProfile(mergedProfile);
         setTransactionProfile(transactionProfile);
         
@@ -2974,3 +2862,4 @@ export default function TransactionStream({
     </div>
   );
 }
+
