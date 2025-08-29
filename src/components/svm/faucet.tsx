@@ -5,13 +5,15 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { convertToRawAmount, truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import { PlayIcon, PlusIcon } from '@heroicons/react/24/solid';
-import { generateKeyPair } from '@solana/kit';
+import { generateKeyPair, lamports } from '@solana/kit';
 import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog';
 import { Field, Label } from '../catalyst/fieldset';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
+import { getAccountBalance, getTokenBalance, setAccount } from '@/lib/solana-transaction-stream';
+import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 
 export type Network = {
   id: string;
@@ -35,6 +37,13 @@ interface TokenRequest {
   token: Token;
   amount: number;
 }
+
+interface SetAccountRequest {
+  address: string;
+  lamports: number;
+}
+
+const DEFAULT_LAMPORTS_TO_FUND = LAMPORTS_PER_SOL; // 1 SOL
 
 export default function Faucet() {
   const defaultFundingRequest = {
@@ -181,9 +190,25 @@ export default function Faucet() {
           `Sending ${tokenFundingRequest.amount} ${tokenFundingRequest.token.ticker} to ${recipient.address}`
         );
         console.log(``);
-        // send surfnet_setTokenAccount RPC request
-        var rpcRequest = {};
-        if (tokenFundingRequest.token.address) {
+
+        var is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
+      
+        const accountBalance = await getAccountBalance(recipient.address || '', rpcUrl);  // if > 0, the account already exists else account not exists
+        if (!accountBalance && is_spl_token) {
+          try {
+            const response = await setAccount(recipient.address || '', DEFAULT_LAMPORTS_TO_FUND, rpcUrl);
+            console.log('SetAccountRequest response:', response);
+          } catch (error) {
+            console.error('Error in RPC request:', error);
+          }
+        }  
+        var rpcRequest: any = {};
+        // now that the account exists lets see if we need to fund it with spl-tokens or lamports
+        if (tokenFundingRequest.token.address && is_spl_token){
+          const balance = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
+          const balanceUiAmount = Number(balance?.uiAmount) || 0;
+          const fundingAmount = Number(tokenFundingRequest.amount) || 0;
+          const totalUiAmount = balanceUiAmount + fundingAmount; 
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
@@ -191,17 +216,20 @@ export default function Faucet() {
             params: [
               recipient.address,
               tokenFundingRequest.token.address,
-              { amount: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) },
+              { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
         } else {
+          const balanceUiAmount = Number(accountBalance) || 0;
+          const fundingAmount = Number(tokenFundingRequest.amount) || 0;
+          const totalUiAmount = balanceUiAmount + fundingAmount; 
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
             method: 'surfnet_setAccount',
             params: [
               recipient.address,
-              { lamports: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) },
+              { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
         }

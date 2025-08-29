@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { solanaWebSocketService, SolanaWebSocketService } from './solana-websocket-service';
-
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { PublicKey } from '@solana/web3.js';
+import { convertTokenAmount } from './address-utils';
 // Types for transaction data
 export interface TransactionInfo {
   signatures: string[];
@@ -37,6 +39,12 @@ export interface TransactionInfo {
   };
 }
 
+export interface TokenAmount {
+  amount: string | null;
+  decimals: number;
+  uiAmount: number | null;
+  uiAmountString: string;
+}
 export interface TransactionStreamOptions {
   rpcUrl?: string;
   wsUrl?: string;
@@ -54,6 +62,13 @@ export interface TransactionStreamStats {
   connectionStatus: 'connected' | 'disconnected' | 'connecting' | 'error';
 }
 
+export interface AccountInfo {
+  data: any;
+  executable: boolean;
+  lamports: number;
+  owner: string;
+  rentEpoch: number;
+}
 export function useTransactionStream(options: TransactionStreamOptions = {}) {
   const {
     rpcUrl,
@@ -407,3 +422,86 @@ export const getTransactionPrograms = (tx: TransactionInfo): string[] => {
       arr.indexOf(programId) === index
     );
 }; 
+
+export async function getTokenBalance(address: string, tokenMint: string, rpcUrl: string, commitment:string = "confirmed", programId:string = TOKEN_PROGRAM_ID.toBase58()): Promise<TokenAmount | undefined> {
+  // request for fetching the ata token balance
+  const tokenAccount = await getAssociatedTokenAddressSync(new PublicKey(tokenMint), new PublicKey(address), true, new PublicKey(programId));
+  var rpcRequest = {};
+  rpcRequest = {
+    id: 1,
+    jsonrpc: '2.0',
+    method: 'getTokenAccountBalance',
+    params: [
+      tokenAccount.toBase58(),
+      {commitment: commitment}
+    ] 
+  };
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(rpcRequest),
+    });
+    const data = await response.json() as { result?: { value?: TokenAmount } };
+    console.log(data);
+    return data?.result?.value;
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+export async function getAccountBalance(address: string, rpcUrl: string, commitment:string = "finalized", encoding:string = "jsonParsed"): Promise<number | undefined> {
+  var rpcRequest = {};
+  rpcRequest = {
+    id: 1,
+    jsonrpc: '2.0',
+    method: 'getAccountInfo',
+    params: [address, {commitment: commitment, encoding: encoding}]
+  };
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(rpcRequest),
+    });
+    const data = await response.json() as { result?: { value?: AccountInfo } };
+    const lamports = data?.result?.value?.lamports; 
+    if (lamports) {
+      const lamportsNum = Number(lamports);
+      const uiAmount = convertTokenAmount(lamportsNum, 9);
+      return uiAmount;
+    }
+  } catch (error) {
+    console.log(error);
+    return 0;
+  }
+}
+
+export async function setAccount(address: string, lamports: number, rpcUrl: string): Promise<any | undefined> {
+  var rpcRequest = {};
+  rpcRequest = {
+    id: 1,
+    jsonrpc: '2.0',
+    method: 'surfnet_setAccount',
+    params: [address, { lamports: lamports }],
+  };
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(rpcRequest),
+    });
+    const data = await response.json() as { result?: { value?: any } };
+    console.log(data);
+    return data?.result?.value;
+  } catch (error) {
+    console.log(error);
+  }
+}
+
