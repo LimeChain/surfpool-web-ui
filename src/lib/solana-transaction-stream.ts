@@ -63,6 +63,7 @@ export interface TransactionStreamStats {
 }
 
 export interface AccountInfo {
+  ata_address: string | null;
   data: any;
   executable: boolean;
   lamports: number;
@@ -423,10 +424,10 @@ export const getTransactionPrograms = (tx: TransactionInfo): string[] => {
     );
 }; 
 
-export async function getTokenBalance(address: string, tokenMint: string, rpcUrl: string, commitment:string = "confirmed", programId:string = TOKEN_PROGRAM_ID.toBase58()): Promise<TokenAmount | undefined> {
+export async function getTokenBalance(address: string, tokenMint: string, rpcUrl: string, commitment:string = "confirmed", programId:string = TOKEN_PROGRAM_ID.toBase58()): Promise<{tokenAmount: TokenAmount | undefined, ata_address: string} | undefined> {
   // request for fetching the ata token balance
   const tokenAccount = await getAssociatedTokenAddressSync(new PublicKey(tokenMint), new PublicKey(address), true, new PublicKey(programId));
-  var rpcRequest = {};
+  let rpcRequest = {};
   rpcRequest = {
     id: 1,
     jsonrpc: '2.0',
@@ -446,14 +447,14 @@ export async function getTokenBalance(address: string, tokenMint: string, rpcUrl
     });
     const data = await response.json() as { result?: { value?: TokenAmount } };
     console.log(data);
-    return data?.result?.value;
+    return {tokenAmount: data?.result?.value, ata_address: tokenAccount.toBase58()};
   } catch (error) {
     console.log(error);
   }
 }
 
 export async function getAccountBalance(address: string, rpcUrl: string, commitment:string = "finalized", encoding:string = "jsonParsed"): Promise<number | undefined> {
-  var rpcRequest = {};
+  let rpcRequest = {};
   rpcRequest = {
     id: 1,
     jsonrpc: '2.0',
@@ -482,7 +483,7 @@ export async function getAccountBalance(address: string, rpcUrl: string, commitm
 }
 
 export async function setAccount(address: string, lamports: number, rpcUrl: string): Promise<any | undefined> {
-  var rpcRequest = {};
+  let rpcRequest = {};
   rpcRequest = {
     id: 1,
     jsonrpc: '2.0',

@@ -174,7 +174,6 @@ export default function Faucet() {
   const handleClaimTokens = async () => {
     // Store the tokens and recipients that were processed before resetting
     setProcessedTokens([...tokenFundingRequests]);
-    setProcessedRecipients([...reccipients]);
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
@@ -191,7 +190,7 @@ export default function Faucet() {
         );
         console.log(``);
 
-        var is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
+        const is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
       
         const accountBalance = await getAccountBalance(recipient.address || '', rpcUrl);  // if > 0, the account already exists else account not exists
         if (!accountBalance && is_spl_token) {
@@ -202,13 +201,14 @@ export default function Faucet() {
             console.error('Error in RPC request:', error);
           }
         }  
-        var rpcRequest: any = {};
+        let rpcRequest: any = {};
         // now that the account exists lets see if we need to fund it with spl-tokens or lamports
         if (tokenFundingRequest.token.address && is_spl_token){
-          const balance = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
-          const balanceUiAmount = Number(balance?.uiAmount) || 0;
+          const tokenAcountInfo = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
+          const balanceUiAmount = Number(tokenAcountInfo?.tokenAmount?.uiAmount) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
           const totalUiAmount = balanceUiAmount + fundingAmount; 
+          const ata_address = tokenAcountInfo?.ata_address;
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
@@ -219,6 +219,7 @@ export default function Faucet() {
               { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
+          setProcessedRecipients([...processedRecipients, {address: ata_address, isGenerated: false}]);
         } else {
           const balanceUiAmount = Number(accountBalance) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
@@ -232,8 +233,8 @@ export default function Faucet() {
               { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
+          setProcessedRecipients([...processedRecipients, {address: recipient.address, isGenerated: false}]);
         }
-
         try {
           const response = await fetch(rpcUrl, {
             method: 'POST',
