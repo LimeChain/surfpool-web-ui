@@ -64,7 +64,7 @@ export default function Faucet() {
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest]);
   const [inputValues, setInputValues] = useState<string[]>(['']);
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([]);
-  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; isGenerated: boolean }[]>([]);
+  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[]>([]);
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined;
@@ -174,6 +174,9 @@ export default function Faucet() {
   const handleClaimTokens = async () => {
     // Store the tokens and recipients that were processed before resetting
     setProcessedTokens([...tokenFundingRequests]);
+    
+    // Reset processed recipients for this new airdrop
+    const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[] = [];
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
@@ -219,7 +222,7 @@ export default function Faucet() {
               { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
-          setProcessedRecipients([...processedRecipients, {address: ata_address, isGenerated: false}]);
+          currentAirdropRecipients.push({address: recipient.address, ataAddress: ata_address, isGenerated: false});
         } else {
           const balanceUiAmount = Number(accountBalance) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
@@ -233,7 +236,7 @@ export default function Faucet() {
               { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
-          setProcessedRecipients([...processedRecipients, {address: recipient.address, isGenerated: false}]);
+          currentAirdropRecipients.push({address: recipient.address, isGenerated: false});
         }
         try {
           const response = await fetch(rpcUrl, {
@@ -252,6 +255,8 @@ export default function Faucet() {
         }
       }
     }
+    
+    setProcessedRecipients(currentAirdropRecipients);
     setSuccessDialogOpen(true);
     resetToInitialState();
   };
@@ -512,19 +517,51 @@ export default function Faucet() {
             return (
               <div key={recipientIndex} className="rounded-lg bg-zinc-800/50 p-4">
                 <div className="mb-4">
-                  <div className="text-sm font-medium text-zinc-400 mb-2">Recipient Address:</div>
-                  {recipient.address ? (
-                    <AddressDisplay
-                      address={recipient.address}
-                      copiedStates={copiedStates}
-                      copyToClipboard={copyToClipboard}
-                      truncateAddress={truncateAddress}
-                      copyId={`success-recipient-${recipientIndex}`}
-                      showCopyButton={true}
-                      aggressiveTruncate={false}
-                    />
+                  {recipient.ataAddress ? (
+                    // SPL Token case - show both owner and ATA
+                    <>
+                      <div className="text-sm font-medium text-zinc-400 mb-2">Owner Address:</div>
+                      {recipient.address ? (
+                        <AddressDisplay
+                          address={recipient.address}
+                          copiedStates={copiedStates}
+                          copyToClipboard={copyToClipboard}
+                          truncateAddress={truncateAddress}
+                          copyId={`success-owner-${recipientIndex}`}
+                          showCopyButton={true}
+                          aggressiveTruncate={false}
+                        />
+                      ) : (
+                        <div className="text-zinc-500">No owner address</div>
+                      )}
+                      <div className="text-sm font-medium text-zinc-400 mb-2 mt-3">Token Account (ATA):</div>
+                      <AddressDisplay
+                        address={recipient.ataAddress}
+                        copiedStates={copiedStates}
+                        copyToClipboard={copyToClipboard}
+                        truncateAddress={truncateAddress}
+                        copyId={`success-ata-${recipientIndex}`}
+                        showCopyButton={true}
+                        aggressiveTruncate={false}
+                      />
+                    </>
                   ) : (
-                    <div className="text-zinc-500">No address</div>
+                    <>
+                      <div className="text-sm font-medium text-zinc-400 mb-2">Recipient Address:</div>
+                      {recipient.address ? (
+                        <AddressDisplay
+                          address={recipient.address}
+                          copiedStates={copiedStates}
+                          copyToClipboard={copyToClipboard}
+                          truncateAddress={truncateAddress}
+                          copyId={`success-recipient-${recipientIndex}`}
+                          showCopyButton={true}
+                          aggressiveTruncate={false}
+                        />
+                      ) : (
+                        <div className="text-zinc-500">No address</div>
+                      )}
+                    </>
                   )}
                 </div>
 
