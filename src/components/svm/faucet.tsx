@@ -5,13 +5,15 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { convertToRawAmount, truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import { PlayIcon, PlusIcon } from '@heroicons/react/24/solid';
-import { generateKeyPair } from '@solana/kit';
+import { generateKeyPair, lamports } from '@solana/kit';
 import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogDescription, DialogTitle } from '../catalyst/dialog';
 import { Field, Label } from '../catalyst/fieldset';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
+import { getAccountBalance, getTokenBalance, setAccount } from '@/lib/solana-transaction-stream';
+import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 
 export type Network = {
   id: string;
@@ -36,6 +38,13 @@ interface TokenRequest {
   amount: number;
 }
 
+interface SetAccountRequest {
+  address: string;
+  lamports: number;
+}
+
+const DEFAULT_LAMPORTS_TO_FUND = LAMPORTS_PER_SOL; // 1 SOL
+
 export default function Faucet() {
   const defaultFundingRequest = {
     token: {
@@ -55,7 +64,7 @@ export default function Faucet() {
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest]);
   const [inputValues, setInputValues] = useState<string[]>(['']);
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([]);
-  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; isGenerated: boolean }[]>([]);
+  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[]>([]);
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined;
@@ -165,7 +174,9 @@ export default function Faucet() {
   const handleClaimTokens = async () => {
     // Store the tokens and recipients that were processed before resetting
     setProcessedTokens([...tokenFundingRequests]);
-    setProcessedRecipients([...reccipients]);
+    
+    // Reset processed recipients for this new airdrop
+    const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[] = [];
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
@@ -181,9 +192,26 @@ export default function Faucet() {
           `Sending ${tokenFundingRequest.amount} ${tokenFundingRequest.token.ticker} to ${recipient.address}`
         );
         console.log(``);
-        // send surfnet_setTokenAccount RPC request
-        var rpcRequest = {};
-        if (tokenFundingRequest.token.address) {
+
+        const is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
+      
+        const accountBalance = await getAccountBalance(recipient.address || '', rpcUrl);  // if > 0, the account already exists else account not exists
+        if (!accountBalance && is_spl_token) {
+          try {
+            const response = await setAccount(recipient.address || '', DEFAULT_LAMPORTS_TO_FUND, rpcUrl);
+            console.log('SetAccountRequest response:', response);
+          } catch (error) {
+            console.error('Error in RPC request:', error);
+          }
+        }  
+        let rpcRequest: any = {};
+        // now that the account exists lets see if we need to fund it with spl-tokens or lamports
+        if (tokenFundingRequest.token.address && is_spl_token){
+          const tokenAcountInfo = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
+          const balanceUiAmount = Number(tokenAcountInfo?.tokenAmount?.uiAmount) || 0;
+          const fundingAmount = Number(tokenFundingRequest.amount) || 0;
+          const totalUiAmount = balanceUiAmount + fundingAmount; 
+          const ata_address = tokenAcountInfo?.ata_address;
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
@@ -191,21 +219,25 @@ export default function Faucet() {
             params: [
               recipient.address,
               tokenFundingRequest.token.address,
-              { amount: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) },
+              { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
+          currentAirdropRecipients.push({address: recipient.address, ataAddress: ata_address, isGenerated: false});
         } else {
+          const balanceUiAmount = Number(accountBalance) || 0;
+          const fundingAmount = Number(tokenFundingRequest.amount) || 0;
+          const totalUiAmount = balanceUiAmount + fundingAmount; 
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
             method: 'surfnet_setAccount',
             params: [
               recipient.address,
-              { lamports: convertToRawAmount(tokenFundingRequest.amount, tokenFundingRequest.token.decimals) },
+              { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
+          currentAirdropRecipients.push({address: recipient.address, isGenerated: false});
         }
-
         try {
           const response = await fetch(rpcUrl, {
             method: 'POST',
@@ -223,6 +255,8 @@ export default function Faucet() {
         }
       }
     }
+    
+    setProcessedRecipients(currentAirdropRecipients);
     setSuccessDialogOpen(true);
     resetToInitialState();
   };
@@ -483,19 +517,51 @@ export default function Faucet() {
             return (
               <div key={recipientIndex} className="rounded-lg bg-zinc-800/50 p-4">
                 <div className="mb-4">
-                  <div className="text-sm font-medium text-zinc-400 mb-2">Recipient Address:</div>
-                  {recipient.address ? (
-                    <AddressDisplay
-                      address={recipient.address}
-                      copiedStates={copiedStates}
-                      copyToClipboard={copyToClipboard}
-                      truncateAddress={truncateAddress}
-                      copyId={`success-recipient-${recipientIndex}`}
-                      showCopyButton={true}
-                      aggressiveTruncate={false}
-                    />
+                  {recipient.ataAddress ? (
+                    // SPL Token case - show both owner and ATA
+                    <>
+                      <div className="text-sm font-medium text-zinc-400 mb-2">Owner Address:</div>
+                      {recipient.address ? (
+                        <AddressDisplay
+                          address={recipient.address}
+                          copiedStates={copiedStates}
+                          copyToClipboard={copyToClipboard}
+                          truncateAddress={truncateAddress}
+                          copyId={`success-owner-${recipientIndex}`}
+                          showCopyButton={true}
+                          aggressiveTruncate={false}
+                        />
+                      ) : (
+                        <div className="text-zinc-500">No owner address</div>
+                      )}
+                      <div className="text-sm font-medium text-zinc-400 mb-2 mt-3">Token Account (ATA):</div>
+                      <AddressDisplay
+                        address={recipient.ataAddress}
+                        copiedStates={copiedStates}
+                        copyToClipboard={copyToClipboard}
+                        truncateAddress={truncateAddress}
+                        copyId={`success-ata-${recipientIndex}`}
+                        showCopyButton={true}
+                        aggressiveTruncate={false}
+                      />
+                    </>
                   ) : (
-                    <div className="text-zinc-500">No address</div>
+                    <>
+                      <div className="text-sm font-medium text-zinc-400 mb-2">Recipient Address:</div>
+                      {recipient.address ? (
+                        <AddressDisplay
+                          address={recipient.address}
+                          copiedStates={copiedStates}
+                          copyToClipboard={copyToClipboard}
+                          truncateAddress={truncateAddress}
+                          copyId={`success-recipient-${recipientIndex}`}
+                          showCopyButton={true}
+                          aggressiveTruncate={false}
+                        />
+                      ) : (
+                        <div className="text-zinc-500">No address</div>
+                      )}
+                    </>
                   )}
                 </div>
 
