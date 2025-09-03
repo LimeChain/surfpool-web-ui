@@ -66,6 +66,7 @@ export default function Faucet() {
   const [inputValues, setInputValues] = useState<string[]>(['']);
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([]);
   const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[]>([]);
+  const [processedTokenBalances, setProcessedTokenBalances] = useState<Map<string, { token: Token; finalBalance: number }[]>>(new Map());
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined;
@@ -178,6 +179,8 @@ export default function Faucet() {
     
     // Reset processed recipients for this new airdrop
     const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[] = [];
+    const recipientMap = new Map<string, { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }>();
+    const tokenBalancesMap = new Map<string, { token: Token; finalBalance: number }[]>();
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
@@ -223,7 +226,23 @@ export default function Faucet() {
               { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
-          currentAirdropRecipients.push({address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated});
+          // Store final balance for this token and recipient
+          if (recipient.address) {
+            const existingBalances = tokenBalancesMap.get(recipient.address) || [];
+            existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount });
+            tokenBalancesMap.set(recipient.address, existingBalances);
+            
+            // Use map to deduplicate recipients by address
+            const existing = recipientMap.get(recipient.address);
+            if (existing) {
+              // Update existing entry with ATA address if not already present
+              if (ata_address && !existing.ataAddress) {
+                existing.ataAddress = ata_address;
+              }
+            } else {
+              recipientMap.set(recipient.address, {address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated});
+            }
+          }
         } else {
           const balanceUiAmount = Number(accountBalance) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
@@ -237,7 +256,18 @@ export default function Faucet() {
               { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
-          currentAirdropRecipients.push({address: recipient.address, isGenerated: recipient.isGenerated});
+          // Store final balance for this token and recipient
+          if (recipient.address) {
+            const existingBalances = tokenBalancesMap.get(recipient.address) || [];
+            existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount });
+            tokenBalancesMap.set(recipient.address, existingBalances);
+            
+            // Use map to deduplicate recipients by address
+            const existing = recipientMap.get(recipient.address);
+            if (!existing) {
+              recipientMap.set(recipient.address, {address: recipient.address, isGenerated: recipient.isGenerated});
+            }
+          }
         }
         try {
           const response = await fetch(rpcUrl, {
@@ -257,7 +287,10 @@ export default function Faucet() {
       }
     }
     
-    setProcessedRecipients(currentAirdropRecipients);
+    // Convert map back to array
+    const uniqueRecipients = Array.from(recipientMap.values());
+    setProcessedRecipients(uniqueRecipients);
+    setProcessedTokenBalances(tokenBalancesMap);
     setSuccessDialogOpen(true);
     resetToInitialState();
   };
@@ -510,7 +543,7 @@ export default function Faucet() {
               ...fundingRequest,
               tokenIndex,
               recipientIndex,
-            }));
+            })).filter((fundingRequest) => fundingRequest.amount > 0);
 
             // Check if this address was generated using our keypair generator
             const isGeneratedAddress = recipient.isGenerated;
@@ -518,89 +551,77 @@ export default function Faucet() {
             return (
               <div key={recipientIndex} className="rounded-lg bg-zinc-800/50 p-4">
                 <div className="mb-4">
-                  {recipient.ataAddress ? (
-                    // SPL Token case - show both owner and ATA
-                    <>
-                      <div className="text-sm font-medium text-zinc-400 mb-2">Owner Address:</div>
-                      {recipient.address ? (
-                        <AddressDisplay
-                          address={recipient.address}
-                          copiedStates={copiedStates}
-                          copyToClipboard={copyToClipboard}
-                          truncateAddress={truncateAddress}
-                          copyId={`success-owner-${recipientIndex}`}
-                          showCopyButton={true}
-                          aggressiveTruncate={false}
-                        />
-                      ) : (
-                        <div className="text-zinc-500">No owner address</div>
-                      )}
-                      <div className="text-sm font-medium text-zinc-400 mb-2 mt-3">Token Account (ATA):</div>
-                      <AddressDisplay
-                        address={recipient.ataAddress}
-                        copiedStates={copiedStates}
-                        copyToClipboard={copyToClipboard}
-                        truncateAddress={truncateAddress}
-                        copyId={`success-ata-${recipientIndex}`}
-                        showCopyButton={true}
-                        aggressiveTruncate={false}
-                      />
-                    </>
+                  <div className="text-sm font-medium text-zinc-400 mb-2">Wallet Address:</div>
+                  {recipient.address ? (
+                    <AddressDisplay
+                      address={recipient.address}
+                      copiedStates={copiedStates}
+                      copyToClipboard={copyToClipboard}
+                      truncateAddress={truncateAddress}
+                      copyId={`success-wallet-${recipientIndex}`}
+                      showCopyButton={true}
+                      aggressiveTruncate={false}
+                    />
                   ) : (
-                    <>
-                      <div className="text-sm font-medium text-zinc-400 mb-2">Recipient Address:</div>
-                      {recipient.address ? (
-                        <AddressDisplay
-                          address={recipient.address}
-                          copiedStates={copiedStates}
-                          copyToClipboard={copyToClipboard}
-                          truncateAddress={truncateAddress}
-                          copyId={`success-recipient-${recipientIndex}`}
-                          showCopyButton={true}
-                          aggressiveTruncate={false}
-                        />
-                      ) : (
-                        <div className="text-zinc-500">No address</div>
-                      )}
-                    </>
+                    <div className="text-zinc-500">No address</div>
                   )}
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-zinc-400 mb-2">Tokens Received:</div>
-                  {tokensForRecipient.map((fundingRequest) => (
-                    <div key={`${fundingRequest.tokenIndex}-${fundingRequest.recipientIndex}`} className="flex items-center gap-3 rounded-lg bg-zinc-700/50 p-3">
-                      <img
-                        src={fundingRequest.token.imageUrl}
-                        alt={fundingRequest.token.ticker}
-                        className="h-6 w-6 rounded-full"
-                      />
-                      <div className="flex flex-1 flex-col">
-                        <div className="font-medium text-sm">{fundingRequest.token.ticker}</div>
-                        {fundingRequest.token.address && fundingRequest.token.address.trim() !== '' && (
-                          <div className="text-xs text-zinc-400">
-                            <AddressDisplay
-                              address={fundingRequest.token.address}
-                              copiedStates={copiedStates}
-                              copyToClipboard={copyToClipboard}
-                              truncateAddress={truncateAddress}
-                              copyId={`token-${fundingRequest.tokenIndex}-${fundingRequest.recipientIndex}`}
-                              showCopyButton={true}
-                              aggressiveTruncate={false}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-zinc-300">
-                        <TokenAmountDisplay
-                          amount={convertToRawAmount(fundingRequest.amount, fundingRequest.token.decimals)}
-                          decimals={fundingRequest.token.decimals}
-                          symbol={fundingRequest.token.ticker}
-                          variant="default"
+                  <div className="text-sm font-medium text-zinc-400 mb-2">Updated Balances:</div>
+                  {(() => {
+                    const tokenBalances = processedTokenBalances.get(recipient.address || '') || [];
+                    return tokenBalances.map((tokenBalance, index) => (
+                      <div key={`${tokenBalance.token.ticker}-${index}`} className="flex items-center gap-3 rounded-lg bg-zinc-700/50 p-3">
+                        <img
+                          src={tokenBalance.token.imageUrl}
+                          alt={tokenBalance.token.ticker}
+                          className="h-6 w-6 rounded-full"
                         />
+                        <div className="flex flex-1 flex-col">
+                          <div className="font-medium text-sm">{tokenBalance.token.ticker}</div>
+                          {/* Show ATA address first for SPL tokens if available */}
+                          {tokenBalance.token.ticker !== 'SOL' && recipient.ataAddress && (
+                            <div className="text-xs text-zinc-400">
+                              <span className="text-zinc-500">Associated Token Address (ATA):</span>
+                              <AddressDisplay
+                                address={recipient.ataAddress}
+                                copiedStates={copiedStates}
+                                copyToClipboard={copyToClipboard}
+                                truncateAddress={truncateAddress}
+                                copyId={`ata-${index}-${recipientIndex}`}
+                                showCopyButton={true}
+                                aggressiveTruncate={false}
+                              />
+                            </div>
+                          )}
+                          {/* Show token mint address for SPL tokens */}
+                          {tokenBalance.token.address && tokenBalance.token.address.trim() !== '' && (
+                            <div className="text-xs text-zinc-400 mt-1">
+                              <span className="text-zinc-500">Token Address:</span>
+                              <AddressDisplay
+                                address={tokenBalance.token.address}
+                                copiedStates={copiedStates}
+                                copyToClipboard={copyToClipboard}
+                                truncateAddress={truncateAddress}
+                                copyId={`token-${index}-${recipientIndex}`}
+                                showCopyButton={true}
+                                aggressiveTruncate={false}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm font-bold text-zinc-300">
+                          <TokenAmountDisplay
+                            amount={convertToRawAmount(tokenBalance.finalBalance, tokenBalance.token.decimals)}
+                            decimals={tokenBalance.token.decimals}
+                            symbol={tokenBalance.token.ticker}
+                            variant="default"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
 
                 {isGeneratedAddress && (
