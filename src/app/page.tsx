@@ -1,7 +1,7 @@
 'use client';
 
-import ExplorerHeader from '@/components/explorer-header';
-import TransactionLogs from '@/components/svm/transaction-logs';
+import ExplorerHeader from '@/components/svm/explorer-header';
+import TransactionsView from '@/components/svm/transactions-view';
 
 export default function Home() {
 
@@ -11,7 +11,7 @@ export default function Home() {
         <ExplorerHeader/>
       </div>
       <div className="w-full mt-24">
-        <TransactionLogs />
+        <TransactionsView />
       </div>
     </div>
   );

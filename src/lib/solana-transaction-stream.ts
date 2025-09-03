@@ -45,7 +45,7 @@ export interface TokenAmount {
   uiAmount: number | null;
   uiAmountString: string;
 }
-export interface TransactionStreamOptions {
+export interface TransactionInspectorOptions {
   rpcUrl?: string;
   wsUrl?: string;
   maxTransactions?: number;
@@ -54,7 +54,7 @@ export interface TransactionStreamOptions {
   filterByAccount?: string; // Account to filter transactions
 }
 
-export interface TransactionStreamStats {
+export interface TransactionInspectorStats {
   totalReceived: number;
   successful: number;
   failed: number;
@@ -70,7 +70,7 @@ export interface AccountInfo {
   owner: string;
   rentEpoch: number;
 }
-export function useTransactionStream(options: TransactionStreamOptions = {}) {
+export function useTransactionInspector(options: TransactionInspectorOptions = {}) {
   const {
     rpcUrl,
     wsUrl,
@@ -82,13 +82,13 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
 
   // Validate that required URLs are provided
   if (!rpcUrl || !wsUrl) {
-    throw new Error('rpcUrl and wsUrl are required for useTransactionStream');
+    throw new Error('rpcUrl and wsUrl are required for useTransactionInspector');
   }
 
   const [transactions, setTransactions] = useState<TransactionInfo[]>([]);
   const [isStreaming, setIsStreaming] = useState(autoStart);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<TransactionStreamStats>({
+  const [stats, setStats] = useState<TransactionInspectorStats>({
     totalReceived: 0,
     successful: 0,
     failed: 0,

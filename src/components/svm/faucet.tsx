@@ -13,7 +13,8 @@ import { Field, Label } from '../catalyst/fieldset';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { getAccountBalance, getTokenBalance, setAccount } from '@/lib/solana-transaction-stream';
-import { LAMPORTS_PER_SOL } from '@solana/web3.js'
+
+const LAMPORTS_PER_SOL = 1000000000;
 
 export type Network = {
   id: string;
@@ -222,7 +223,7 @@ export default function Faucet() {
               { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
             ],
           };
-          currentAirdropRecipients.push({address: recipient.address, ataAddress: ata_address, isGenerated: false});
+          currentAirdropRecipients.push({address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated});
         } else {
           const balanceUiAmount = Number(accountBalance) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
@@ -236,7 +237,7 @@ export default function Faucet() {
               { lamports: convertToRawAmount(totalUiAmount, 9) },
             ],
           };
-          currentAirdropRecipients.push({address: recipient.address, isGenerated: false});
+          currentAirdropRecipients.push({address: recipient.address, isGenerated: recipient.isGenerated});
         }
         try {
           const response = await fetch(rpcUrl, {

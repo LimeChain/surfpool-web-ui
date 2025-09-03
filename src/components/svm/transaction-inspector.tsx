@@ -3,10 +3,9 @@
 import { Badge } from '@/components/catalyst/badge';
 import { Dialog, DialogBody } from '@/components/catalyst/dialog';
 import { useAppConfig } from '@/hooks/use-app-config';
-import { formatSignature, getTransactionStatus, useTransactionStream } from '@/lib/solana-transaction-stream';
+import { formatSignature, getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
 import { TrashIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { diff } from 'fast-myers-diff';
+import React, { useState, useEffect } from 'react';
 import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -1091,7 +1090,7 @@ if (typeof window !== 'undefined') {
 }
 
 
-interface TransactionStreamProps {
+interface TransactionInspectorProps {
   rpcUrl?: string;
   wsUrl?: string;
   maxTransactions?: number;
@@ -1378,14 +1377,14 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
   );
 };
 
-export default function TransactionStream({
+export default function TransactionInspector({
   rpcUrl: propRpcUrl,
   wsUrl: propWsUrl,
   maxTransactions = 50,
   autoStart = true,
   filterByProgram,
   filterByAccount,
-}: TransactionStreamProps) {
+}: TransactionInspectorProps) {
   const [isClient, setIsClient] = useState(false);
 
   // Ensure component only renders on client side
@@ -1421,7 +1420,7 @@ export default function TransactionStream({
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
   const wsUrl = propWsUrl || configWsUrl;
-  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } = useTransactionStream({
+  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } = useTransactionInspector({
     rpcUrl,
     wsUrl,
     maxTransactions,
@@ -2283,7 +2282,7 @@ export default function TransactionStream({
 
         {/* Transactions List */}
         <div className="space-y-3">
-          {transactions.length === 0 ? (
+          {transactions.length > 0 ? (
             <div className="flex h-[280px] items-center justify-center rounded-lg border border-zinc-600">
               <div className="text-center">
                 <div className="mb-4">
@@ -2303,13 +2302,12 @@ export default function TransactionStream({
                 </div>
                 <div className="mb-2 text-lg font-medium text-zinc-300">No transactions</div>
                 <div className="max-w-md text-sm text-zinc-500">
-                  Send transactions on your Surfnet to get detailed simulations, performance profiling, and data
-                  indexing
+                  Send transactions on your Surfnet to get detailed simulations,<br/>performance profiling, and data indexing
                 </div>
               </div>
             </div>
           ) : (
-            transactions.map((tx, index) => {
+            transactions.map((tx: TransactionInfo, index: number) => {
               const status = getTransactionStatus(tx);
               const statusColors = {
                 success: 'border-l-[3px] border-[#60d695]',
@@ -2331,9 +2329,9 @@ export default function TransactionStream({
                 >
                   <div className="mb-0 flex flex-col gap-1">
                     <div className="flex items-center gap-1">
-                                              <span className="font-mono text-[8px] sm:text-xs md:text-sm text-gray-300">
-                          {formatSignature(tx.transaction.signatures[0])}
-                        </span>
+                      <span className="font-mono text-[8px] sm:text-xs md:text-sm text-gray-300">
+                        {formatSignature(tx.transaction.signatures[0])}
+                      </span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

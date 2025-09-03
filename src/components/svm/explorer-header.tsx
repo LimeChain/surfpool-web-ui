@@ -1,7 +1,7 @@
 import React from 'react';
 import { SlotsGrid } from '@/components/svm/slot-grid';
-import Faucet from './svm/faucet';
-import { LabeledLink } from './svm/labeled-link';
+import Faucet from './faucet';
+import { LabeledLink } from './labeled-link';
 import { useAppConfig } from '@/hooks/use-app-config';
 
 const ExplorerHeader = () => {

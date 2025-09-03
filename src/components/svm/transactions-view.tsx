@@ -1,9 +1,9 @@
 "use client"
 
-import TransactionStream from './transaction-stream';
 import { useAppConfig } from '@/hooks/use-app-config';
+import TransactionInspector from './transaction-inspector';
 
-export default function TransactionLogs() {
+export default function TransactionsView() {
   const { rpcUrl, wsUrl, loading: configLoading, error: configError } = useAppConfig();
 
   if (configLoading) {
@@ -24,11 +24,11 @@ export default function TransactionLogs() {
 
   return (
     <div className="w-full">
-      <TransactionStream 
-        maxTransactions={50}
-        autoStart={true}
+      <TransactionInspector 
         rpcUrl={rpcUrl}
         wsUrl={wsUrl}
+        maxTransactions={50}
+        autoStart={true}
       />
     </div>
   );
