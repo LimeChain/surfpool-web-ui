@@ -2507,10 +2507,6 @@ export default function TransactionStream({
                       <div className="mt-3 flex flex-wrap gap-3">
                         {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
                           const cu = profile.computeUnitsConsumed || 0;
-                          /// use the index to get the associated instruction from our result of `getTransaction`.
-                          /// use that to get the program ID. see if we have a program name for that ID, if so, use it
-                          /// otherwise, use the program ID
-
                           const colors = [
                             'bg-blue-500',
                             'bg-green-500',
@@ -2526,7 +2522,7 @@ export default function TransactionStream({
                           return (
                             <div key={index} className="flex items-center gap-2 text-xs">
                               <div className={`h-3 w-3 rounded ${colorClass}`}></div>
-                              <span className="text-gray-300">Instruction #{index + 1}:{programNameOrProgramId}</span>
+                              <span className="text-gray-300">Instruction #{index + 1}:</span>
                               <span className="text-gray-400">{cu} CU</span>
                             </div>
                           );
@@ -2538,6 +2534,30 @@ export default function TransactionStream({
                   {/* Instruction Profiles */}
                   <div className="space-y-4">
                     {transactionProfile.instructionProfiles?.map((profile: any, index: number) => {
+                      // Get the actual instruction from selectedTransaction using the index
+                      const instruction = selectedTransaction?.transaction?.message?.instructions?.[index];
+                      const programId = instruction?.programId || profile.programId;
+                      
+                   
+                      function getProgramName(address: string): string {
+                        const isSystemProgram = address.includes('11111111111');
+                        const isTokenProgram = address.startsWith('Token');
+                        const isAssociatedTokenProgram = address.startsWith('AToken');
+                        
+                        if (isSystemProgram) {
+                          return 'SYSTEM PROGRAM';
+                        } else if (isAssociatedTokenProgram) {
+                          return 'ASSOCIATED TOKEN PROGRAM';
+                        } else if (isTokenProgram) {
+                          return 'TOKEN PROGRAM';
+                        }
+                        
+                        // For other programs, return the address
+                        return address;
+                      }
+                      
+                      const programName = getProgramName(programId);
+
                       // macOS-style colors for different instruction types
                       const colors = [
                         'bg-blue-500', // Blue
@@ -2583,7 +2603,7 @@ export default function TransactionStream({
                                   >
                                     {expandedInstructions.has(index) ? '▼' : '▶'}
                                   </span>
-                                  <div className="text-sm font-semibold text-zinc-200">Instruction #{index + 1}</div>
+                                  <div className="text-sm font-semibold text-zinc-200">Instruction #{index + 1}: {programName}</div>
                                 </div>
 
                                 {profile.errorMessage && (
@@ -2606,9 +2626,14 @@ export default function TransactionStream({
                                 <div>
                                   <div className="mb-2 text-xs font-semibold text-gray-500">ACCOUNTS STATE TRANSITIONS</div>
                                   <div className="rounded border border-zinc-600 bg-zinc-900/30 overflow-hidden">
-                                    {Object.entries(profile.accountStates).something(...order such that the executed program is always the first account...).map(
-                                      ([address, accountState]: [string, any], accountIndex: number) => {
-
+                                    {Object.entries(profile.accountStates)
+                                      .sort(([addressA], [addressB]) => {
+                                        // Order such that the executed program is always the first account
+                                        if (addressA === programId) return -1;
+                                        if (addressB === programId) return 1;
+                                        return 0;
+                                      })
+                                      .map(([address, accountState]: [string, any], accountIndex: number) => {
                                         const isWritable = accountState.type === 'writable';
                                         const hasChanges =
                                           accountState.accountChange && accountState.accountChange.type !== 'unchanged';
