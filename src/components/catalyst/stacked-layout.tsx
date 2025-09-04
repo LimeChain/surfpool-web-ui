@@ -14,7 +14,7 @@ import { MagnifyingGlassIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/
 import { CheckBadgeIcon } from '@heroicons/react/24/solid';
 import { ShieldCheckIcon } from '@heroicons/react/24/solid';
 import { CommandLineIcon, CloudIcon } from '@heroicons/react/24/solid';
-import { PaywallDialog } from './paywall-dialog';
+import { PaywallDialog } from '../svm/paywall';
 
 function OpenMenuIcon() {
   return (
