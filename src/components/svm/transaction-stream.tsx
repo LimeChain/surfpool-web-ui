@@ -68,16 +68,16 @@ interface TransactionProfile {
   readonlyAccountStates: Record<string, ReadonlyAccountState>;
 }
 const getProgramName = (address: string): string => {
-  switch (true) {
-    case address.includes('11111111111111111111111111111111'):
+  switch (address) {
+    case '11111111111111111111111111111111':
       return 'SYSTEM PROGRAM';
-    case address.includes('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'):
+    case 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA':
       return 'TOKEN PROGRAM';
-    case address.includes('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'):
+    case 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL':
       return 'ASSOCIATED TOKEN PROGRAM';
-    case address.includes('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'):
+    case 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4':
       return 'JUP PROGRAM';
-    case address.includes('ComputeBudget111111111111111111111111111111'):
+    case 'ComputeBudget111111111111111111111111111111':
       return 'COMPUTE BUDGET PROGRAM';
     default:
       return address;
