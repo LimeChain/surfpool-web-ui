@@ -66,7 +66,7 @@ interface TransactionProfile {
   transactionProfile: TransactionProfileData;
   readonlyAccountStates: Record<string, ReadonlyAccountState>;
 }
-const getProgramName = (address: string): string => {
+const getProgramType = (address: string): string | undefined => {
   switch (address) {
     case '11111111111111111111111111111111':
       return 'SYSTEM PROGRAM';
@@ -79,9 +79,17 @@ const getProgramName = (address: string): string => {
     case 'ComputeBudget111111111111111111111111111111':
       return 'COMPUTE BUDGET PROGRAM';
     default:
-      return address;
+      return undefined;
   }
 }
+const getProgramName = (address: string): string => {
+  const programType = getProgramType(address);
+  if (programType) {
+    return programType;
+  }
+  return address;
+}
+
 // Utility functions for decoding account data
 const decodeAccountData = (data: any): any => {
   // If data is already an array of numbers (decoded bytes), return as is
@@ -632,8 +640,8 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
           }
         }
         
-        if (isExecutable) {
-          const programLabel = getProgramName(address); 
+        if (isExecutable && getProgramType(address)) {
+          const programLabel = getProgramType(address); 
           return (
             <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-400/30 bg-gray-800/30 text-gray-200">
               {programLabel}
@@ -806,7 +814,9 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                       el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
                     } else {
                       try {
-                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
+                        // Ensure we pass a properly serialized JSON string to pretty-json
+                        const jsonString = typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
                       } catch (error) {
                         el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
                       }
