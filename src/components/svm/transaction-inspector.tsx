@@ -66,7 +66,7 @@ interface TransactionProfile {
   transactionProfile: TransactionProfileData;
   readonlyAccountStates: Record<string, ReadonlyAccountState>;
 }
-const getProgramName = (address: string): string => {
+const getProgramType = (address: string): string | undefined => {
   switch (address) {
     case '11111111111111111111111111111111':
       return 'SYSTEM PROGRAM';
@@ -79,9 +79,17 @@ const getProgramName = (address: string): string => {
     case 'ComputeBudget111111111111111111111111111111':
       return 'COMPUTE BUDGET PROGRAM';
     default:
-      return address;
+      return undefined;
   }
 }
+const getProgramName = (address: string): string => {
+  const programType = getProgramType(address);
+  if (programType) {
+    return programType;
+  }
+  return address;
+}
+
 // Utility functions for decoding account data
 const decodeAccountData = (data: any): any => {
   // If data is already an array of numbers (decoded bytes), return as is
@@ -632,8 +640,8 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
           }
         }
         
-        if (isExecutable) {
-          const programLabel = getProgramName(address); 
+        if (isExecutable && getProgramType(address)) {
+          const programLabel = getProgramType(address); 
           return (
             <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-400/30 bg-gray-800/30 text-gray-200">
               {programLabel}
@@ -806,7 +814,9 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                       el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
                     } else {
                       try {
-                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${extractedData}</pretty-json>`;
+                        // Ensure we pass a properly serialized JSON string to pretty-json
+                        const jsonString = typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
                       } catch (error) {
                         el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
                       }
@@ -2285,7 +2295,7 @@ export default function TransactionInspector({
 
         {/* Transactions List */}
         <div className="space-y-3">
-          {transactions.length > 0 ? (
+          {transactions.length === 0 ? (
             <div className="flex h-[280px] items-center justify-center rounded-lg border border-zinc-600">
               <div className="text-center">
                 <div className="mb-4">
@@ -2457,6 +2467,46 @@ export default function TransactionInspector({
                   </div>
                 </div>
               )}
+              
+              {/* Transaction Profile Loading State */}
+              {profileLoading && (
+                <div className="space-y-4">
+                  <div className="mb-3 text-sm font-semibold text-zinc-200">CU Profiling</div>
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-3">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                      <span className="text-sm text-zinc-400">Loading transaction profile...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Transaction Profile Error State */}
+              {profileError && (
+                <div className="space-y-4">
+                  <div className="mb-3 text-sm font-semibold text-zinc-200">CU Profiling</div>
+                  <div className="rounded-lg bg-red-900/20 border border-red-500/30 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm font-medium text-red-400">Profile Loading Failed</span>
+                    </div>
+                    <p className="text-sm text-red-300">{profileError}</p>
+                    <button
+                      onClick={() => {
+                        if (selectedTransaction?.transaction?.signatures?.[0]) {
+                          fetchTransactionProfile(selectedTransaction.transaction.signatures[0]);
+                        }
+                      }}
+                      className="mt-3 text-sm text-red-400 hover:text-red-300 underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              )}
+              
               {/* Transaction Profile - New Detailed View */}
               {transactionProfile && (
                 <>
