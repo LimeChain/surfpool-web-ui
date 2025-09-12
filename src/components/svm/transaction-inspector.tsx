@@ -2179,9 +2179,7 @@ export default function TransactionInspector({
           const allInstructionIndices = new Set<number>(transactionProfile.instructionProfiles.map((_: any, index: number) => index));
           setExpandedInstructions(allInstructionIndices);
         }
-      } else {
-        throw new Error('No result in one or both responses');
-      }
+      } 
     } catch (error) {
       console.error('❌ Error fetching transaction profile:', error);
       setProfileError(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
