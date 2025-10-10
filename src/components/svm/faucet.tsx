@@ -103,7 +103,7 @@ export default function Faucet() {
     // Fetch tokens from Jupiter API only once
     if (tokens.length === 0) {
       try {
-        const response = await fetch('https://lite-api.jup.ag/tokens/v1/tagged/verified');
+        const response = await fetch('https://lite-api.jup.ag/tokens/v2/tag?query=verified');
         const data = await response.json();
 
         // console.log(`data: ${JSON.stringify(data)}`)
@@ -153,8 +153,8 @@ export default function Faucet() {
         const token = {
           name: entry.name,
           ticker: entry.symbol,
-          imageUrl: entry.logoURI,
-          address: entry.address,
+          imageUrl: entry.icon,
+          address: entry.id,
           decimals: entry.decimals,
         };
         if (first == true) {
