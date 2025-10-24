@@ -146,7 +146,7 @@ export default function GenericBento<T extends BentoItem>({
         <div
           className={`${
             isExpanded ? 'h-[87.5%]' : 'h-1/2'
-          } flex flex-col border-t-2 border-zinc-200 bg-zinc-50 px-6 transition-all duration-300 ease-in-out lg:-mr-10 lg:-ml-10 dark:border-zinc-800 dark:bg-zinc-900`}
+          } -mr-5 -ml-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4">
@@ -162,7 +162,7 @@ export default function GenericBento<T extends BentoItem>({
 
           {/* Navbar Navigation */}
           {tabs.length > 0 && (
-            <div className="border-b border-zinc-200/40 px-6 dark:border-zinc-700/30">
+            <div className="border-b border-zinc-200/40 pl-5 dark:border-zinc-700/30">
               <Navbar>
                 <NavbarSection>
                   {tabs.map((tab) => (
@@ -190,7 +190,7 @@ export default function GenericBento<T extends BentoItem>({
           )}
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-auto p-6 pb-12">{renderDetailContent(selectedItem, activeTab)}</div>
+          <div className="flex-1 overflow-auto">{renderDetailContent(selectedItem, activeTab)}</div>
         </div>
       )}
     </div>

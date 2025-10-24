@@ -1,7 +1,17 @@
 'use client';
 
 import { Badge } from '@/components/catalyst/badge';
+import dynamic from 'next/dynamic';
 import GenericBento, { BentoItem } from './generic-bento';
+
+const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading editor...</div>
+    </div>
+  ),
+});
 
 interface Scenario {
   id: string;
@@ -102,7 +112,7 @@ export default function ScenariosBento({ scenarios }: ScenariosBentoProps) {
   );
 
   const renderDetailHeader = (item: ScenarioBentoItem) => (
-    <div className="flex min-w-0 flex-1 items-center gap-4">
+    <div className="flex flex-1 items-center gap-4">
       <h2 className="truncate text-xl font-semibold text-zinc-950 dark:text-zinc-50">{item.name}</h2>
       {item.status?.status && (
         <>
@@ -125,7 +135,7 @@ export default function ScenariosBento({ scenarios }: ScenariosBentoProps) {
       case 'overview':
         return (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 p-8 md:grid-cols-2">
               <div className="space-y-4">
                 {item.description && item.description !== 'null' && item.description !== 'No description available' && (
                   <div>
@@ -190,50 +200,10 @@ export default function ScenariosBento({ scenarios }: ScenariosBentoProps) {
           </div>
         );
 
-      case 'steps':
+      case 'editor':
         return (
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                  All Steps ({item.steps?.length || 0})
-                </h3>
-              </div>
-              {item.steps && item.steps.length > 0 ? (
-                item.steps.map((step, index) => (
-                  <div
-                    key={String(step.id)}
-                    className="flex items-start justify-between rounded-lg border border-zinc-200/40 bg-zinc-50 p-4 transition-colors hover:border-zinc-300 dark:border-zinc-700/30 dark:bg-zinc-800 dark:hover:border-zinc-600"
-                  >
-                    <div className="flex-1">
-                      <div className="mb-2 flex items-center gap-3">
-                        <span className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                          Step {index + 1}: {step.name}
-                        </span>
-                        {step.status && (
-                          <>
-                            {step.status === 'completed' ? (
-                              <Badge color="lime">Completed</Badge>
-                            ) : step.status === 'running' || step.status === 'active' ? (
-                              <Badge color="emerald">Running</Badge>
-                            ) : step.status === 'failed' ? (
-                              <Badge color="red">Failed</Badge>
-                            ) : (
-                              <Badge color="zinc">Pending</Badge>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      <p className="font-mono text-xs text-zinc-600 dark:text-zinc-400">Type: {step.type}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="flex h-32 items-center justify-center rounded-lg border border-zinc-200/40 bg-zinc-50 dark:border-zinc-700/30 dark:bg-zinc-800">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">No steps defined</p>
-                </div>
-              )}
-            </div>
+          <div className="h-[calc(100vh-300px)]">
+            <ScenarioEditor />
           </div>
         );
 
@@ -296,9 +266,9 @@ export default function ScenariosBento({ scenarios }: ScenariosBentoProps) {
   };
 
   const tabs = [
-    { id: 'overview', label: 'Play', icon: null },
-    { id: 'steps', label: 'Edit Timeline', icon: null },
-    { id: 'details', label: 'Settings', icon: null },
+    { id: 'overview', label: 'Overview', icon: null },
+    { id: 'editor', label: 'Edit Scenario', icon: null },
+    { id: 'details', label: 'Details', icon: null },
   ];
 
   return (
