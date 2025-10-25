@@ -179,6 +179,59 @@ export const SlotsGrid: React.FC = () => {
     }
   };
 
+  // Export snapshot
+  const exportSnapshot = async () => {
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_exportSnapshot',
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📸 Export snapshot response:', data);
+
+        if (data.result) {
+          // Create a blob from the JSON data
+          const jsonString = JSON.stringify(data.result, null, 2);
+          const blob = new Blob([jsonString], { type: 'application/json' });
+
+          // Create download link
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+
+          // Generate filename with timestamp
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          link.download = `surfnet-snapshot-${timestamp}.json`;
+
+          // Trigger download
+          document.body.appendChild(link);
+          link.click();
+
+          // Cleanup
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          console.log('✅ Snapshot exported successfully');
+        } else {
+          console.error('❌ Export snapshot failed:', data.error);
+        }
+      } else {
+        console.error('❌ HTTP error during export:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error during export:', error);
+    }
+  };
+
   // Toggle clock pause/resume
   const toggleClock = async () => {
     try {
@@ -609,8 +662,9 @@ export const SlotsGrid: React.FC = () => {
               <CalendarIcon className="h-4 w-4 text-zinc-300" />
             </button>
             <button
+              onClick={exportSnapshot}
               className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-600 bg-zinc-800 transition-colors hover:bg-zinc-700"
-              title={'Export State'}
+              title="Export Snapshot"
             >
               <ArchiveBoxArrowDownIcon className="h-4 w-4 text-zinc-300" />
             </button>
@@ -651,8 +705,9 @@ export const SlotsGrid: React.FC = () => {
               <CalendarIcon className="h-4 w-4 text-zinc-300" />
             </button>
             <button
+              onClick={exportSnapshot}
               className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-600 bg-zinc-800 transition-colors hover:bg-zinc-700"
-              title={'Export State'}
+              title="Export Snapshot"
             >
               <ArchiveBoxArrowDownIcon className="h-4 w-4 text-zinc-300" />
             </button>
@@ -743,8 +798,9 @@ export const SlotsGrid: React.FC = () => {
             <CalendarIcon className="h-4 w-4 text-zinc-300" />
           </button>
           <button
+            onClick={exportSnapshot}
             className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-600 bg-zinc-800 transition-colors hover:bg-zinc-700"
-            title={'Export State'}
+            title="Export Snapshot"
           >
             <ArchiveBoxArrowDownIcon className="h-4 w-4 text-zinc-300" />
           </button>

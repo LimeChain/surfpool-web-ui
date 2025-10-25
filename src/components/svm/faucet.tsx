@@ -65,12 +65,13 @@ export default function Faucet() {
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest]);
   const [inputValues, setInputValues] = useState<string[]>(['']);
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([]);
-  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[]>([]);
+  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }[]>([]);
   const [processedTokenBalances, setProcessedTokenBalances] = useState<Map<string, { token: Token; finalBalance: number }[]>>(new Map());
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined;
       isGenerated: boolean;
+      privateKey?: number[];
     }[]
   >([
     {
@@ -176,10 +177,10 @@ export default function Faucet() {
   const handleClaimTokens = async () => {
     // Store the tokens and recipients that were processed before resetting
     setProcessedTokens([...tokenFundingRequests]);
-    
+
     // Reset processed recipients for this new airdrop
-    const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }[] = [];
-    const recipientMap = new Map<string, { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean }>();
+    const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }[] = [];
+    const recipientMap = new Map<string, { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }>();
     const tokenBalancesMap = new Map<string, { token: Token; finalBalance: number }[]>();
 
     // Simulate claiming tokens
@@ -240,7 +241,7 @@ export default function Faucet() {
                 existing.ataAddress = ata_address;
               }
             } else {
-              recipientMap.set(recipient.address, {address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated});
+              recipientMap.set(recipient.address, {address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated, privateKey: recipient.privateKey});
             }
           }
         } else {
@@ -265,7 +266,7 @@ export default function Faucet() {
             // Use map to deduplicate recipients by address
             const existing = recipientMap.get(recipient.address);
             if (!existing) {
-              recipientMap.set(recipient.address, {address: recipient.address, isGenerated: recipient.isGenerated});
+              recipientMap.set(recipient.address, {address: recipient.address, isGenerated: recipient.isGenerated, privateKey: recipient.privateKey});
             }
           }
         }
@@ -305,13 +306,38 @@ export default function Faucet() {
   };
 
   const generateKeypair = async (index: number) => {
-    const keypair = await generateKeyPair();
+    // Generate a random 32-byte seed for the private key
+    const privateKeySeed = new Uint8Array(32);
+    crypto.getRandomValues(privateKeySeed);
 
-    // Convert CryptoKey to base58 string
+    // Generate the keypair using Ed25519 with extractable keys
+    const keypair = await crypto.subtle.generateKey(
+      {
+        name: 'Ed25519',
+        namedCurve: 'Ed25519',
+      } as any,
+      true, // extractable = true
+      ['sign', 'verify']
+    );
+
+    // Export the public key
     const publicKeyBuffer = await crypto.subtle.exportKey('raw', keypair.publicKey);
     const publicKeyArray = new Uint8Array(publicKeyBuffer);
 
-    // Convert to base58
+    // Export the private key
+    const privateKeyBuffer = await crypto.subtle.exportKey('pkcs8', keypair.privateKey);
+    const privateKeyView = new Uint8Array(privateKeyBuffer);
+
+    // Extract the 32-byte private key from the PKCS8 format
+    // PKCS8 format for Ed25519 has the 32-byte private key at offset 16
+    const privateKeyBytes = privateKeyView.slice(16, 48);
+
+    // Solana keypair format: [private_key (32 bytes) + public_key (32 bytes)]
+    const fullKeypair = new Uint8Array(64);
+    fullKeypair.set(privateKeyBytes, 0);
+    fullKeypair.set(publicKeyArray, 32);
+
+    // Convert public key to base58
     const base58Chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     let num = BigInt(0);
     for (let i = 0; i < publicKeyArray.length; i++) {
@@ -332,6 +358,7 @@ export default function Faucet() {
     const newRecipients = [...reccipients];
     newRecipients[index].address = result;
     newRecipients[index].isGenerated = true;
+    newRecipients[index].privateKey = Array.from(fullKeypair);
     setReccipients(newRecipients);
   };
 
@@ -624,16 +651,15 @@ export default function Faucet() {
                   })()}
                 </div>
 
-                {isGeneratedAddress && (
+                {isGeneratedAddress && recipient.privateKey && (
                   <div className="mt-4 pt-4 border-t border-zinc-700 flex justify-end">
                     <button
                       onClick={() => {
-                        // Generate a random private key array for the generated address
-                        const privateKeyArray = Array.from({ length: 64 }, () => Math.floor(Math.random() * 256));
-                        const keypairData = privateKeyArray;
-                        
-                        // Create and download the JSON file
-                        const blob = new Blob([JSON.stringify(keypairData, null, 2)], { type: 'application/json' });
+                        // Use the actual private key stored when the keypair was generated
+                        const keypairData = recipient.privateKey;
+
+                        // Create and download the JSON file in Solana keypair format
+                        const blob = new Blob([JSON.stringify(keypairData)], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;

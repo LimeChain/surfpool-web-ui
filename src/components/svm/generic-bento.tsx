@@ -99,6 +99,13 @@ export default function GenericBento<T extends BentoItem>({
               <div className="relative w-full max-w-md">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
                   <MagnifyingGlassIcon className="h-6 w-6 text-zinc-400" aria-hidden="true" />
+                  <input
+                    type="text"
+                    placeholder={searchPlaceholder}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="block w-full rounded-full border border-zinc-200/40 bg-white py-4 pr-5 pl-14 text-lg text-zinc-950 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700/30 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
+                  />
                 </div>
                 <input
                   type="text"

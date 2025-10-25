@@ -3,22 +3,29 @@
 import { Badge } from '@/components/catalyst/badge';
 import { Dialog, DialogBody } from '@/components/catalyst/dialog';
 import { useAppConfig } from '@/hooks/use-app-config';
-import { formatSignature, getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
-import { TrashIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
-import React, { useState, useEffect } from 'react';
+import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
+import {
+  formatSignature,
+  getTransactionStatus,
+  TransactionInfo,
+  useTransactionInspector,
+} from '@/lib/solana-transaction-stream';
+import { ArrowTopRightOnSquareIcon, ClipboardIcon, TrashIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
-import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 
 // TypeScript interfaces based on the transaction profile structure
 interface AccountData {
   lamports: number;
-  json?: {
-    program: string;
-    parsed: Record<string, any>;
-    space: number;
-  } | [string, string]; // Can be parsed JSON, [data, encoding], or decoded bytes
+  json?:
+    | {
+        program: string;
+        parsed: Record<string, any>;
+        space: number;
+      }
+    | [string, string]; // Can be parsed JSON, [data, encoding], or decoded bytes
   bytes: number[];
   owner: string;
   executable: boolean;
@@ -81,38 +88,38 @@ const getProgramType = (address: string): string | undefined => {
     default:
       return undefined;
   }
-}
+};
 const getProgramName = (address: string): string => {
   const programType = getProgramType(address);
   if (programType) {
     return programType;
   }
   return address;
-}
+};
 
 // Utility functions for decoding account data
 const decodeAccountData = (data: any): any => {
   // If data is already an array of numbers (decoded bytes), return as is
-  if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+  if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
     return data;
   }
-  
+
   // If data is an array with encoding info [data, encoding]
   if (Array.isArray(data) && data.length === 2 && typeof data[0] === 'string' && typeof data[1] === 'string') {
     const [encodedData, encoding] = data;
-    
+
     try {
       switch (encoding) {
         case 'base64':
           // Decode base64 to bytes
           const base64Bytes = atob(encodedData);
-          return Array.from(base64Bytes, char => char.charCodeAt(0));
-        
+          return Array.from(base64Bytes, (char) => char.charCodeAt(0));
+
         case 'base58':
           // For base58, we'll keep it as a string for now since it's typically used for addresses
           // If you need actual base58 decoding, you'd need a base58 library
           return encodedData;
-        
+
         default:
           // Unknown encoding, return as is
           return data;
@@ -122,7 +129,7 @@ const decodeAccountData = (data: any): any => {
       return data;
     }
   }
-  
+
   // If data is already parsed JSON, return as is
   return data;
 };
@@ -130,44 +137,48 @@ const decodeAccountData = (data: any): any => {
 const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): any => {
   // Deep clone the jsonParsed profile as the base
   const mergedProfile = JSON.parse(JSON.stringify(jsonParsedProfile));
-  
+
   // Helper function to merge account data
   const mergeAccountData = (jsonParsedData: any, base64Data: any): any => {
     if (!jsonParsedData || !base64Data) return jsonParsedData || base64Data;
-    
+
     const merged = { ...jsonParsedData };
-    
+
     // Set the json field from jsonParsed profile
     if (jsonParsedData.data) {
       merged.json = jsonParsedData.data;
     }
-    
+
     // Set the bytes field from base64 profile
     if (base64Data.data) {
       merged.bytes = decodeAccountData(base64Data.data);
     }
-    
+
     return merged;
   };
-  
+
   // Helper function to merge account states
   const mergeAccountStates = (jsonParsedStates: any, base64States: any): any => {
     if (!jsonParsedStates || !base64States) return jsonParsedStates || base64States;
-    
+
     const mergedStates = { ...jsonParsedStates };
-    
-    Object.keys(base64States).forEach(address => {
+
+    Object.keys(base64States).forEach((address) => {
       if (mergedStates[address]) {
         const jsonParsedState = mergedStates[address];
         const base58State = base64States[address];
-        
+
         if (jsonParsedState.accountChange?.data && base58State.accountChange?.data) {
           if (Array.isArray(jsonParsedState.accountChange.data)) {
             // Handle update case where data is an array
-            mergedStates[address].accountChange.data = jsonParsedState.accountChange.data.map((item: any, index: number) => {
-              const base58Item = Array.isArray(base58State.accountChange.data) ? base58State.accountChange.data[index] : base58State.accountChange.data;
-              return mergeAccountData(item, base58Item);
-            });
+            mergedStates[address].accountChange.data = jsonParsedState.accountChange.data.map(
+              (item: any, index: number) => {
+                const base58Item = Array.isArray(base58State.accountChange.data)
+                  ? base58State.accountChange.data[index]
+                  : base58State.accountChange.data;
+                return mergeAccountData(item, base58Item);
+              }
+            );
           } else {
             // Handle single data object
             mergedStates[address].accountChange.data = mergeAccountData(
@@ -178,11 +189,11 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
         }
       }
     });
-    
+
     console.log('🔍 Merged states:', mergedStates);
     return mergedStates;
   };
-  
+
   // Merge instruction profiles
   if (mergedProfile.instructionProfiles && base64Profile.instructionProfiles) {
     mergedProfile.instructionProfiles = mergedProfile.instructionProfiles.map((instruction: any, index: number) => {
@@ -190,16 +201,16 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
       if (base64Instruction) {
         return {
           ...instruction,
-          accountStates: mergeAccountStates(instruction.accountStates, base64Instruction.accountStates)
+          accountStates: mergeAccountStates(instruction.accountStates, base64Instruction.accountStates),
         };
       }
       return instruction;
     });
   }
-  
+
   // Merge readonly account states
   if (mergedProfile.readonlyAccountStates && base64Profile.readonlyAccountStates) {
-    Object.keys(base64Profile.readonlyAccountStates).forEach(address => {
+    Object.keys(base64Profile.readonlyAccountStates).forEach((address) => {
       if (mergedProfile.readonlyAccountStates[address]) {
         mergedProfile.readonlyAccountStates[address] = mergeAccountData(
           mergedProfile.readonlyAccountStates[address],
@@ -208,19 +219,19 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
       }
     });
   }
-  
+
   return mergedProfile;
 };
 
 const processTransactionProfile = (profile: any): TransactionProfile => {
   // Deep clone the profile to avoid mutating the original
   const processedProfile = JSON.parse(JSON.stringify(profile));
-  
+
   // Process instruction profiles
   if (processedProfile.instructionProfiles) {
     processedProfile.instructionProfiles.forEach((instruction: any) => {
       if (instruction.accountStates) {
-        Object.keys(instruction.accountStates).forEach(address => {
+        Object.keys(instruction.accountStates).forEach((address) => {
           const accountState = instruction.accountStates[address];
           if (accountState.accountChange?.data) {
             if (Array.isArray(accountState.accountChange.data)) {
@@ -242,44 +253,44 @@ const processTransactionProfile = (profile: any): TransactionProfile => {
       }
     });
   }
-  
+
   // Process readonly account states
   if (processedProfile.readonlyAccountStates) {
-    Object.keys(processedProfile.readonlyAccountStates).forEach(address => {
+    Object.keys(processedProfile.readonlyAccountStates).forEach((address) => {
       const accountState = processedProfile.readonlyAccountStates[address];
       if (accountState.data) {
         accountState.data = decodeAccountData(accountState.data);
       }
     });
   }
-  
+
   return processedProfile;
 };
 
 // Enhanced diff algorithm using fast-myers-diff
 const computeHexDiff = (beforeBytes: number[], afterBytes: number[]) => {
   const diffResult = analyzeHexDiff(beforeBytes, afterBytes);
-  
+
   // Create maps for easy lookup during rendering
-  const beforeDiffMap = new Map<number, { type: 'removal' | 'update', range?: { start: number, end: number } }>();
-  const afterDiffMap = new Map<number, { type: 'addition' | 'update', range?: { start: number, end: number } }>();
-  
+  const beforeDiffMap = new Map<number, { type: 'removal' | 'update'; range?: { start: number; end: number } }>();
+  const afterDiffMap = new Map<number, { type: 'addition' | 'update'; range?: { start: number; end: number } }>();
+
   // Mark removals (red highlighting in before view)
-  diffResult.removals.forEach(removal => {
+  diffResult.removals.forEach((removal) => {
     for (let i = removal.beforeRange.start; i <= removal.beforeRange.end; i++) {
       beforeDiffMap.set(i, { type: 'removal', range: removal.beforeRange });
     }
   });
-  
+
   // Mark additions (green highlighting in after view)
-  diffResult.additions.forEach(addition => {
+  diffResult.additions.forEach((addition) => {
     for (let i = addition.afterRange.start; i <= addition.afterRange.end; i++) {
       afterDiffMap.set(i, { type: 'addition', range: addition.afterRange });
     }
   });
-  
+
   // Mark updates (yellow highlighting in both views)
-  diffResult.updates.forEach(update => {
+  diffResult.updates.forEach((update) => {
     for (let i = update.beforeRange.start; i <= update.beforeRange.end; i++) {
       beforeDiffMap.set(i, { type: 'update', range: update.beforeRange });
     }
@@ -287,10 +298,9 @@ const computeHexDiff = (beforeBytes: number[], afterBytes: number[]) => {
       afterDiffMap.set(i, { type: 'update', range: update.afterRange });
     }
   });
-  
+
   return { beforeDiffMap, afterDiffMap, diffResult };
 };
-
 
 // Client-side only component - will be hydrated on the client
 
@@ -301,7 +311,7 @@ interface LamportsDisplayProps {
   className?: string;
 }
 
-const LamportsDisplay: React.FC<LamportsDisplayProps> = ({ lamports, label, className = "" }) => {
+const LamportsDisplay: React.FC<LamportsDisplayProps> = ({ lamports, label, className = '' }) => {
   return (
     <TokenAmountDisplay
       amount={lamports}
@@ -311,7 +321,7 @@ const LamportsDisplay: React.FC<LamportsDisplayProps> = ({ lamports, label, clas
       variant="badge"
       formatOptions={{
         minimumFractionDigits: 0,
-        maximumFractionDigits: 9
+        maximumFractionDigits: 9,
       }}
     />
   );
@@ -326,15 +336,13 @@ interface OwnerDisplayProps {
   className?: string;
 }
 
-
-
-const OwnerDisplay: React.FC<OwnerDisplayProps> = ({ 
-  owner, 
-  copiedStates, 
-  copyToClipboard, 
-  truncateAddress, 
+const OwnerDisplay: React.FC<OwnerDisplayProps> = ({
+  owner,
+  copiedStates,
+  copyToClipboard,
+  truncateAddress,
   copyId,
-  className = "" 
+  className = '',
 }) => {
   return (
     <AddressDisplay
@@ -384,18 +392,21 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
   handleDrop,
   registerIdl,
   toggleAccountViewMode,
-  className = ""
+  className = '',
 }) => {
   return (
-    <div className={`w-full overflow-x-auto bg-zinc-950 p-2 pl-5 pr-5 pb-4 font-mono text-xs whitespace-pre ${className}`}>
+    <div
+      className={`w-full overflow-x-auto bg-zinc-950 p-2 pr-5 pb-4 pl-5 font-mono text-xs whitespace-pre ${className}`}
+    >
       {getAccountViewMode(address, context) === 'parsed' ? (
-        <div 
+        <div
           ref={(el) => {
             if (el && typeof window !== 'undefined') {
               try {
                 const extractedData = extractProgramData(data);
                 // Ensure we pass a properly serialized JSON string to pretty-json
-                const jsonString = typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+                const jsonString =
+                  typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
                 el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
               } catch (error) {
                 el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractProgramData(data), null, 2)}</pre>`;
@@ -404,20 +415,20 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
           }}
         />
       ) : (
-        <div 
-          className="font-mono text-xs space-y-1"
+        <div
+          className="space-y-1 font-mono text-xs"
           dangerouslySetInnerHTML={{
-            __html: getHexDataResponsive(data)
+            __html: getHexDataResponsive(data),
           }}
         />
       )}
-      
+
       {/* IDL Drop Zone - Only show if no JSON data */}
       {!hasJsonData(data) && (
         <div
           className={`mt-2 w-full rounded border-2 border-dotted p-3 text-center transition-colors ${
-            isDragOver[address] 
-              ? 'border-blue-400 bg-blue-900/20' 
+            isDragOver[address]
+              ? 'border-blue-400 bg-blue-900/20'
               : droppedIdl[address]
                 ? 'border-green-400 bg-green-900/20'
                 : 'border-gray-500 bg-gray-900/20'
@@ -429,7 +440,8 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
           {droppedIdl[address] ? (
             <div className="space-y-2">
               <div className="text-xs text-green-400">
-                ✓ IDL file loaded: {Object.keys(droppedIdl[address].accounts || {}).length} accounts, {Object.keys(droppedIdl[address].instructions || {}).length} instructions
+                ✓ IDL file loaded: {Object.keys(droppedIdl[address].accounts || {}).length} accounts,{' '}
+                {Object.keys(droppedIdl[address].instructions || {}).length} instructions
               </div>
               <button
                 onClick={(e) => {
@@ -461,21 +473,29 @@ const LamportsComparison: React.FC<LamportsComparisonProps> = ({ beforeLamports,
   const hasChange = beforeLamports !== afterLamports;
   const smallerAmount = Math.min(beforeLamports, afterLamports);
   const largerAmount = Math.max(beforeLamports, afterLamports);
-  
+
   return (
     <div className="flex items-center gap-1">
       {hasChange && (
         <>
-          <LamportsDisplay 
-            lamports={beforeLamports} 
-            className={beforeLamports === smallerAmount ? "border-red-500/30 text-red-300" : "border-green-500/30 text-green-300"}
+          <LamportsDisplay
+            lamports={beforeLamports}
+            className={
+              beforeLamports === smallerAmount ? 'border-red-500/30 text-red-300' : 'border-green-500/30 text-green-300'
+            }
           />
           <span className="text-xs text-gray-500">→</span>
         </>
       )}
-      <LamportsDisplay 
-        lamports={afterLamports} 
-        className={hasChange ? (afterLamports === smallerAmount ? "border-red-500/30 text-red-300" : "border-green-500/30 text-green-300") : ''}
+      <LamportsDisplay
+        lamports={afterLamports}
+        className={
+          hasChange
+            ? afterLamports === smallerAmount
+              ? 'border-red-500/30 text-red-300'
+              : 'border-green-500/30 text-green-300'
+            : ''
+        }
       />
     </div>
   );
@@ -499,7 +519,7 @@ const PermissionsBox: React.FC<PermissionsBoxProps> = ({
   // Check if this is an executable account (program)
   const isExecutable = (() => {
     let isExecutable = false;
-    
+
     // Check all possible sources for executable flag
     if (hasChanges && accountState.accountChange.data) {
       if (Array.isArray(accountState.accountChange.data)) {
@@ -509,11 +529,15 @@ const PermissionsBox: React.FC<PermissionsBoxProps> = ({
         // Create/Delete case - check the single account
         isExecutable = accountState.accountChange.data.executable;
       }
-    } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
+    } else if (
+      !hasChanges &&
+      transactionProfile.readonlyAccountStates &&
+      transactionProfile.readonlyAccountStates[address]
+    ) {
       // Read-only account case
       isExecutable = transactionProfile.readonlyAccountStates[address].executable;
     }
-    
+
     // Additional check: if we have instruction profiles, check if this address appears as a program
     if (!isExecutable && transactionProfile.instructionProfiles) {
       for (const instructionProfile of transactionProfile.instructionProfiles) {
@@ -521,7 +545,8 @@ const PermissionsBox: React.FC<PermissionsBoxProps> = ({
           const accountState = instructionProfile.accountStates[address];
           if (accountState.accountChange?.data) {
             if (Array.isArray(accountState.accountChange.data)) {
-              isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+              isExecutable =
+                accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
             } else {
               isExecutable = accountState.accountChange.data.executable;
             }
@@ -530,7 +555,7 @@ const PermissionsBox: React.FC<PermissionsBoxProps> = ({
         }
       }
     }
-    
+
     // Fallback check: look at the transaction's instruction data to identify program accounts
     if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
       for (const instruction of selectedTransaction.transaction.message.instructions) {
@@ -540,16 +565,28 @@ const PermissionsBox: React.FC<PermissionsBoxProps> = ({
         }
       }
     }
-    
+
     return isExecutable;
   })();
 
   return (
     <div className="mr-3 flex items-center rounded-md bg-clip-border">
-      <div className="border border-gray-600/50 bg-gray-800/50 text-xs font-mono rounded-[2px] h-6">
-        <span className={`inline-block w-6 text-center border-r border-gray-600/50 h-full ${accountState.type === 'readonly' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>R</span>
-        <span className={`inline-block w-6 text-center border-r border-gray-600/50 h-full ${accountState.type === 'writable' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>W</span>
-        <span className={`inline-block w-6 text-center h-full ${isExecutable ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}>X</span>
+      <div className="h-6 rounded-[2px] border border-gray-600/50 bg-gray-800/50 font-mono text-xs">
+        <span
+          className={`inline-block h-full w-6 border-r border-gray-600/50 text-center ${accountState.type === 'readonly' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}
+        >
+          R
+        </span>
+        <span
+          className={`inline-block h-full w-6 border-r border-gray-600/50 text-center ${accountState.type === 'writable' ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}
+        >
+          W
+        </span>
+        <span
+          className={`inline-block h-full w-6 text-center ${isExecutable ? 'bg-gray-300 text-gray-900' : 'text-gray-500'}`}
+        >
+          X
+        </span>
       </div>
     </div>
   );
@@ -571,26 +608,26 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
   selectedTransaction,
 }) => {
   // Check if account has a change label (NEW, UPDATED, DELETED)
-  const hasChangeLabel = hasChanges && (
-    accountState.accountChange.type === 'create' ||
-    accountState.accountChange.type === 'update' ||
-    accountState.accountChange.type === 'delete'
-  );
+  const hasChangeLabel =
+    hasChanges &&
+    (accountState.accountChange.type === 'create' ||
+      accountState.accountChange.type === 'update' ||
+      accountState.accountChange.type === 'delete');
 
   return (
     <div className="flex items-center">
       {hasChanges && accountState.accountChange.type === 'create' && (
-        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-green-500/30 bg-green-900/30 text-green-300">
+        <span className="mr-2 rounded border border-green-500/30 bg-green-900/30 px-2 py-0.5 text-[10px] font-medium text-green-300">
           NEW ACCOUNT
         </span>
       )}
       {hasChanges && accountState.accountChange.type === 'update' && (
-        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-yellow-500/30 bg-yellow-900/30 text-yellow-300">
+        <span className="mr-2 rounded border border-yellow-500/30 bg-yellow-900/30 px-2 py-0.5 text-[10px] font-medium text-yellow-300">
           UPDATED ACCOUNT
         </span>
       )}
       {hasChanges && accountState.accountChange.type === 'delete' && (
-        <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-red-500/30 bg-red-900/30 text-red-300">
+        <span className="mr-2 rounded border border-red-500/30 bg-red-900/30 px-2 py-0.5 text-[10px] font-medium text-red-300">
           DELETED ACCOUNT
         </span>
       )}
@@ -598,21 +635,26 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
       {(() => {
         // Check if this is an executable account (program)
         let isExecutable = false;
-        
+
         // Check all possible sources for executable flag
         if (hasChanges && accountState.accountChange.data) {
           if (Array.isArray(accountState.accountChange.data)) {
             // Update case - check both before and after
-            isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+            isExecutable =
+              accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
           } else {
             // Create/Delete case - check the single account
             isExecutable = accountState.accountChange.data.executable;
           }
-        } else if (!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address]) {
+        } else if (
+          !hasChanges &&
+          transactionProfile.readonlyAccountStates &&
+          transactionProfile.readonlyAccountStates[address]
+        ) {
           // Read-only account case
           isExecutable = transactionProfile.readonlyAccountStates[address].executable;
         }
-        
+
         // Additional check: if we have instruction profiles, check if this address appears as a program
         if (!isExecutable && transactionProfile.instructionProfiles) {
           for (const instructionProfile of transactionProfile.instructionProfiles) {
@@ -620,7 +662,8 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
               const accountState = instructionProfile.accountStates[address];
               if (accountState.accountChange?.data) {
                 if (Array.isArray(accountState.accountChange.data)) {
-                  isExecutable = accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
+                  isExecutable =
+                    accountState.accountChange.data[0]?.executable || accountState.accountChange.data[1]?.executable;
                 } else {
                   isExecutable = accountState.accountChange.data.executable;
                 }
@@ -629,7 +672,7 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
             }
           }
         }
-        
+
         // Fallback check: look at the transaction's instruction data to identify program accounts
         if (!isExecutable && selectedTransaction?.transaction?.message?.instructions) {
           for (const instruction of selectedTransaction.transaction.message.instructions) {
@@ -639,25 +682,25 @@ const AccountLabels: React.FC<AccountLabelsProps> = ({
             }
           }
         }
-        
+
         if (isExecutable && getProgramType(address)) {
-          const programLabel = getProgramType(address); 
+          const programLabel = getProgramType(address);
           return (
-            <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-400/30 bg-gray-800/30 text-gray-200">
+            <span className="mr-2 rounded border border-gray-400/30 bg-gray-800/30 px-2 py-0.5 text-[10px] font-medium text-gray-200">
               {programLabel}
             </span>
           );
         }
-        
+
         // If no other label applies and no change label exists, show READ ACCOUNT badge
         if (!hasChangeLabel) {
           return (
-            <span className="mr-2 rounded px-2 py-0.5 text-[10px] font-medium border border-gray-500/30 bg-gray-900/30 text-gray-300">
+            <span className="mr-2 rounded border border-gray-500/30 bg-gray-900/30 px-2 py-0.5 text-[10px] font-medium text-gray-300">
               READ ACCOUNT
             </span>
           );
         }
-        
+
         return null;
       })()}
     </div>
@@ -672,15 +715,15 @@ interface OwnerComparisonProps {
   truncateAddress: (address: string) => string;
 }
 
-const OwnerComparison: React.FC<OwnerComparisonProps> = ({ 
-  beforeOwner, 
-  afterOwner, 
-  copiedStates, 
-  copyToClipboard, 
-  truncateAddress 
+const OwnerComparison: React.FC<OwnerComparisonProps> = ({
+  beforeOwner,
+  afterOwner,
+  copiedStates,
+  copyToClipboard,
+  truncateAddress,
 }) => {
   const hasChange = beforeOwner !== afterOwner;
-  
+
   return (
     <div className="flex items-center gap-3">
       {hasChange && (
@@ -770,7 +813,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       }
       return String(data);
     };
-    
+
     const dataStr = getDataString(data);
     const bytes = Array.from(dataStr).map((char) => (char as string).charCodeAt(0));
     return bytes.map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
@@ -783,30 +826,34 @@ const DataComparison: React.FC<DataComparisonProps> = ({
         const hexData = generateHexData(data);
         copyToClipboard(hexData, `${label.toLowerCase()}-hex-${address}`);
       }}
-      className="text-gray-400 hover:text-white transition-colors mr-6"
+      className="mr-6 text-gray-400 transition-colors hover:text-white"
     >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+        />
       </svg>
     </button>
   );
-  
+
   const viewMode = getAccountViewMode(address, context);
-  const hasChange = viewMode === 'parsed' 
-    ? JSON.stringify(extractProgramData(tempBeforeData)) !== JSON.stringify(extractProgramData(tempAfterData))
-    : getHexData(tempBeforeData) !== getHexData(tempAfterData);
+  const hasChange =
+    viewMode === 'parsed'
+      ? JSON.stringify(extractProgramData(tempBeforeData)) !== JSON.stringify(extractProgramData(tempAfterData))
+      : getHexData(tempBeforeData) !== getHexData(tempAfterData);
 
   return (
     <div className="w-full overflow-x-auto border-t border-gray-600/30 bg-black/20 p-3 font-mono text-xs whitespace-pre">
       {viewMode === 'parsed' ? (
         <div>
           {hasChange ? (
-            <div>
-              {renderUnifiedJsonDiff(extractProgramData(beforeData), extractProgramData(afterData))}
-            </div>
+            <div>{renderUnifiedJsonDiff(extractProgramData(beforeData), extractProgramData(afterData))}</div>
           ) : (
             <div>
-              <div 
+              <div
                 ref={(el) => {
                   if (el && typeof window !== 'undefined') {
                     const extractedData = extractProgramData(afterData);
@@ -815,7 +862,8 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                     } else {
                       try {
                         // Ensure we pass a properly serialized JSON string to pretty-json
-                        const jsonString = typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+                        const jsonString =
+                          typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
                         el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
                       } catch (error) {
                         el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
@@ -830,13 +878,13 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       ) : (
         <div>
           {hasChange ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="mb-2 flex items-center justify-between">
                   <div className="text-xs font-semibold text-gray-500">BEFORE</div>
                   <CopyButton data={tempBeforeData} label="before" />
                 </div>
-                <div 
+                <div
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
                     __html: (() => {
@@ -847,7 +895,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           if (data.bytes && Array.isArray(data.bytes)) {
                             return data.bytes;
                           }
-                          
+
                           // If it's a base64 array, decode it
                           if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
                             try {
@@ -857,19 +905,19 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                               return [];
                             }
                           }
-                          
+
                           // If it's already an array of numbers, use it directly
-                          if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+                          if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
                             return data;
                           }
-                          
+
                           // Fallback: convert to JSON string and then to bytes
                           const jsonStr = JSON.stringify(data);
                           return Array.from(jsonStr).map((char) => (char as string).charCodeAt(0));
                         }
                         return [];
                       };
-                      
+
                       const beforeBytes = getRawBytes(tempBeforeData);
                       const afterBytes = getRawBytes(tempAfterData);
                       const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
@@ -882,10 +930,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const beforeHexParts = beforeLineBytes.map((byte: number, index: number) => {
                           const globalIndex = i + index;
                           const diffEntry = beforeDiffMap.get(globalIndex);
-                          
+
                           let highlightClass = '';
                           let borderClass = '';
-                          
+
                           if (diffEntry) {
                             if (diffEntry.type === 'removal') {
                               // Show removals in red
@@ -905,10 +953,12 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                               }
                             }
                           }
-                          
+
                           const hex = byte.toString(16).padStart(2, '0').toUpperCase();
                           const combinedClass = highlightClass || borderClass;
-                          return combinedClass ? `<span class="${combinedClass} hex-grid">${hex}</span>` : `<span class="hex-grid">${hex}</span>`;
+                          return combinedClass
+                            ? `<span class="${combinedClass} hex-grid">${hex}</span>`
+                            : `<span class="hex-grid">${hex}</span>`;
                         });
 
                         // Join hex bytes directly since they're already wrapped in spans
@@ -918,20 +968,22 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
                         // Create line with only hex (no ASCII) - use CSS for spacing between pairs
-                        lines.push(`<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${beforeHexPart}</span>`);
+                        lines.push(
+                          `<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${beforeHexPart}</span>`
+                        );
                       }
 
                       return lines.join('\n').replace(/\n/g, '<br>');
-                    })()
+                    })(),
                   }}
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="mb-2 flex items-center justify-between">
                   <div className="text-xs font-semibold text-gray-500">AFTER</div>
                   <CopyButton data={tempAfterData} label="after" />
                 </div>
-                <div 
+                <div
                   className="font-mono text-xs"
                   dangerouslySetInnerHTML={{
                     __html: (() => {
@@ -942,7 +994,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                           if (data.bytes && Array.isArray(data.bytes)) {
                             return data.bytes;
                           }
-                          
+
                           // If it's a base64 array, decode it
                           if (Array.isArray(data) && data.length === 2 && data[1] === 'base64') {
                             try {
@@ -952,19 +1004,19 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                               return [];
                             }
                           }
-                          
+
                           // If it's already an array of numbers, use it directly
-                          if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+                          if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
                             return data;
                           }
-                          
+
                           // Fallback: convert to JSON string and then to bytes
                           const jsonStr = JSON.stringify(data);
                           return Array.from(jsonStr).map((char) => (char as string).charCodeAt(0));
                         }
                         return [];
                       };
-                      
+
                       const beforeBytes = getRawBytes(tempBeforeData);
                       const afterBytes = getRawBytes(tempAfterData);
                       const { beforeDiffMap, afterDiffMap, diffResult } = computeHexDiff(beforeBytes, afterBytes);
@@ -977,10 +1029,10 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const afterHexParts = afterLineBytes.map((byte: number, index: number) => {
                           const globalIndex = i + index;
                           const diffEntry = afterDiffMap.get(globalIndex);
-                          
+
                           let highlightClass = '';
                           let borderClass = '';
-                          
+
                           if (diffEntry) {
                             if (diffEntry.type === 'addition') {
                               // Show additions in green
@@ -996,11 +1048,11 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                                 // Calculate the correct position accounting for all previous removals
                                 // Each removal shifts the positions in the after view
                                 const removedBeforeThis = diffResult.removals
-                                  .filter(r => r.beforeRange.start < removal.beforeRange.start)
+                                  .filter((r) => r.beforeRange.start < removal.beforeRange.start)
                                   .reduce((sum, r) => sum + (r.beforeRange.end - r.beforeRange.start + 1), 0);
-                                
+
                                 const correctAfterPosition = removal.beforeRange.start - removedBeforeThis;
-                                
+
                                 if (globalIndex === correctAfterPosition) {
                                   borderClass = 'border-l-2 border-red-500';
                                   break;
@@ -1008,10 +1060,12 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                               }
                             }
                           }
-                          
+
                           const hex = byte.toString(16).padStart(2, '0').toUpperCase();
                           const combinedClass = highlightClass || borderClass;
-                          return combinedClass ? `<span class="${combinedClass} hex-grid">${hex}</span>` : `<span class="hex-grid">${hex}</span>`;
+                          return combinedClass
+                            ? `<span class="${combinedClass} hex-grid">${hex}</span>`
+                            : `<span class="hex-grid">${hex}</span>`;
                         });
 
                         // Join hex bytes directly since they're already wrapped in spans
@@ -1021,11 +1075,13 @@ const DataComparison: React.FC<DataComparisonProps> = ({
                         const offset = i.toString(16).padStart(4, '0').toUpperCase();
 
                         // Create line with only hex (no ASCII) - use CSS for spacing between pairs
-                        lines.push(`<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${afterHexPart}</span>`);
+                        lines.push(
+                          `<span class="text-gray-500">${offset}:</span> <span class="hex-grid">${afterHexPart}</span>`
+                        );
                       }
 
                       return lines.join('\n').replace(/\n/g, '<br>');
-                    })()
+                    })(),
                   }}
                 />
               </div>
@@ -1035,7 +1091,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
               {(() => {
                 const hexData = getHexDataForUpdates(afterData);
                 if (hexData === '<none>') {
-                  return <div className="text-gray-500 text-xs italic">No data</div>;
+                  return <div className="text-xs text-gray-500 italic">No data</div>;
                 }
                 return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
               })()}
@@ -1043,13 +1099,13 @@ const DataComparison: React.FC<DataComparisonProps> = ({
           )}
         </div>
       )}
-      
+
       {/* IDL Drop Zone - Only show if no JSON data */}
       {!hasJsonData(beforeData) && !hasJsonData(afterData) && (
         <div
           className={`mt-3 w-full rounded border-2 border-dotted p-3 text-center transition-colors ${
-            isDragOver[address] 
-              ? 'border-blue-400 bg-blue-900/20' 
+            isDragOver[address]
+              ? 'border-blue-400 bg-blue-900/20'
               : droppedIdl[address]
                 ? 'border-green-400 bg-green-900/20'
                 : 'border-gray-500 bg-gray-900/20'
@@ -1061,7 +1117,8 @@ const DataComparison: React.FC<DataComparisonProps> = ({
           {droppedIdl[address] ? (
             <div className="space-y-2">
               <div className="text-xs text-green-400">
-                ✓ IDL file loaded: {Object.keys(droppedIdl[address].accounts || {}).length} accounts, {Object.keys(droppedIdl[address].instructions || {}).length} instructions
+                ✓ IDL file loaded: {Object.keys(droppedIdl[address].accounts || {}).length} accounts,{' '}
+                {Object.keys(droppedIdl[address].instructions || {}).length} instructions
               </div>
               <button
                 onClick={(e) => {
@@ -1101,7 +1158,6 @@ if (typeof window !== 'undefined') {
   // Server-side fallback
   jsonDiff = { diffString: () => '' };
 }
-
 
 interface TransactionInspectorProps {
   rpcUrl?: string;
@@ -1186,14 +1242,14 @@ const AccountDetails: React.FC<AccountDetailsProps> = ({
   return (
     <div className="space-y-4 text-xs text-gray-400">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500 px-5">{getLamportsLabel()}</span>
-        <span className="text-right pr-5">
+        <span className="px-5 text-xs font-semibold text-gray-500">{getLamportsLabel()}</span>
+        <span className="pr-5 text-right">
           <LamportsDisplay lamports={accountData.lamports} />
         </span>
       </div>
       {accountData.owner && (
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-500 px-5">
+          <span className="px-5 text-xs font-semibold text-gray-500">
             <span className="hidden sm:inline">ACCOUNT OWNER</span>
             <span className="sm:hidden">OWNER</span>
           </span>
@@ -1208,9 +1264,7 @@ const AccountDetails: React.FC<AccountDetailsProps> = ({
         </div>
       )}
       {accountData.executable ? (
-        <div className="space-y-0 pb-2">
-          {/* No content for executable accounts */}
-        </div>
+        <div className="space-y-0 pb-2">{/* No content for executable accounts */}</div>
       ) : (
         <div className="space-y-0">
           <div className="flex items-center justify-between px-5 pb-2">
@@ -1292,101 +1346,110 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
 }) => {
   const context = 'update';
   return (
-      <div className="space-y-3">
-        {/* Lamports Field */}
+    <div className="space-y-3">
+      {/* Lamports Field */}
+      <div className="flex items-center justify-between px-5">
+        <span
+          className={`text-xs font-semibold ${accountData[0].lamports !== accountData[1].lamports ? 'text-yellow-400' : 'text-gray-400'}`}
+        >
+          LAMPORTS
+        </span>
+        <LamportsComparison beforeLamports={accountData[0].lamports} afterLamports={accountData[1].lamports} />
+      </div>
+
+      {/* Owner Field */}
+      {accountData[0].owner && (
         <div className="flex items-center justify-between px-5">
-          <span className={`text-xs font-semibold ${accountData[0].lamports !== accountData[1].lamports ? 'text-yellow-400' : 'text-gray-400'}`}>LAMPORTS</span>
-          <LamportsComparison 
-            beforeLamports={accountData[0].lamports}
-            afterLamports={accountData[1].lamports}
+          <span
+            className={`text-xs font-semibold ${accountData[0].owner !== accountData[1].owner ? 'text-yellow-400' : 'text-gray-400'}`}
+          >
+            <span className="hidden sm:inline">ACCOUNT OWNER</span>
+            <span className="sm:hidden">OWNER</span>
+          </span>
+          <OwnerComparison
+            beforeOwner={accountData[0].owner}
+            afterOwner={accountData[1].owner}
+            copiedStates={copiedStates}
+            copyToClipboard={copyToClipboard}
+            truncateAddress={truncateAddress}
           />
         </div>
+      )}
 
-        {/* Owner Field */}
-        {accountData[0].owner && (
-          <div className="flex items-center justify-between px-5">
-            <span className={`text-xs font-semibold ${accountData[0].owner !== accountData[1].owner ? 'text-yellow-400' : 'text-gray-400'}`}>
-              <span className="hidden sm:inline">ACCOUNT OWNER</span>
-              <span className="sm:hidden">OWNER</span>
-            </span>
-            <OwnerComparison
-              beforeOwner={accountData[0].owner}
-              afterOwner={accountData[1].owner}
-              copiedStates={copiedStates}
-              copyToClipboard={copyToClipboard}
-              truncateAddress={truncateAddress}
-            />
-          </div>
-        )}
-
-        {/* Data Field */}
-        {accountData[0].executable || accountData[1].executable ? (
-          <div className="space-y-0">
-            {/* No content for executable accounts */}
-          </div>
-        ) : (
-          <div className="space-y-0">
-            <div className="flex items-center justify-between px-5 pb-2">
-              <div className={`text-xs font-semibold ${
-                (getAccountViewMode(address) === 'parsed' 
-                  ? JSON.stringify(extractProgramData(accountData[0].data)) !== JSON.stringify(extractProgramData(accountData[1].data))
-                  : getHexData(accountData[0].data) !== getHexData(accountData[1].data)
-                ) ? 'text-yellow-400' : 'text-gray-400'
-              }`}>DATA</div>
-              <div className="flex items-center gap-2 text-xs">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleAccountViewMode(address, context);
-                  }}
-                  className={`transition-colors ${
-                    getAccountViewMode(address, context) === 'parsed'
-                      ? 'font-medium text-white'
-                      : 'text-gray-500 hover:text-gray-400'
-                  }`}
-                >
-                  Pretty
-                </button>
-                <span className="text-gray-600">|</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleAccountViewMode(address, context);
-                  }}
-                  className={`transition-colors ${
-                    getAccountViewMode(address, context) === 'hex'
-                      ? 'font-medium text-white'
-                      : 'text-gray-500 hover:text-gray-400'
-                  }`}
-                >
-                  Hex
-                </button>
-              </div>
+      {/* Data Field */}
+      {accountData[0].executable || accountData[1].executable ? (
+        <div className="space-y-0">{/* No content for executable accounts */}</div>
+      ) : (
+        <div className="space-y-0">
+          <div className="flex items-center justify-between px-5 pb-2">
+            <div
+              className={`text-xs font-semibold ${
+                (
+                  getAccountViewMode(address) === 'parsed'
+                    ? JSON.stringify(extractProgramData(accountData[0].data)) !==
+                      JSON.stringify(extractProgramData(accountData[1].data))
+                    : getHexData(accountData[0].data) !== getHexData(accountData[1].data)
+                )
+                  ? 'text-yellow-400'
+                  : 'text-gray-400'
+              }`}
+            >
+              DATA
             </div>
-            <DataComparison
-              beforeData={accountData[0]}
-              afterData={accountData[1]}
-              address={address}
-              context={context}
-              getAccountViewMode={getAccountViewMode}
-              extractProgramData={extractProgramData}
-              getHexData={getHexData}
-              getHexDataForUpdates={getHexDataForUpdates}
-              hasJsonData={hasJsonData}
-              isDragOver={isDragOver}
-              droppedIdl={droppedIdl}
-              handleDragOver={handleDragOver}
-              handleDragLeave={handleDragLeave}
-              handleDrop={handleDrop}
-              registerIdl={registerIdl}
-              toggleAccountViewMode={toggleAccountViewMode}
-              renderJsonDiff={renderJsonDiff}
-              renderUnifiedJsonDiff={renderUnifiedJsonDiff}
-              copyToClipboard={copyToClipboard}
-            />
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAccountViewMode(address, context);
+                }}
+                className={`transition-colors ${
+                  getAccountViewMode(address, context) === 'parsed'
+                    ? 'font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-400'
+                }`}
+              >
+                Pretty
+              </button>
+              <span className="text-gray-600">|</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAccountViewMode(address, context);
+                }}
+                className={`transition-colors ${
+                  getAccountViewMode(address, context) === 'hex'
+                    ? 'font-medium text-white'
+                    : 'text-gray-500 hover:text-gray-400'
+                }`}
+              >
+                Hex
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+          <DataComparison
+            beforeData={accountData[0]}
+            afterData={accountData[1]}
+            address={address}
+            context={context}
+            getAccountViewMode={getAccountViewMode}
+            extractProgramData={extractProgramData}
+            getHexData={getHexData}
+            getHexDataForUpdates={getHexDataForUpdates}
+            hasJsonData={hasJsonData}
+            isDragOver={isDragOver}
+            droppedIdl={droppedIdl}
+            handleDragOver={handleDragOver}
+            handleDragLeave={handleDragLeave}
+            handleDrop={handleDrop}
+            registerIdl={registerIdl}
+            toggleAccountViewMode={toggleAccountViewMode}
+            renderJsonDiff={renderJsonDiff}
+            renderUnifiedJsonDiff={renderUnifiedJsonDiff}
+            copyToClipboard={copyToClipboard}
+          />
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -1433,14 +1496,15 @@ export default function TransactionInspector({
   // Use props if provided, otherwise use config values
   const rpcUrl = propRpcUrl || configRpcUrl;
   const wsUrl = propWsUrl || configWsUrl;
-  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } = useTransactionInspector({
-    rpcUrl,
-    wsUrl,
-    maxTransactions,
-    autoStart,
-    filterByProgram,
-    filterByAccount,
-  });
+  const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } =
+    useTransactionInspector({
+      rpcUrl,
+      wsUrl,
+      maxTransactions,
+      autoStart,
+      filterByProgram,
+      filterByAccount,
+    });
 
   const toggleAccountExpansion = (instructionIndex: number, address: string) => {
     const key = `${instructionIndex}:${address}`;
@@ -1508,10 +1572,10 @@ export default function TransactionInspector({
   const handleDrop = (e: React.DragEvent, address: string) => {
     e.preventDefault();
     setIsDragOver((prev) => ({ ...prev, [address]: false }));
-    
+
     const files = Array.from(e.dataTransfer.files);
-    const jsonFile = files.find(file => file.name.endsWith('.json'));
-    
+    const jsonFile = files.find((file) => file.name.endsWith('.json'));
+
     if (jsonFile) {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -1546,20 +1610,20 @@ export default function TransactionInspector({
           return data[0] || '<none>';
         }
       }
-      
+
       // If it's our new data structure with bytes field, use that
       if (data.bytes && Array.isArray(data.bytes)) {
         const bytes = data.bytes;
         const bytesString = String.fromCharCode(...bytes);
         return formatHexDump(bytesString);
       }
-      
+
       // If it's an array of numbers (decoded bytes), convert to hex
-      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+      if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
         const bytesString = String.fromCharCode(...data);
         return formatHexDump(bytesString);
       }
-      
+
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
       return formatHexDump(jsonStr);
@@ -1581,20 +1645,20 @@ export default function TransactionInspector({
           return data[0] || '<none>';
         }
       }
-      
+
       // If it's our new data structure with bytes field, use that
       if (data.bytes && Array.isArray(data.bytes)) {
         const bytes = data.bytes;
         const bytesString = String.fromCharCode(...bytes);
         return formatHexDump(bytesString);
       }
-      
+
       // If it's an array of numbers (decoded bytes), convert to hex
-      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+      if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
         const bytesString = String.fromCharCode(...data);
         return formatHexDump(bytesString);
       }
-      
+
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
       return formatHexDump(jsonStr);
@@ -1613,10 +1677,10 @@ export default function TransactionInspector({
           const decoded = atob(data[0]);
           return decoded === '' ? '<none>' : formatHexOnly(decoded);
         } catch (error) {
-          return data[0] === '' ? '<none>' : (data[0] || '<none>');
+          return data[0] === '' ? '<none>' : data[0] || '<none>';
         }
       }
-      
+
       // If it's our new data structure with bytes field, use that
       if (data.bytes && Array.isArray(data.bytes)) {
         if (data.bytes.length === 0) {
@@ -1626,25 +1690,25 @@ export default function TransactionInspector({
         const bytesString = String.fromCharCode(...bytes);
         return formatHexOnly(bytesString);
       }
-      
+
       // If it's an array of numbers (decoded bytes), convert to hex
-      if (Array.isArray(data) && data.every(item => typeof item === 'number')) {
+      if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
         if (data.length === 0) {
           return '<none>';
         }
         const bytesString = String.fromCharCode(...data);
         return formatHexOnly(bytesString);
       }
-      
+
       // Check if it's an empty array or empty object
       if (Array.isArray(data) && data.length === 0) {
         return '<none>';
       }
-      
+
       if (Object.keys(data).length === 0) {
         return '<none>';
       }
-      
+
       // For other objects, convert to hex representation
       const jsonStr = JSON.stringify(data);
       if (jsonStr === '[]' || jsonStr === '{}' || jsonStr === 'null' || jsonStr === 'undefined') {
@@ -1658,10 +1722,6 @@ export default function TransactionInspector({
     return formatHexOnly(str);
   };
 
-
-
-
-
   const formatHexDump = (data: string) => {
     const bytes = Array.from(data).map((char) => char.charCodeAt(0));
     const lines = [];
@@ -1670,7 +1730,9 @@ export default function TransactionInspector({
       const lineBytes = bytes.slice(i, i + 16);
 
       // Hex representation - join bytes with span elements for CSS padding
-      const hexPart = lineBytes.map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`).join('');
+      const hexPart = lineBytes
+        .map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`)
+        .join('');
 
       // ASCII representation
       const asciiPart = lineBytes
@@ -1691,7 +1753,9 @@ export default function TransactionInspector({
       const asciiSection = `<span class="text-gray-400">|${asciiPart}|</span>`;
 
       // Use flexbox layout to push ASCII to the right
-      lines.push(`<div class="flex justify-between items-start"><div>${hexSection}</div><div>${asciiSection}</div></div>`);
+      lines.push(
+        `<div class="flex justify-between items-start"><div>${hexSection}</div><div>${asciiSection}</div></div>`
+      );
     }
 
     return lines.join('');
@@ -1705,7 +1769,9 @@ export default function TransactionInspector({
       const lineBytes = bytes.slice(i, i + 16);
 
       // Hex representation - join bytes with span elements for CSS padding
-      const hexPart = lineBytes.map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`).join('');
+      const hexPart = lineBytes
+        .map((byte) => `<span>${byte.toString(16).padStart(2, '0').toUpperCase()}</span>`)
+        .join('');
 
       // Line number (offset)
       const offset = i.toString(16).padStart(4, '0').toUpperCase();
@@ -1779,7 +1845,7 @@ export default function TransactionInspector({
       if (Array.isArray(data) && data.length === 0) {
         return '<none>';
       }
-      
+
       if (Object.keys(data).length === 0) {
         return '<none>';
       }
@@ -1852,13 +1918,13 @@ export default function TransactionInspector({
   // Helper function to find changed paths in objects
   const findChangedPaths = (beforeObj: any, afterObj: any, currentPath: string[] = []): Set<string> => {
     const changedPaths = new Set<string>();
-    
+
     if (typeof beforeObj !== typeof afterObj) {
       // Different types - mark current path as changed
       changedPaths.add(currentPath.join('.'));
       return changedPaths;
     }
-    
+
     if (typeof beforeObj !== 'object' || beforeObj === null || afterObj === null) {
       // Primitive values - compare directly
       if (beforeObj !== afterObj) {
@@ -1866,13 +1932,13 @@ export default function TransactionInspector({
       }
       return changedPaths;
     }
-    
+
     if (Array.isArray(beforeObj) !== Array.isArray(afterObj)) {
       // One is array, other is object
       changedPaths.add(currentPath.join('.'));
       return changedPaths;
     }
-    
+
     if (Array.isArray(beforeObj)) {
       // Arrays - compare each element
       const maxLength = Math.max(beforeObj.length, afterObj.length);
@@ -1881,7 +1947,7 @@ export default function TransactionInspector({
         const afterItem = afterObj[i];
         const itemPath = [...currentPath, i.toString()];
         const itemChanges = findChangedPaths(beforeItem, afterItem, itemPath);
-        itemChanges.forEach(path => changedPaths.add(path));
+        itemChanges.forEach((path) => changedPaths.add(path));
       }
     } else {
       // Objects - compare each property
@@ -1890,22 +1956,22 @@ export default function TransactionInspector({
         const beforeValue = beforeObj[key];
         const afterValue = afterObj[key];
         const keyPath = [...currentPath, key];
-        
+
         // Check if property exists in both objects
         const beforeExists = key in beforeObj;
         const afterExists = key in afterObj;
-        
+
         if (!beforeExists || !afterExists) {
           // Property was added or removed
           changedPaths.add(keyPath.join('.'));
         } else {
           // Property exists in both - compare values
           const keyChanges = findChangedPaths(beforeValue, afterValue, keyPath);
-          keyChanges.forEach(path => changedPaths.add(path));
+          keyChanges.forEach((path) => changedPaths.add(path));
         }
       }
     }
-    
+
     return changedPaths;
   };
 
@@ -1927,17 +1993,17 @@ export default function TransactionInspector({
       const getPathForLine = (jsonLines: string[], targetIndex: number): string[] => {
         const path: string[] = [];
         const stack: { indent: number; key: string }[] = [];
-        
+
         for (let i = 0; i <= targetIndex; i++) {
           const line = jsonLines[i];
           const indent = (line.match(/^\s*/)?.[0].length || 0) / 2;
           const trimmed = line.trim();
-          
+
           // Remove items from stack that are deeper than current indent
           while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
             stack.pop();
           }
-          
+
           // If this line starts an object, add it to the stack
           if (trimmed.endsWith('{')) {
             const match = trimmed.match(/^"?([^":]+)"?\s*:\s*{$/);
@@ -1945,31 +2011,36 @@ export default function TransactionInspector({
               stack.push({ indent, key: match[1] });
             }
           }
-          
+
           // If this is the target line and it has a key, extract it
           if (i === targetIndex) {
             const fieldMatch = trimmed.match(/^"?([^":]+)"?\s*:/);
             if (fieldMatch) {
-              return [...stack.map(item => item.key), fieldMatch[1]];
+              return [...stack.map((item) => item.key), fieldMatch[1]];
             }
           }
         }
-        
-        return stack.map(item => item.key);
+
+        return stack.map((item) => item.key);
       };
 
       // Split into lines and process each line
       const jsonLines = jsonString.split('\n');
       const processedLines = jsonLines.map((line, index) => {
         const trimmedLine = line.trim();
-        
+
         // Get the path for this line
         const linePath = getPathForLine(jsonLines, index);
-        
-        // Check if this line contains a changed field
+        const linePathStr = linePath.join('.');
+        // Check if this line contains a changed field.
+        // Match exact paths OR, for array element lines (which don't include ':'), consider
+        // descendant paths like parsed.info.addresses.0 matching parent line parsed.info.addresses.
         const hasChangedValue = Array.from(changedPaths).some((path) => {
-          const pathParts = path.split('.');
-          return pathParts.join('.') === linePath.join('.');
+          if (path === linePathStr) return true;
+          // If this printed line looks like an array element (no colon) and the changed path is a descendant
+          // of the parent path, treat this element line as changed so added addresses appear green.
+          if (!trimmedLine.includes(':') && path.startsWith(linePathStr + '.')) return true;
+          return false;
         });
 
         if (hasChangedValue) {
@@ -2010,38 +2081,124 @@ export default function TransactionInspector({
       const changedPaths = findChangedPaths(beforeObj, afterObj);
 
       // Helper function to get the path for a specific line in the JSON
+      // This version recognizes arrays and assigns numeric indices to array elements
       const getPathForLine = (jsonLines: string[], targetIndex: number): string[] => {
-        const path: string[] = [];
-        const stack: { indent: number; key: string }[] = [];
-        
+        const stack: { indent: number; key: string; type: 'object' | 'array' }[] = [];
+
         for (let i = 0; i <= targetIndex; i++) {
           const line = jsonLines[i];
-          const indent = (line.match(/^\s*/)?.[0].length || 0) / 2;
-          const trimmed = line.trim();
-          
-          // Remove items from stack that are deeper than current indent
+          const indent = Math.floor((line.match(/^\s*/)?.[0].length || 0) / 2);
+          const trimmedLine = line.trim();
+
+          // Pop stack frames that are deeper or equal to the current indent
           while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
             stack.pop();
           }
-          
-          // If this line starts an object, add it to the stack
-          if (trimmed.endsWith('{')) {
-            const match = trimmed.match(/^"?([^":]+)"?\s*:\s*{$/);
-            if (match) {
-              stack.push({ indent, key: match[1] });
+
+          // If this line opens an object property: "key": {
+          const objMatch = trimmedLine.match(/^"?([^":]+)"?\s*:\s*\{\s*$/);
+          if (objMatch) {
+            stack.push({ indent, key: objMatch[1], type: 'object' });
+            continue;
+          }
+
+          // If this line opens an array property: "key": [
+          const arrMatch = trimmedLine.match(/^"?([^":]+)"?\s*:\s*\[\s*$/);
+          if (arrMatch) {
+            stack.push({ indent, key: arrMatch[1], type: 'array' });
+            continue;
+          }
+
+          // If we're inside an array, compute the current element index for this line
+          if (stack.length > 0 && stack[stack.length - 1].type === 'array') {
+            // Find the nearest array frame from the top of the stack
+            let arrFrameIndex = -1;
+            for (let s = stack.length - 1; s >= 0; s--) {
+              if (stack[s].type === 'array') {
+                arrFrameIndex = s;
+                break;
+              }
+            }
+
+            if (arrFrameIndex >= 0) {
+              const arrKey = stack[arrFrameIndex].key;
+
+              // Find the line index where the array started (the '"arrKey": [' line)
+              let startLine = -1;
+              for (let j = i; j >= 0; j--) {
+                const pl = jsonLines[j].trim();
+                if (pl.match(new RegExp(`^\"?${arrKey}\"?\\s*:\\s*\\[`))) {
+                  startLine = j;
+                  break;
+                }
+              }
+
+              // Count elements between startLine and current line to derive element index
+              let elementIndex = 0;
+              if (startLine >= 0) {
+                // We count element starts by scanning forward from the array start
+                // and incrementing when we encounter a non-key / non-closing line that likely starts an element.
+                let depth = 0;
+                for (let j = startLine + 1; j <= i; j++) {
+                  const pl = jsonLines[j].trim();
+                  if (pl === '' || pl === ',') continue;
+                  if (pl === ']' || pl === '],') break;
+
+                  // Track object nesting inside an element so we don't count internal object lines as new elements
+                  if (pl.endsWith('{')) {
+                    if (depth === 0) {
+                      // beginning of a new element object
+                      elementIndex++;
+                    }
+                    depth++;
+                    continue;
+                  }
+                  if (pl.startsWith('}')) {
+                    if (depth > 0) depth--;
+                    continue;
+                  }
+
+                  // Primitive elements or string elements usually appear as a line like: "value", or "value"
+                  if (depth === 0 && !pl.includes(':') && !pl.startsWith(']')) {
+                    // treat this as an element (or continuation of an element)
+                    if (!/^[\]\},]$/.test(pl)) {
+                      elementIndex = Math.max(1, elementIndex); // ensure at least 1 if a primitive element exists
+                    }
+                  }
+                }
+                // elementIndex is 1-based from above counting; convert to 0-based index:
+                elementIndex = Math.max(0, elementIndex - 1);
+              }
+
+              // If this is the target line, try to return a full path including the element index and optional field
+              if (i === targetIndex) {
+                const fieldMatch = trimmedLine.match(/^"?([^":]+)"?\s*:/);
+                if (fieldMatch) {
+                  return [...stack.slice(0, arrFrameIndex + 1).map((s) => s.key), String(elementIndex), fieldMatch[1]];
+                }
+                // If it's a primitive array element line or the array element start, return the element path
+                return [...stack.slice(0, arrFrameIndex + 1).map((s) => s.key), String(elementIndex)];
+              }
+
+              // If an element object begins here, push a synthetic object frame with the element index
+              if (trimmedLine.startsWith('{')) {
+                stack.push({ indent: indent + 1, key: String(elementIndex), type: 'object' });
+              }
+              continue;
             }
           }
-          
-          // If this is the target line and it has a key, extract it
+
+          // For non-array object properties or the target primitive key line
           if (i === targetIndex) {
-            const fieldMatch = trimmed.match(/^"?([^":]+)"?\s*:/);
+            const fieldMatch = trimmedLine.match(/^"?([^":]+)"?\s*:/);
             if (fieldMatch) {
-              return [...stack.map(item => item.key), fieldMatch[1]];
+              return [...stack.map((item) => item.key), fieldMatch[1]];
             }
           }
         }
-        
-        return stack.map(item => item.key);
+
+        // Default: return the current stack keys (path to current container)
+        return stack.map((item) => item.key);
       };
 
       // Use the after data as the base for display
@@ -2055,10 +2212,10 @@ export default function TransactionInspector({
       for (let index = 0; index < jsonLines.length; index++) {
         const line = jsonLines[index];
         const trimmedLine = line.trim();
-        
+
         // Get the path for this line
         const linePath = getPathForLine(jsonLines, index);
-        
+
         // Check if this line contains a changed field
         const hasChangedValue = Array.from(changedPaths).some((path) => {
           const pathParts = path.split('.');
@@ -2069,7 +2226,7 @@ export default function TransactionInspector({
           // Find the corresponding line in the before data
           const beforeJsonString = JSON.stringify(beforeObj, null, 2);
           const beforeJsonLines = beforeJsonString.split('\n');
-          
+
           // Try to find the matching line in before data
           let beforeLine = '';
           for (let beforeIndex = 0; beforeIndex < beforeJsonLines.length; beforeIndex++) {
@@ -2084,20 +2241,20 @@ export default function TransactionInspector({
           if (beforeLine && beforeLine !== line) {
             // Show old value in red
             processedLines.push(
-              <div key={`${index}-before`} className="text-red-500 bg-red-900/30 font-bold">
+              <div key={`${index}-before`} className="bg-red-900/30 font-bold text-red-500">
                 {beforeLine}
               </div>
             );
             // Show new value in green
             processedLines.push(
-              <div key={`${index}-after`} className="text-green-500 bg-green-900/30 font-bold">
+              <div key={`${index}-after`} className="bg-green-900/30 font-bold text-green-500">
                 {line}
               </div>
             );
           } else {
             // Fallback: just show the new value in green
             processedLines.push(
-              <div key={index} className="text-green-500 bg-green-900/30 font-bold">
+              <div key={index} className="bg-green-900/30 font-bold text-green-500">
                 {line}
               </div>
             );
@@ -2139,8 +2296,8 @@ export default function TransactionInspector({
             jsonrpc: '2.0',
             id: 1,
             method: 'surfnet_getTransactionProfile',
-            params: [signature, { encoding: 'jsonParsed' }]
-          })
+            params: [signature, { encoding: 'jsonParsed' }],
+          }),
         }),
         fetch(rpcUrl, {
           method: 'POST',
@@ -2151,19 +2308,16 @@ export default function TransactionInspector({
             jsonrpc: '2.0',
             id: 1,
             method: 'surfnet_getTransactionProfile',
-            params: [signature, { encoding: 'base64' }]
-          })
-        })
+            params: [signature, { encoding: 'base64' }],
+          }),
+        }),
       ]);
 
       if (!jsonParsedResponse.ok || !base64Response.ok) {
         throw new Error(`HTTP error! status: jsonParsed=${jsonParsedResponse.status}, base58=${base64Response.status}`);
       }
 
-      const [jsonParsedData, base64Data] = await Promise.all([
-        jsonParsedResponse.json(),
-        base64Response.json()
-      ]);
+      const [jsonParsedData, base64Data] = await Promise.all([jsonParsedResponse.json(), base64Response.json()]);
 
       console.log('📊 JSON Parsed response:', jsonParsedData);
       console.log('📊 Base64 response:', base64Data);
@@ -2173,13 +2327,15 @@ export default function TransactionInspector({
         const mergedProfile = mergeTransactionProfiles(jsonParsedData.result.value, base64Data.result.value);
         let transactionProfile = processTransactionProfile(mergedProfile);
         setTransactionProfile(transactionProfile);
-        
+
         // Expand all instructions by default
         if (transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0) {
-          const allInstructionIndices = new Set<number>(transactionProfile.instructionProfiles.map((_: any, index: number) => index));
+          const allInstructionIndices = new Set<number>(
+            transactionProfile.instructionProfiles.map((_: any, index: number) => index)
+          );
           setExpandedInstructions(allInstructionIndices);
         }
-      } 
+      }
     } catch (error) {
       console.error('❌ Error fetching transaction profile:', error);
       setProfileError(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2197,7 +2353,7 @@ export default function TransactionInspector({
       // Fetch transaction profile if we have a signature
       if (tx.transaction?.signatures?.[0]) {
         fetchTransactionProfile(tx.transaction.signatures[0]);
-        
+
         // Also fetch the actual transaction details to get the real fee
         try {
           const response = await fetch(rpcUrl, {
@@ -2207,13 +2363,10 @@ export default function TransactionInspector({
               jsonrpc: '2.0',
               id: 1,
               method: 'getTransaction',
-              params: [
-                tx.transaction.signatures[0],
-                { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }
-              ]
-            })
+              params: [tx.transaction.signatures[0], { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+            }),
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data.result?.value) {
@@ -2222,8 +2375,8 @@ export default function TransactionInspector({
                 ...prev,
                 meta: {
                   ...prev.meta,
-                  fee: data.result.value.meta?.fee || prev.meta?.fee
-                }
+                  fee: data.result.value.meta?.fee || prev.meta?.fee,
+                },
               }));
             }
           }
@@ -2247,7 +2400,12 @@ export default function TransactionInspector({
           <div className="text-center">
             <div className="mb-4">
               <svg className="mx-auto h-12 w-12 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
               </svg>
             </div>
             <div className="mb-2 text-lg font-medium text-zinc-300">Loading...</div>
@@ -2313,7 +2471,9 @@ export default function TransactionInspector({
                 </div>
                 <div className="mb-2 text-lg font-medium text-zinc-300">No transactions</div>
                 <div className="max-w-md text-sm text-zinc-500">
-                  Send transactions on your Surfnet to get detailed simulations,<br/>performance profiling, and data indexing
+                  Send transactions on your Surfnet to get detailed simulations,
+                  <br />
+                  performance profiling, and data indexing
                 </div>
               </div>
             </div>
@@ -2335,12 +2495,12 @@ export default function TransactionInspector({
               return (
                 <div
                   key={`${tx.transaction.signatures[0]}-${index}`}
-                  className={`bg-zinc-800 p-4 rounded ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
+                  className={`rounded bg-zinc-800 p-4 ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
                   onClick={() => handleTransactionClick(tx)}
                 >
                   <div className="mb-0 flex flex-col gap-1">
                     <div className="flex items-center gap-1">
-                      <span className="font-mono text-[8px] sm:text-xs md:text-sm text-gray-300">
+                      <span className="font-mono text-[8px] text-gray-300 sm:text-xs md:text-sm">
                         {formatSignature(tx.transaction.signatures[0])}
                       </span>
                       <button
@@ -2365,7 +2525,7 @@ export default function TransactionInspector({
                         <span className="font-mono font-bold text-white">{tx.slot}</span>
                       </div>
                     </div>
-                  </div> 
+                  </div>
                 </div>
               );
             })
@@ -2430,7 +2590,7 @@ export default function TransactionInspector({
                         window.open(explorerUrl, '_blank');
                       }
                     }}
-                    className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                    className="flex items-center gap-2 text-sm text-blue-400 transition-colors hover:text-blue-300"
                     disabled={!selectedTransaction.transaction?.signatures?.[0]}
                   >
                     <ArrowTopRightOnSquareIcon className="h-4 w-4" />
@@ -2465,28 +2625,32 @@ export default function TransactionInspector({
                   </div>
                 </div>
               )}
-              
+
               {/* Transaction Profile Loading State */}
               {profileLoading && (
                 <div className="space-y-4">
                   <div className="mb-3 text-sm font-semibold text-zinc-200">CU Profiling</div>
                   <div className="flex items-center justify-center py-8">
                     <div className="flex items-center gap-3">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                      <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-blue-500"></div>
                       <span className="text-sm text-zinc-400">Loading transaction profile...</span>
                     </div>
                   </div>
                 </div>
               )}
-              
+
               {/* Transaction Profile Error State */}
               {profileError && (
                 <div className="space-y-4">
                   <div className="mb-3 text-sm font-semibold text-zinc-200">CU Profiling</div>
-                  <div className="rounded-lg bg-red-900/20 border border-red-500/30 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  <div className="rounded-lg border border-red-500/30 bg-red-900/20 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                       <span className="text-sm font-medium text-red-400">Profile Loading Failed</span>
                     </div>
@@ -2497,14 +2661,14 @@ export default function TransactionInspector({
                           fetchTransactionProfile(selectedTransaction.transaction.signatures[0]);
                         }
                       }}
-                      className="mt-3 text-sm text-red-400 hover:text-red-300 underline"
+                      className="mt-3 text-sm text-red-400 underline hover:text-red-300"
                     >
                       Retry
                     </button>
                   </div>
                 </div>
               )}
-              
+
               {/* Transaction Profile - New Detailed View */}
               {transactionProfile && (
                 <>
@@ -2517,10 +2681,11 @@ export default function TransactionInspector({
                       <div className="flex h-6 overflow-hidden rounded-md border border-zinc-600">
                         {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
                           const cu = profile.computeUnitsConsumed || 0;
-                          const totalCu = transactionProfile.instructionProfiles.reduce(
-                            (sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0),
-                            0
-                          ) || 1;
+                          const totalCu =
+                            transactionProfile.instructionProfiles.reduce(
+                              (sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0),
+                              0
+                            ) || 1;
                           const percentage = (cu / totalCu) * 100;
 
                           // macOS-style colors for different instruction types
@@ -2585,7 +2750,7 @@ export default function TransactionInspector({
                     {transactionProfile.instructionProfiles?.map((profile: any, index: number) => {
                       // Get the actual instruction from selectedTransaction using the index
                       const instruction = selectedTransaction?.transaction?.message?.instructions?.[index];
-                      const programId = instruction?.programId || profile.programId;  
+                      const programId = instruction?.programId || profile.programId;
                       const programName = getProgramName(programId);
                       // macOS-style colors for different instruction types
                       const colors = [
@@ -2632,7 +2797,9 @@ export default function TransactionInspector({
                                   >
                                     {expandedInstructions.has(index) ? '▼' : '▶'}
                                   </span>
-                                  <div className="text-sm font-semibold text-zinc-200">Instruction #{index + 1}: {programName}</div>
+                                  <div className="text-sm font-semibold text-zinc-200">
+                                    Instruction #{index + 1}: {programName}
+                                  </div>
                                 </div>
 
                                 {profile.errorMessage && (
@@ -2653,8 +2820,10 @@ export default function TransactionInspector({
                               {/* Account States */}
                               {profile.accountStates && (
                                 <div>
-                                  <div className="mb-2 text-xs font-semibold text-gray-500">ACCOUNTS STATE TRANSITIONS</div>
-                                  <div className="rounded border border-zinc-600 bg-zinc-900/30 overflow-hidden">
+                                  <div className="mb-2 text-xs font-semibold text-gray-500">
+                                    ACCOUNTS STATE TRANSITIONS
+                                  </div>
+                                  <div className="overflow-hidden rounded border border-zinc-600 bg-zinc-900/30">
                                     {Object.entries(profile.accountStates)
                                       .sort(([addressA], [addressB]) => {
                                         // Order such that the executed program is always the first account
@@ -2667,27 +2836,28 @@ export default function TransactionInspector({
                                         const hasChanges =
                                           accountState.accountChange && accountState.accountChange.type !== 'unchanged';
                                         const isFirst = accountIndex === 0;
-                                        const isLast = accountIndex === Object.entries(profile.accountStates).length - 1;
-                                        
+                                        const isLast =
+                                          accountIndex === Object.entries(profile.accountStates).length - 1;
+
                                         const getHoverClasses = () => {
                                           if (hasChanges && accountState.accountChange.type === 'create') {
-                                            return "hover:bg-green-900/40";
+                                            return 'hover:bg-green-900/40';
                                           } else if (hasChanges && accountState.accountChange.type === 'update') {
-                                            return "hover:bg-yellow-900/40";
+                                            return 'hover:bg-yellow-900/40';
                                           } else if (hasChanges && accountState.accountChange.type === 'delete') {
-                                            return "hover:bg-red-900/40";
+                                            return 'hover:bg-red-900/40';
                                           } else if (!hasChanges && !isWritable) {
-                                            return "hover:bg-gray-700/40";
+                                            return 'hover:bg-gray-700/40';
                                           } else {
-                                            return "hover:bg-zinc-800/40";
+                                            return 'hover:bg-zinc-800/40';
                                           }
                                         };
 
                                         const getSeparatorClasses = () => {
-                                          return "";
+                                          return '';
                                         };
 
-                                                                                return (
+                                        return (
                                           <div key={address}>
                                             <div
                                               className={`bg-zinc-900/30 p-3 ${getHoverClasses()} transition-colors`}
@@ -2696,7 +2866,7 @@ export default function TransactionInspector({
                                                 className="flex cursor-pointer items-center justify-between px-2 py-1 font-mono text-xs text-gray-400"
                                                 onClick={() => toggleAccountExpansion(index, address)}
                                               >
-                                                <div className="flex items-center">                                                  
+                                                <div className="flex items-center">
                                                   <AddressDisplay
                                                     address={address}
                                                     copiedStates={copiedStates}
@@ -2707,7 +2877,7 @@ export default function TransactionInspector({
                                                     showCopyButton={true}
                                                   />
                                                 </div>
-                                                
+
                                                 <AccountLabels
                                                   accountState={accountState}
                                                   address={address}
@@ -2719,29 +2889,29 @@ export default function TransactionInspector({
                                             </div>
 
                                             {isAccountExpanded(index, address, hasChanges) && (
-                                                <div className="bg-zinc-950 pt-5">
-                                                  {hasChanges && accountState.accountChange.type === 'create' && (
-                                                    <AccountDetails
-                                                      address={address}
-                                                      accountData={accountState.accountChange.data}
-                                                      accountType="create"
-                                                      copiedStates={copiedStates}
-                                                      getAccountViewMode={getAccountViewMode}
-                                                      copyToClipboard={copyToClipboard}
-                                                      extractProgramData={extractProgramData}
-                                                      getHexData={getHexData}
-                                                      getHexDataResponsive={getHexDataResponsive}
-                                                      hasJsonData={hasJsonData}
-                                                      truncateAddress={truncateAddress}
-                                                      isDragOver={isDragOver}
-                                                      droppedIdl={droppedIdl}
-                                                      handleDragOver={handleDragOver}
-                                                      handleDragLeave={handleDragLeave}
-                                                      handleDrop={handleDrop}
-                                                      registerIdl={registerIdl}
-                                                      toggleAccountViewMode={toggleAccountViewMode}
-                                                    />
-                                                  )}
+                                              <div className="bg-zinc-950 pt-5">
+                                                {hasChanges && accountState.accountChange.type === 'create' && (
+                                                  <AccountDetails
+                                                    address={address}
+                                                    accountData={accountState.accountChange.data}
+                                                    accountType="create"
+                                                    copiedStates={copiedStates}
+                                                    getAccountViewMode={getAccountViewMode}
+                                                    copyToClipboard={copyToClipboard}
+                                                    extractProgramData={extractProgramData}
+                                                    getHexData={getHexData}
+                                                    getHexDataResponsive={getHexDataResponsive}
+                                                    hasJsonData={hasJsonData}
+                                                    truncateAddress={truncateAddress}
+                                                    isDragOver={isDragOver}
+                                                    droppedIdl={droppedIdl}
+                                                    handleDragOver={handleDragOver}
+                                                    handleDragLeave={handleDragLeave}
+                                                    handleDrop={handleDrop}
+                                                    registerIdl={registerIdl}
+                                                    toggleAccountViewMode={toggleAccountViewMode}
+                                                  />
+                                                )}
 
                                                 {hasChanges && accountState.accountChange.type === 'update' && (
                                                   <UpdateAccountDetails
@@ -2791,42 +2961,43 @@ export default function TransactionInspector({
                                                   />
                                                 )}
 
-                                                {!hasChanges && transactionProfile.readonlyAccountStates && transactionProfile.readonlyAccountStates[address] && (
-                                                  <AccountDetails
-                                                    address={address}
-                                                    accountData={transactionProfile.readonlyAccountStates[address]}
-                                                    accountType="read"
-                                                    copiedStates={copiedStates}
-                                                    getAccountViewMode={getAccountViewMode}
-                                                    copyToClipboard={copyToClipboard}
-                                                    extractProgramData={extractProgramData}
-                                                    getHexData={getHexData}
-                                                    getHexDataResponsive={getHexDataResponsive}
-                                                    hasJsonData={hasJsonData}
-                                                    truncateAddress={truncateAddress}
-                                                    isDragOver={isDragOver}
-                                                    droppedIdl={droppedIdl}
-                                                    handleDragOver={handleDragOver}
-                                                    handleDragLeave={handleDragLeave}
-                                                    handleDrop={handleDrop}
-                                                    registerIdl={registerIdl}
-                                                    toggleAccountViewMode={toggleAccountViewMode}
-                                                  />
-                                                )}
-                                                {!hasChanges && (!transactionProfile.readonlyAccountStates || !transactionProfile.readonlyAccountStates[address]) && (
-                                                  <div className="rounded border border-gray-500/30 bg-gray-700/20 p-2 text-xs text-gray-400">
-                                                    No changes to this account
-                                                  </div>
-                                                )}
+                                                {!hasChanges &&
+                                                  transactionProfile.readonlyAccountStates &&
+                                                  transactionProfile.readonlyAccountStates[address] && (
+                                                    <AccountDetails
+                                                      address={address}
+                                                      accountData={transactionProfile.readonlyAccountStates[address]}
+                                                      accountType="read"
+                                                      copiedStates={copiedStates}
+                                                      getAccountViewMode={getAccountViewMode}
+                                                      copyToClipboard={copyToClipboard}
+                                                      extractProgramData={extractProgramData}
+                                                      getHexData={getHexData}
+                                                      getHexDataResponsive={getHexDataResponsive}
+                                                      hasJsonData={hasJsonData}
+                                                      truncateAddress={truncateAddress}
+                                                      isDragOver={isDragOver}
+                                                      droppedIdl={droppedIdl}
+                                                      handleDragOver={handleDragOver}
+                                                      handleDragLeave={handleDragLeave}
+                                                      handleDrop={handleDrop}
+                                                      registerIdl={registerIdl}
+                                                      toggleAccountViewMode={toggleAccountViewMode}
+                                                    />
+                                                  )}
+                                                {!hasChanges &&
+                                                  (!transactionProfile.readonlyAccountStates ||
+                                                    !transactionProfile.readonlyAccountStates[address]) && (
+                                                    <div className="rounded border border-gray-500/30 bg-gray-700/20 p-2 text-xs text-gray-400">
+                                                      No changes to this account
+                                                    </div>
+                                                  )}
                                               </div>
                                             )}
-                                          {!isLast && (
-                                            <div className="h-px bg-zinc-500/20 mx-3"></div>
-                                          )}
-                                        </div>
-                                      );
-                                      }
-                                    )}
+                                            {!isLast && <div className="mx-3 h-px bg-zinc-500/20"></div>}
+                                          </div>
+                                        );
+                                      })}
                                   </div>
                                 </div>
                               )}
@@ -2919,4 +3090,3 @@ export default function TransactionInspector({
     </div>
   );
 }
-

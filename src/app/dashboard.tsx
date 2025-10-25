@@ -73,7 +73,7 @@ export function Dashboard({ children }: { children: React.ReactNode }) {
                 <CommandLineIcon className="h-5 w-5" data-slot="icon" />
                 Console
               </SidebarItem>
-              <SidebarItem href="/subgraphs" current={pathname === '/subgraphs'} className="!w-full">
+              <SidebarItem href="/accounts" current={pathname === '/accounts'} className="!w-full">
                 <CircleStackIcon className="h-5 w-5" data-slot="icon" />
                 Accounts
               </SidebarItem>

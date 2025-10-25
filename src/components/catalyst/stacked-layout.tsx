@@ -116,7 +116,7 @@ export function StackedLayout({
               <CommandLineIcon />
               Console
             </NavbarItem>
-            <NavbarItem href="/subgraphs" current={path.endsWith('/subgraphs')} className="max-lg:hidden">
+            <NavbarItem href="/accounts" current={path.endsWith('/accounts')} className="max-lg:hidden">
               <CircleStackIcon />
               Accounts
             </NavbarItem>
