@@ -141,6 +141,14 @@ export const SlotsGrid: React.FC = () => {
           if (data.result.slot_index !== undefined) {
             setCurrentSlot(data.result.slot_index);
           }
+
+          // Notify other components about epoch change
+          window.dispatchEvent(new CustomEvent('epochChanged', {
+            detail: {
+              epoch: data.result.epoch,
+              slotIndex: data.result.slot_index
+            }
+          }));
         } else {
           console.error('❌ Time travel failed:', data.error);
         }
@@ -252,7 +260,13 @@ export const SlotsGrid: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.result !== undefined) {
-          setIsClockPaused(!isClockPaused);
+          const newPauseState = !isClockPaused;
+          setIsClockPaused(newPauseState);
+
+          // Dispatch global event so other components (like header widget) can sync
+          window.dispatchEvent(new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: newPauseState }
+          }));
 
           // If we're pausing, ignore slot events for a short period
           if (!isClockPaused) {
@@ -336,12 +350,6 @@ export const SlotsGrid: React.FC = () => {
 
         // Update current slot with epoch-relative index
         setCurrentSlot(slotIndexInEpoch);
-
-        // Auto-exit pause mode when receiving slots (but not when ignoring events)
-        if (isClockPaused && !ignoreSlotEvents) {
-          console.log('🔄 Auto-exiting pause mode - receiving slot events');
-          setIsClockPaused(false);
-        }
 
         // Update animation - move to next circle and add current to trail
         setCurrentRect((prev) => {

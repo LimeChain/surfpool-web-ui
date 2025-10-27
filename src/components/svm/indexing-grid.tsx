@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { CloudIcon } from '@heroicons/react/24/outline';
 
 interface IndexingGridProps {
   isActive: boolean;
@@ -61,27 +62,40 @@ export default function IndexingGrid({ isActive, accountCount }: IndexingGridPro
   const totalSquares = maxCols * rows;
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: `${gridHeight}px` }} className="flex gap-1">
-      {Array.from({ length: maxCols }).map((_, colIndex) => (
-        <div key={colIndex} className="flex flex-col-reverse gap-1">
-          {Array.from({ length: rows }).map((_, rowIndex) => {
-            const squareIndex = colIndex * rows + rowIndex;
-            const isActive = activeSquares.has(squareIndex);
+    <div className="w-full flex items-center gap-3 justify-center md:justify-end lg:justify-center">
+      {/* Cloud Icon - visible on medium and large screens, positioned to the left of the grid */}
+      <div className="hidden md:flex items-center flex-shrink-0">
+        <CloudIcon className="h-5 w-5 text-zinc-400 dark:text-zinc-500" />
+      </div>
 
-            return (
-              <div
-                key={rowIndex}
-                style={{ width: '6px', height: '6px' }}
-                className={
-                  isActive
-                    ? 'bg-zinc-300 dark:bg-zinc-500'
-                    : 'bg-zinc-200 dark:bg-zinc-700'
-                }
-              />
-            );
-          })}
-        </div>
-      ))}
+      {/* TXTX Icon - only visible on large screens, hidden on small and medium */}
+      <div className="hidden lg:flex items-center flex-shrink-0">
+        <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">TXTX</span>
+      </div>
+
+      {/* Dot Grid Component */}
+      <div ref={containerRef} style={{ maxWidth: '300px', height: `${gridHeight}px` }} className="flex gap-1 flex-shrink-0">
+        {Array.from({ length: maxCols }).map((_, colIndex) => (
+          <div key={colIndex} className="flex flex-col-reverse gap-1">
+            {Array.from({ length: rows }).map((_, rowIndex) => {
+              const squareIndex = colIndex * rows + rowIndex;
+              const isActive = activeSquares.has(squareIndex);
+
+              return (
+                <div
+                  key={rowIndex}
+                  style={{ width: '6px', height: '6px' }}
+                  className={
+                    isActive
+                      ? 'bg-zinc-300 dark:bg-zinc-500'
+                      : 'bg-zinc-200 dark:bg-zinc-700'
+                  }
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

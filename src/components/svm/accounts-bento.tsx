@@ -6,10 +6,11 @@ import { Navbar, NavbarItem, NavbarSection } from '@/components/catalyst/navbar'
 import { Switch } from '@/components/catalyst/switch';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { ArrowTopRightOnSquareIcon, CheckIcon, ClipboardIcon, TrashIcon } from '@heroicons/react/24/outline';
-import { ArrowPathIcon, InformationCircleIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { ArrowPathIcon, InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import IndexingGrid from './indexing-grid';
+import CollapsibleSearch from './collapsible-search';
 
 const GraphQLExplorer = dynamic(() => import('@/app/accounts/graphql-explorer'), {
   ssr: false,
@@ -585,29 +586,11 @@ export default function AccountsBento(): JSX.Element {
         <div className="mx-auto max-w-7xl px-6 pt-4 pb-1 sm:px-6 sm:pt-2 lg:px-8">
           {/* Search */}
           <div className="mb-6">
-            <div className="flex justify-center">
-              <div className="relative w-full max-w-xl">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                  <MagnifyingGlassIcon className="h-6 w-6 text-zinc-400" aria-hidden="true" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search accounts"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="block w-full rounded-full border border-zinc-200/40 bg-white py-4 pr-5 pl-14 text-lg text-zinc-950 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700/30 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    title="Clear search"
-                  >
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-            </div>
+            <CollapsibleSearch
+              placeholder="Search accounts"
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
           </div>
 
           {/* Sections */}
@@ -640,7 +623,7 @@ export default function AccountsBento(): JSX.Element {
                   {collections.length > 0 && (
                     <p className="pt-2 pb-4 text-xs text-zinc-500 dark:text-zinc-400">
                       Surfpool collects IDL data from your project and actively indexes insertions/updates.{' '}
-                      <Link href={EMPTY_VIDEO_URL} className="text-[#E034AE]">
+                      <Link href={EMPTY_VIDEO_URL} className="text-[#E034AE]" target="_blank">
                         Watch introduction to data indexing
                       </Link>
                       .

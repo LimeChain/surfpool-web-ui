@@ -1,8 +1,9 @@
 'use client';
 
 import { Navbar, NavbarItem, NavbarSection } from '@/components/catalyst/navbar';
-import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon } from '@heroicons/react/24/solid';
 import { ReactNode, useEffect, useState } from 'react';
+import CollapsibleSearch from './collapsible-search';
 
 export interface BentoItem {
   id: string;
@@ -20,8 +21,9 @@ interface GenericBentoProps<T extends BentoItem> {
   searchPlaceholder?: string;
   emptyMessage?: string;
   renderItem: (item: T, isSelected: boolean) => ReactNode;
-  renderDetailHeader: (item: T) => ReactNode;
+  renderDetailHeader: (item: T, onClose?: () => void) => ReactNode;
   renderDetailContent: (item: T, activeTab: string) => ReactNode;
+  renderDetailActions?: (item: T, onClose?: () => void) => ReactNode; // Optional custom actions
   tabs?: Array<{
     id: string;
     label: string;
@@ -29,6 +31,7 @@ interface GenericBentoProps<T extends BentoItem> {
   }>;
   defaultTab?: string;
   headerContent?: ReactNode;
+  onSelectionChange?: (item: T | null) => void;
 }
 
 export default function GenericBento<T extends BentoItem>({
@@ -38,14 +41,58 @@ export default function GenericBento<T extends BentoItem>({
   renderItem,
   renderDetailHeader,
   renderDetailContent,
+  renderDetailActions,
   tabs = [],
   defaultTab = 'overview',
   headerContent,
+  onSelectionChange,
 }: GenericBentoProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<T | null>(null);
   const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Auto-select newly created item
+  const [previousItemCount, setPreviousItemCount] = useState(items.length);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Track the selected item ID
+    if (selectedItem) {
+      const currentId = selectedItem.id;
+
+      // Find the item in the current items list to ensure it's up-to-date
+      const updatedItem = items.find(item => item.id === selectedItem.id);
+      if (updatedItem && updatedItem !== selectedItem) {
+        setSelectedItem(updatedItem);
+      }
+
+      // Only reset tab if we're switching to a different item (not just updating the same item)
+      if (currentId !== selectedItemId) {
+        setSelectedItemId(currentId);
+        setIsExpanded(false);
+        setActiveTab(defaultTab);
+      }
+    } else {
+      setSelectedItemId(null);
+    }
+
+    // Auto-select newly added item
+    if (items.length > previousItemCount) {
+      // Find the newest item (last one in the array, assuming it was just added)
+      const newestItem = items[items.length - 1];
+      if (newestItem) {
+        setSelectedItem(newestItem);
+      }
+    }
+
+    setPreviousItemCount(items.length);
+  }, [items, selectedItem, selectedItemId, defaultTab]);
+
+  // Notify parent when selection changes
+  useEffect(() => {
+    onSelectionChange?.(selectedItem);
+  }, [selectedItem, onSelectionChange]);
 
   // Handle Escape key to close detail pane
   useEffect(() => {
@@ -59,14 +106,6 @@ export default function GenericBento<T extends BentoItem>({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItem]);
 
-  // Reset expansion when item changes
-  useEffect(() => {
-    if (selectedItem) {
-      setIsExpanded(false);
-      setActiveTab(defaultTab);
-    }
-  }, [selectedItem, defaultTab]);
-
   // Filter items based on search query
   const filteredItems = items.filter((item) => {
     const query = searchQuery.toLowerCase();
@@ -76,7 +115,7 @@ export default function GenericBento<T extends BentoItem>({
   });
 
   return (
-    <div className="flex h-[100vh] flex-col lg:h-[calc(100vh-120px)]">
+    <div className="flex h-[100vh] flex-col lg:h-[calc(100vh-60px)]">
       {/* Top Section - Grid */}
       <div
         className={`overflow-auto ${
@@ -95,27 +134,11 @@ export default function GenericBento<T extends BentoItem>({
         <div className="mx-auto max-w-7xl px-[24px] pt-4 pb-1 sm:px-6 sm:pt-2 lg:px-8">
           {/* Search Field and Header Content */}
           <div className="mb-6">
-            <div className="flex justify-center">
-              <div className="relative w-full max-w-md">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                  <MagnifyingGlassIcon className="h-6 w-6 text-zinc-400" aria-hidden="true" />
-                  <input
-                    type="text"
-                    placeholder={searchPlaceholder}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="block w-full rounded-full border border-zinc-200/40 bg-white py-4 pr-5 pl-14 text-lg text-zinc-950 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700/30 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder={searchPlaceholder}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="block w-full rounded-full border border-zinc-200/40 bg-white py-4 pr-5 pl-14 text-lg text-zinc-950 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700/30 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500"
-                />
-              </div>
-            </div>
+            <CollapsibleSearch
+              placeholder={searchPlaceholder}
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
           </div>
 
           {filteredItems.length === 0 ? (
@@ -156,15 +179,18 @@ export default function GenericBento<T extends BentoItem>({
           } -mr-5 -ml-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4">
-            {renderDetailHeader(selectedItem)}
-            <button
-              onClick={() => setSelectedItem(null)}
-              className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-              title="Close details"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
+          <div className="flex items-start justify-between px-6 py-3 gap-3">
+            {renderDetailHeader(selectedItem, () => setSelectedItem(null))}
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={() => setSelectedItem(null)}
+                className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="Close details"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+              {renderDetailActions && renderDetailActions(selectedItem, () => setSelectedItem(null))}
+            </div>
           </div>
 
           {/* Navbar Navigation */}

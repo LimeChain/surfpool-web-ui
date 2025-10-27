@@ -1166,6 +1166,8 @@ interface TransactionInspectorProps {
   autoStart?: boolean;
   filterByProgram?: string;
   filterByAccount?: string;
+  compact?: boolean;
+  fetchHistorical?: boolean;
 }
 
 interface AccountDetailsProps {
@@ -1460,6 +1462,8 @@ export default function TransactionInspector({
   autoStart = true,
   filterByProgram,
   filterByAccount,
+  compact = false,
+  fetchHistorical = true,
 }: TransactionInspectorProps) {
   const [isClient, setIsClient] = useState(false);
 
@@ -1504,6 +1508,7 @@ export default function TransactionInspector({
       autoStart,
       filterByProgram,
       filterByAccount,
+      fetchHistorical,
     });
 
   const toggleAccountExpansion = (instructionIndex: number, address: string) => {
@@ -2396,20 +2401,8 @@ export default function TransactionInspector({
         <div className="mb-0 flex items-center justify-between">
           <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
         </div>
-        <div className="flex h-[280px] items-center justify-center rounded-lg border border-zinc-600">
-          <div className="text-center">
-            <div className="mb-4">
-              <svg className="mx-auto h-12 w-12 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <div className="mb-2 text-lg font-medium text-zinc-300">Loading...</div>
-          </div>
+        <div className="flex h-[280px] items-center justify-center">
+          <div className="h-3 w-3 animate-pulse rounded-full bg-pink-500"></div>
         </div>
       </div>
     );
@@ -2417,64 +2410,54 @@ export default function TransactionInspector({
 
   return (
     <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
-      <div className="mb-0 flex items-center justify-between">
+      <div className="mb-0">
         <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 items-center gap-2 rounded-md border border-zinc-600 bg-zinc-800 px-3">
-            <div
-              className={`h-2 w-2 rounded-full ${
-                stats.connectionStatus === 'connected'
-                  ? 'bg-green-400'
-                  : stats.connectionStatus === 'connecting'
-                    ? 'bg-yellow-400'
-                    : stats.connectionStatus === 'error'
-                      ? 'bg-red-400'
-                      : 'bg-gray-500'
-              }`}
-            />
-            <span className="text-sm text-gray-300">{wsUrl}</span>
-          </div>
-          <button
-            onClick={clearTransactions}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-600 bg-zinc-800 transition-colors hover:bg-zinc-700"
-            title="Clear transaction logs"
-          >
-            <TrashIcon className="h-4 w-4 text-zinc-300" />
-          </button>
-        </div>
       </div>
 
       <div className="rounded-lg">
-        {error && (
-          <div className="mb-4 rounded border border-red-500/30 bg-red-900/20 p-3 text-sm text-red-300">{error}</div>
-        )}
-
         {/* Transactions List */}
         <div className="space-y-3">
           {transactions.length === 0 ? (
-            <div className="flex h-[280px] items-center justify-center rounded-lg border border-zinc-600">
+            <div className="flex h-[280px] items-center justify-center rounded-lg p-8">
               <div className="text-center">
                 <div className="mb-4">
-                  <svg
-                    className="mx-auto h-12 w-12 text-zinc-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center">
+                    <div className="relative h-12 w-12">
+                      {error || stats.connectionStatus === 'error' || stats.connectionStatus === 'disconnected' ? (
+                        <>
+                          {/* Red pulsing rings for error/offline state */}
+                          <div className="absolute inset-0 animate-ping rounded-full bg-red-500/30"></div>
+                          <div className="absolute inset-2 animate-pulse rounded-full bg-red-500/50"></div>
+                          <div className="absolute inset-3 rounded-full bg-red-500"></div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Pink pulsing rings for normal waiting state */}
+                          <div className="absolute inset-0 animate-ping rounded-full bg-pink-500/30"></div>
+                          <div className="absolute inset-2 animate-pulse rounded-full bg-pink-500/50"></div>
+                          <div className="absolute inset-3 rounded-full bg-pink-500"></div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="mb-2 text-lg font-medium text-zinc-300">No transactions</div>
-                <div className="max-w-md text-sm text-zinc-500">
-                  Send transactions on your Surfnet to get detailed simulations,
-                  <br />
-                  performance profiling, and data indexing
-                </div>
+                {error || stats.connectionStatus === 'error' || stats.connectionStatus === 'disconnected' ? (
+                  <>
+                    <div className="mb-2 text-lg font-medium text-red-300">Surfnet is Offline</div>
+                    <div className="max-w-md text-sm text-red-300/70">
+                      Make sure Surfpool is running in your terminal
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-2 text-lg font-medium text-zinc-300">Waiting for Transactions</div>
+                    <div className="max-w-md text-sm text-zinc-500">
+                      Send transactions on your Surfnet to get detailed simulations,
+                      <br />
+                      performance profiling, and data indexing
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -2499,23 +2482,55 @@ export default function TransactionInspector({
                   onClick={() => handleTransactionClick(tx)}
                 >
                   <div className="mb-0 flex flex-col gap-1">
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-[8px] text-gray-300 sm:text-xs md:text-sm">
-                        {formatSignature(tx.transaction.signatures[0])}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(
-                            formatSignature(tx.transaction.signatures[0]),
-                            `sig-${tx.transaction.signatures[0]}`
-                          );
-                        }}
-                        className="ml-1 flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300 sm:hidden"
-                      >
-                        <ClipboardIcon className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
+                    {compact ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-xs text-gray-300">
+                          {truncateAddress(tx.transaction.signatures[0])}
+                        </span>
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyToClipboard(tx.transaction.signatures[0], `sig-${tx.transaction.signatures[0]}`);
+                            }}
+                            className="flex h-6 w-6 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
+                            title="Copy signature"
+                          >
+                            <ClipboardIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const signature = tx.transaction.signatures[0];
+                              const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
+                              window.open(explorerUrl, '_blank');
+                            }}
+                            className="flex h-6 w-6 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
+                            title="Open in explorer"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono text-[8px] text-gray-300 sm:text-xs md:text-sm">
+                          {formatSignature(tx.transaction.signatures[0])}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(
+                              formatSignature(tx.transaction.signatures[0]),
+                              `sig-${tx.transaction.signatures[0]}`
+                            );
+                          }}
+                          className="ml-1 flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300 sm:hidden"
+                        >
+                          <ClipboardIcon className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <Badge color={badgeColors[status as keyof typeof badgeColors] as any} className="w-fit text-xs">
                         {status.toUpperCase()}
