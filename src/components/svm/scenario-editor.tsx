@@ -1539,7 +1539,7 @@ export default function ScenarioEditor({
                                           {inputType === 'checkbox' ? (
                                             <input
                                               type="checkbox"
-                                              checked={getValue(fieldPath) === true}
+                                              checked={!!getValue(fieldPath)}
                                               onChange={(e) => setValue(fieldPath, e.target.checked)}
                                               className="h-4 w-4 rounded border-zinc-700/50 bg-zinc-800/40 text-yellow-500 focus:ring-1 focus:ring-zinc-500"
                                             />
@@ -1548,7 +1548,7 @@ export default function ScenarioEditor({
                                               type={inputType}
                                               value={getValue(fieldPath)}
                                               onChange={(e) => {
-                                                let newValue = e.target.value;
+                                                let newValue: any = e.target.value;
 
                                                 // Parse based on type
                                                 if (inputType === 'number') {
