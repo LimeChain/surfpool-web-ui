@@ -73,33 +73,116 @@ export default function AccountsBento(): JSX.Element {
         setLoading(true);
         setError(null);
 
-        // Fetch accounts
-        const accountsRes = await fetch('/api/accounts');
-        if (!accountsRes.ok) throw new Error(`Failed to fetch accounts: ${accountsRes.status}`);
-        const accountsData = await accountsRes.json();
+        const rpcUrl = config?.rpc_url || 'http://127.0.0.1:8899';
+        const workspaceUrl = 'http://127.0.0.1:18488';
 
-        const ia: Account[] =
-          accountsData.indexed_accounts ||
-          accountsData.indexedAccounts ||
-          accountsData.indexed ||
-          (Array.isArray(accountsData) ? accountsData : []) ||
-          [];
+        // Fetch streamed accounts from RPC
+        let streamedAccounts: Account[] = [];
+        try {
+          const rpcResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'surfnet_getStreamedAccounts',
+            }),
+          });
 
-        const ita: Account[] =
-          accountsData.indexed_token_accounts || accountsData.indexedTokenAccounts || accountsData.indexedToken || [];
+          if (rpcResponse.ok) {
+            const rpcData = await rpcResponse.json();
+            if (rpcData.result?.value?.accounts && Array.isArray(rpcData.result.value.accounts)) {
+              // Fetch full account info for each streamed account
+              const accountInfoPromises = rpcData.result.value.accounts.map(async (account: any) => {
+                try {
+                  const infoResponse = await fetch(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      jsonrpc: '2.0',
+                      id: 1,
+                      method: 'getAccountInfo',
+                      params: [
+                        account.pubkey,
+                        {
+                          commitment: 'confirmed',
+                          encoding: 'jsonParsed',
+                        },
+                      ],
+                    }),
+                  });
 
-        const sa: Account[] =
-          accountsData.streamed_accounts || accountsData.streamedAccounts || accountsData.streamed || [];
+                  if (infoResponse.ok) {
+                    const infoData = await infoResponse.json();
+                    if (infoData.result?.value) {
+                      const accountInfo = infoData.result.value;
+                      const lamports = accountInfo.lamports || 0;
 
-        setIndexedAccounts(Array.isArray(ia) ? ia : []);
-        setIndexedTokenAccounts(Array.isArray(ita) ? ita : []);
-        setStreamedAccounts(Array.isArray(sa) ? sa : []);
+                      // Get data size from space field
+                      let dataSize = 0;
+                      if (accountInfo.space !== undefined) {
+                        dataSize = accountInfo.space;
+                      } else if (accountInfo.data && Array.isArray(accountInfo.data) && accountInfo.data[0]) {
+                        // Calculate from base64 length
+                        dataSize = Math.floor((accountInfo.data[0].length * 3) / 4);
+                      }
 
-        // Fetch indexers
-        const indexersRes = await fetch('/api/indexers');
-        if (indexersRes.ok) {
-          const indexersData = await indexersRes.json();
-          setIndexers(indexersData.indexers || []);
+                      return {
+                        id: account.pubkey,
+                        address: account.pubkey,
+                        name: account.pubkey,
+                        balance: (lamports / 1e9).toFixed(9),
+                        source: 'streamed',
+                        metadata: {
+                          includeOwnedAccounts: account.includeOwnedAccounts,
+                          dataSize,
+                          executable: accountInfo.executable,
+                          owner: accountInfo.owner,
+                          rentEpoch: accountInfo.rentEpoch,
+                        },
+                      };
+                    }
+                  }
+                } catch (error) {
+                  console.error(`Error fetching info for ${account.pubkey}:`, error);
+                }
+
+                // Fallback if fetch fails
+                return {
+                  id: account.pubkey,
+                  address: account.pubkey,
+                  name: account.pubkey,
+                  balance: undefined,
+                  source: 'streamed',
+                  metadata: {
+                    includeOwnedAccounts: account.includeOwnedAccounts,
+                  },
+                };
+              });
+
+              streamedAccounts = await Promise.all(accountInfoPromises);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching streamed accounts:', err);
+        }
+
+        setIndexedAccounts([]);
+        setIndexedTokenAccounts([]);
+        setStreamedAccounts(streamedAccounts);
+
+        // Fetch indexers from workspace API
+        try {
+          const indexersRes = await fetch(`${workspaceUrl}/workspace/v1/indexers`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (indexersRes.ok) {
+            const indexersData = await indexersRes.json();
+            setIndexers(Array.isArray(indexersData) ? indexersData : []);
+          }
+        } catch (err) {
+          console.error('Error fetching indexers:', err);
         }
       } catch (err: any) {
         setError(err?.message || String(err));
@@ -109,7 +192,7 @@ export default function AccountsBento(): JSX.Element {
     }
 
     fetchData();
-  }, []);
+  }, [config]);
 
   // Initialize streamed accounts set
   useEffect(() => {
@@ -194,12 +277,87 @@ export default function AccountsBento(): JSX.Element {
         setStreamedAccountIds((prev) => new Set(prev).add(accountAddress));
 
         // Refresh the accounts list to show the newly streamed account
-        const accountsRes = await fetch('/api/accounts');
-        if (accountsRes.ok) {
-          const accountsData = await accountsRes.json();
-          const sa: Account[] =
-            accountsData.streamed_accounts || accountsData.streamedAccounts || accountsData.streamed || [];
-          setStreamedAccounts(Array.isArray(sa) ? sa : []);
+        const rpcUrl = config?.rpc_url || 'http://127.0.0.1:8899';
+        const rpcResponse = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'surfnet_getStreamedAccounts',
+          }),
+        });
+
+        if (rpcResponse.ok) {
+          const rpcData = await rpcResponse.json();
+          if (rpcData.result?.value?.accounts && Array.isArray(rpcData.result.value.accounts)) {
+            const accountInfoPromises = rpcData.result.value.accounts.map(async (account: any) => {
+              try {
+                const infoResponse = await fetch(rpcUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'getAccountInfo',
+                    params: [
+                      account.pubkey,
+                      {
+                        commitment: 'confirmed',
+                        encoding: 'jsonParsed',
+                      },
+                    ],
+                  }),
+                });
+
+                if (infoResponse.ok) {
+                  const infoData = await infoResponse.json();
+                  if (infoData.result?.value) {
+                    const accountInfo = infoData.result.value;
+                    const lamports = accountInfo.lamports || 0;
+
+                    let dataSize = 0;
+                    if (accountInfo.space !== undefined) {
+                      dataSize = accountInfo.space;
+                    } else if (accountInfo.data && Array.isArray(accountInfo.data) && accountInfo.data[0]) {
+                      dataSize = Math.floor((accountInfo.data[0].length * 3) / 4);
+                    }
+
+                    return {
+                      id: account.pubkey,
+                      address: account.pubkey,
+                      name: account.pubkey,
+                      balance: (lamports / 1e9).toFixed(9),
+                      source: 'streamed',
+                      metadata: {
+                        includeOwnedAccounts: account.includeOwnedAccounts,
+                        dataSize,
+                        executable: accountInfo.executable,
+                        owner: accountInfo.owner,
+                        rentEpoch: accountInfo.rentEpoch,
+                      },
+                    };
+                  }
+                }
+              } catch (error) {
+                console.error(`Error fetching info for ${account.pubkey}:`, error);
+              }
+
+              return {
+                id: account.pubkey,
+                address: account.pubkey,
+                name: account.pubkey,
+                balance: undefined,
+                source: 'streamed',
+                metadata: {
+                  includeOwnedAccounts: account.includeOwnedAccounts,
+                },
+              };
+            });
+
+            const sa = await Promise.all(accountInfoPromises);
+            setStreamedAccounts(sa);
+          }
         }
       } else {
         console.error('Failed to stream account:', response.status);
