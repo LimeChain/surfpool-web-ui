@@ -28,6 +28,7 @@ export type ScenarioAction = {
   actionId: string;
   protocol: string;
   action: string;
+  account?: any; // Account address (Pubkey or PDA)
 };
 
 export default function handler(_req: NextApiRequest, res: NextApiResponse<ScenariosResponseData>) {
@@ -47,7 +48,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'pyth', actionId: 'pyth_set_btc_price', protocol: 'Pyth Oracle', action: 'Set BTC/USD Price: $67,500' },
+            {
+              protocolId: 'pyth',
+              actionId: 'pyth_set_btc_price',
+              protocol: 'Pyth Oracle',
+              action: 'Set BTC/USD Price: $67,500',
+              account: { pubkey: 'GVXRSBjFk6e6J3NbVPXohDJetcTjaeeuykUpbQF8UoMU' }
+            },
           ],
         },
         {
@@ -56,7 +63,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'pyth', actionId: 'pyth_set_btc_eth_price', protocol: 'Pyth Oracle', action: 'Set BTC/ETH Price: 20.5 ETH' },
+            {
+              protocolId: 'pyth',
+              actionId: 'pyth_set_btc_eth_price',
+              protocol: 'Pyth Oracle',
+              action: 'Set BTC/ETH Price: 20.5 ETH',
+              account: { pubkey: 'GVXRSBjFk6e6J3NbVPXohDJetcTjaeeuykUpbQF8UoMU' }
+            },
           ],
         },
         {
@@ -65,7 +78,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'pyth', actionId: 'pyth_set_eth_price', protocol: 'Pyth Oracle', action: 'Set ETH/USD Price: $3,350' },
+            {
+              protocolId: 'pyth',
+              actionId: 'pyth_set_eth_price',
+              protocol: 'Pyth Oracle',
+              action: 'Set ETH/USD Price: $3,350',
+              account: { pubkey: 'JBu1AL4obBcCMqKBBxhpWCNUt136ijcuMZLFvTP7iWdB' }
+            },
           ],
         },
         {
@@ -74,7 +93,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'jupiter', actionId: 'jupiter_execute_arb', protocol: 'Jupiter', action: 'Execute Arbitrage Swap' },
+            {
+              protocolId: 'jupiter',
+              actionId: 'jupiter_execute_arb',
+              protocol: 'Jupiter',
+              action: 'Execute Arbitrage Swap',
+              account: { pubkey: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4' }
+            },
           ],
         },
       ],
@@ -93,7 +118,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'raydium', actionId: 'raydium_set_pool_reserves', protocol: 'Raydium', action: 'Set SOL/USDC Pool: 10K SOL' },
+            {
+              protocolId: 'raydium',
+              actionId: 'raydium_set_pool_reserves',
+              protocol: 'Raydium',
+              action: 'Set SOL/USDC Pool: 10K SOL',
+              account: { pubkey: '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2' }
+            },
           ],
         },
         {
@@ -102,7 +133,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'running',
           actions: [
-            { protocolId: 'whirlpool', actionId: 'orca_set_tick_liquidity', protocol: 'Orca Whirlpools', action: 'Set SOL/USDC Pool: 8K SOL' },
+            {
+              protocolId: 'whirlpool',
+              actionId: 'orca_set_tick_liquidity',
+              protocol: 'Orca Whirlpools',
+              action: 'Set SOL/USDC Pool: 8K SOL',
+              account: { pubkey: 'HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ' }
+            },
           ],
         },
         {
@@ -111,7 +148,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'pending',
           actions: [
-            { protocolId: 'jupiter', actionId: 'jupiter_set_route', protocol: 'Jupiter', action: 'Route via Raydium → Orca' },
+            {
+              protocolId: 'jupiter',
+              actionId: 'jupiter_set_route',
+              protocol: 'Jupiter',
+              action: 'Route via Raydium → Orca',
+              account: { pubkey: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4' }
+            },
           ],
         },
       ],
@@ -130,8 +173,20 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'drift', actionId: 'drift_set_collateral', protocol: 'Drift Protocol', action: 'Set User Collateral: 100 SOL' },
-            { protocolId: 'pyth', actionId: 'pyth_set_sol_price', protocol: 'Pyth Oracle', action: 'Set SOL Price: $150' },
+            {
+              protocolId: 'drift',
+              actionId: 'drift_set_collateral',
+              protocol: 'Drift Protocol',
+              action: 'Set User Collateral: 100 SOL',
+              account: { pubkey: 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH' }
+            },
+            {
+              protocolId: 'pyth',
+              actionId: 'pyth_set_sol_price',
+              protocol: 'Pyth Oracle',
+              action: 'Set SOL Price: $150',
+              account: { pubkey: 'H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4QJNYH' }
+            },
           ],
         },
         {
@@ -140,7 +195,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'running',
           actions: [
-            { protocolId: 'pyth', actionId: 'pyth_crash_price', protocol: 'Pyth Oracle', action: 'Crash SOL Price: $120 (-20%)' },
+            {
+              protocolId: 'pyth',
+              actionId: 'pyth_crash_price',
+              protocol: 'Pyth Oracle',
+              action: 'Crash SOL Price: $120 (-20%)',
+              account: { pubkey: 'H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4QJNYH' }
+            },
           ],
         },
         {
@@ -149,7 +210,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'pending',
           actions: [
-            { protocolId: 'drift', actionId: 'drift_trigger_liquidation', protocol: 'Drift Protocol', action: 'Trigger Liquidation' },
+            {
+              protocolId: 'drift',
+              actionId: 'drift_trigger_liquidation',
+              protocol: 'Drift Protocol',
+              action: 'Trigger Liquidation',
+              account: { pubkey: 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH' }
+            },
           ],
         },
       ],
@@ -168,8 +235,20 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'raydium', actionId: 'raydium_set_price', protocol: 'Raydium', action: 'Set BONK/SOL: 0.000025' },
-            { protocolId: 'whirlpool', actionId: 'orca_set_price', protocol: 'Orca Whirlpools', action: 'Set BONK/SOL: 0.000028' },
+            {
+              protocolId: 'raydium',
+              actionId: 'raydium_set_price',
+              protocol: 'Raydium',
+              action: 'Set BONK/SOL: 0.000025',
+              account: { pubkey: '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2' }
+            },
+            {
+              protocolId: 'whirlpool',
+              actionId: 'orca_set_price',
+              protocol: 'Orca Whirlpools',
+              action: 'Set BONK/SOL: 0.000028',
+              account: { pubkey: 'HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ' }
+            },
           ],
         },
         {
@@ -178,7 +257,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'jupiter', actionId: 'jupiter_find_route', protocol: 'Jupiter', action: 'Find Best Route' },
+            {
+              protocolId: 'jupiter',
+              actionId: 'jupiter_find_route',
+              protocol: 'Jupiter',
+              action: 'Find Best Route',
+              account: { pubkey: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4' }
+            },
           ],
         },
         {
@@ -187,7 +272,13 @@ export default function handler(_req: NextApiRequest, res: NextApiResponse<Scena
           type: 'slot',
           status: 'completed',
           actions: [
-            { protocolId: 'jupiter', actionId: 'jupiter_execute_swap', protocol: 'Jupiter', action: 'Execute Multi-hop Swap' },
+            {
+              protocolId: 'jupiter',
+              actionId: 'jupiter_execute_swap',
+              protocol: 'Jupiter',
+              action: 'Execute Multi-hop Swap',
+              account: { pubkey: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4' }
+            },
           ],
         },
       ],

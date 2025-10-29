@@ -331,7 +331,12 @@ export default function ScenariosBento({ scenarios: initialScenarios }: Scenario
       case 'editor':
         return (
           <div className="h-[calc(100vh-300px)]">
-            <ScenarioEditor scenarioId={item.id} initialSteps={item.steps} />
+            <ScenarioEditor
+              scenarioId={item.id}
+              scenarioName={item.name}
+              scenarioDescription={item.description}
+              initialSteps={item.steps}
+            />
           </div>
         );
 

@@ -1,11 +1,21 @@
 'use client';
 
-import { PlusIcon, TrashIcon, PlayIcon, StopIcon, ForwardIcon, ArrowDownTrayIcon, CheckIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/solid';
-import { motion, AnimatePresence } from 'framer-motion';
-import React, { useState, useEffect } from 'react';
-import TransactionInspector from './transaction-inspector';
-import { useAppConfig } from '@/hooks/use-app-config';
 import { Switch } from '@/components/catalyst/switch';
+import { useAppConfig } from '@/hooks/use-app-config';
+import {
+  ArrowDownTrayIcon,
+  ArrowUturnLeftIcon,
+  CheckIcon,
+  ForwardIcon,
+  MagnifyingGlassIcon,
+  PlayIcon,
+  PlusIcon,
+  StopIcon,
+  TrashIcon,
+} from '@heroicons/react/24/solid';
+import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
   id: string;
@@ -33,11 +43,14 @@ interface Slot {
     overrides?: Record<string, any>;
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
+    account?: any; // Account address from template (Pubkey or PDA)
   }[];
 }
 
 interface ScenarioEditorProps {
   scenarioId?: string;
+  scenarioName?: string;
+  scenarioDescription?: string;
   initialSteps?: Array<{
     id: string;
     name: string;
@@ -52,7 +65,12 @@ interface ScenarioEditorProps {
   }>;
 }
 
-export default function ScenarioEditor({ scenarioId = 'default', initialSteps }: ScenarioEditorProps) {
+export default function ScenarioEditor({
+  scenarioId = 'default',
+  scenarioName = 'Scenario',
+  scenarioDescription = 'Scenario created from editor',
+  initialSteps,
+}: ScenarioEditorProps) {
   const { rpcUrl, studioUrl } = useAppConfig();
   const [mode, setMode] = useState<'read' | 'edit' | 'play'>('read');
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,17 +187,24 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && mode === 'edit') {
-        setMode('read');
-        setSelectedSlotId('');
-        setShowProtocolPanel(false);
-        setEditingAction(null);
-        setFetchBeforeUse(false);
+        if (showProtocolPanel) {
+          // If protocol panel is open, just close it
+          setShowProtocolPanel(false);
+          setSelectedAction(null);
+          setEditingAction(null);
+          setModifiedFields(new Set());
+          setFetchBeforeUse(false);
+        } else {
+          // Otherwise, exit edit mode
+          setMode('read');
+          setSelectedSlotId('');
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode]);
+  }, [mode, showProtocolPanel]);
 
   // Fetch protocols dynamically from API
   const [protocols, setProtocols] = useState<Protocol[]>([]);
@@ -251,9 +276,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
 
     // First, try to find the account in the accounts array
     if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
-      const account = template.idl.accounts.find(
-        (acc: any) => acc.name === template.accountType
-      );
+      const account = template.idl.accounts.find((acc: any) => acc.name === template.accountType);
 
       if (account?.type?.fields) {
         return account.type.fields;
@@ -273,9 +296,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
 
     // Fallback: find any struct type (old behavior)
     if (template.idl.types) {
-      const structType = template.idl.types.find(
-        (type: any) => type.type?.kind === 'struct'
-      );
+      const structType = template.idl.types.find((type: any) => type.type?.kind === 'struct');
 
       if (structType?.type?.fields) {
         return structType.type.fields;
@@ -289,9 +310,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
   const lookupTypeDefinition = (typeName: string, idl: any): any => {
     if (!idl?.types) return null;
 
-    const typeDefinition = idl.types.find(
-      (type: any) => type.name === typeName
-    );
+    const typeDefinition = idl.types.find((type: any) => type.name === typeName);
 
     return typeDefinition;
   };
@@ -346,7 +365,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
           return {
             type: typeName,
             isNested: true,
-            nestedFields: typeDefinition.type.fields
+            nestedFields: typeDefinition.type.fields,
           };
         }
 
@@ -381,38 +400,11 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
       if (typeof action.template.address === 'string') {
         addressString = action.template.address;
       } else if (action.template.address && typeof action.template.address === 'object') {
-        addressString = action.template.address.pubkey ||
-                       action.template.address.address ||
-                       action.template.address.value;
+        addressString =
+          action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
 
-      // The IDL already has the address in it, so just use it directly
-      console.log('📤 Sending IDL:', action.template.idl);
-
-      const registerResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_registerIdl',
-          params: [
-            action.template.idl,
-            1 // slot number
-          ],
-        }),
-      });
-
-      const registerData = await registerResponse.json();
-      console.log('✅ IDL registered:', registerData);
-
-      if (registerData.error) {
-        console.error('Error registering IDL:', registerData.error);
-        setLoadingAccountData(false);
-        return;
-      }
-
-      // Step 2: Fetch account info with parsed JSON
+      // Step 1: Fetch account info with parsed JSON
       console.log('🔍 Fetching account info for address:', addressString);
 
       const getAccountInfoRequest = {
@@ -424,7 +416,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
           {
             commitment: 'confirmed',
             encoding: 'jsonParsed',
-          }
+          },
         ],
       };
 
@@ -454,13 +446,11 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
   };
 
   // Filter actions in protocol panel
-  const filteredActions = selectedProtocol?.actions.filter((action) => {
-    const query = actionSearchQuery.toLowerCase();
-    return (
-      action.title.toLowerCase().includes(query) ||
-      action.description.toLowerCase().includes(query)
-    );
-  }) || [];
+  const filteredActions =
+    selectedProtocol?.actions.filter((action) => {
+      const query = actionSearchQuery.toLowerCase();
+      return action.title.toLowerCase().includes(query) || action.description.toLowerCase().includes(query);
+    }) || [];
 
   const addSlot = () => {
     const newSlot: Slot = {
@@ -534,6 +524,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
+                account: action.template?.address,
               },
             ],
           };
@@ -573,6 +564,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
+                    account: action.template?.address,
                   }
                 : existingAction
             ),
@@ -640,13 +632,100 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
         console.error('❌ Error stepping forward:', error);
       }
 
-      setCurrentPlaybackSlot(prev => prev + 1);
+      setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
       setTimeout(() => setIsExecuting(true), 100);
     }
   };
 
   const handlePlay = async () => {
+    // Build scenario structure for RPC
+    const overrides = slots.flatMap((slot) =>
+      slot.actions.map((action) => {
+        // Only include fields that were explicitly modified
+        const flatValues: Record<string, any> = {};
+
+        if (action.modifiedFields && action.modifiedFields.length > 0) {
+          // Flatten the overrides to dot notation, only for modified fields
+          const overridesData = action.overrides || {};
+
+          action.modifiedFields.forEach((fieldPath) => {
+            // Navigate the nested structure to get the value
+            const keys = fieldPath.split('.');
+            let value: any = overridesData;
+
+            for (const key of keys) {
+              if (value && typeof value === 'object' && key in value) {
+                value = value[key];
+              } else {
+                value = undefined;
+                break;
+              }
+            }
+
+            // Only add if we found a value
+            if (value !== undefined) {
+              flatValues[fieldPath] = value;
+            }
+          });
+        }
+
+        // Ensure account is present, use a default if missing
+        const account = action.account || { pubkey: '11111111111111111111111111111111' };
+
+        // Log account data for debugging
+        console.log('🔍 Action account data:', {
+          protocolId: action.protocolId,
+          actionId: action.actionId,
+          account: account,
+          hasAccount: !!action.account,
+        });
+
+        return {
+          id: `${action.protocolId}_${action.actionId}_${slot.height}`,
+          templateId: `${action.protocolId}_${action.actionId}`,
+          values: flatValues,
+          scenarioRelativeSlot: slot.height + 1, // 1-indexed for user-facing display
+          label: action.action,
+          enabled: true,
+          fetchBeforeUse: action.fetchBeforeUse || false,
+          account: account,
+        };
+      })
+    );
+
+    const scenario = {
+      id: scenarioId,
+      name: scenarioName,
+      description: scenarioDescription,
+      overrides,
+      tags: [],
+    };
+
+    // Register scenario with surfnet
+    try {
+      console.log('📤 Registering scenario:', scenario);
+      const registerResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_registerScenario',
+          params: [scenario],
+        }),
+      });
+
+      if (registerResponse.ok) {
+        const registerData = await registerResponse.json();
+        console.log('✅ Scenario registered:', registerData);
+      } else {
+        console.error('❌ Failed to register scenario:', await registerResponse.text());
+      }
+    } catch (error) {
+      console.error('❌ Error registering scenario:', error);
+    }
+
     // Pause the clock when starting scenario playback
     try {
       const response = await fetch(rpcUrl, {
@@ -661,9 +740,11 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
 
       if (response.ok) {
         // Dispatch event so header widget and other components sync
-        window.dispatchEvent(new CustomEvent('clockPauseStateChanged', {
-          detail: { isPaused: true }
-        }));
+        window.dispatchEvent(
+          new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: true },
+          })
+        );
         console.log('🎬 Clock paused for scenario playback');
       }
     } catch (error) {
@@ -696,9 +777,11 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
 
       if (response.ok) {
         // Dispatch event so header widget and other components sync
-        window.dispatchEvent(new CustomEvent('clockPauseStateChanged', {
-          detail: { isPaused: false }
-        }));
+        window.dispatchEvent(
+          new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: false },
+          })
+        );
         console.log('▶️ Clock resumed after scenario completion');
       }
     } catch (error) {
@@ -810,7 +893,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                   >
                     {/* Slot Height Label */}
                     <div className="flex items-center justify-center">
-                      <span className="font-mono text-sm text-zinc-400">Slot {slot.height}</span>
+                      <span className="font-mono text-sm text-zinc-400">Slot {slot.height + 1}</span>
                     </div>
 
                     {/* Slot Card */}
@@ -823,12 +906,12 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                           mode === 'play' && index === currentPlaybackSlot
                             ? 'min-h-[280px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
                             : mode === 'play' && index < currentPlaybackSlot
-                            ? 'min-h-[280px] border-green-500 bg-green-500/10'
-                            : // Edit mode styling
-                            selectedSlotId === slot.id && mode === 'edit'
-                            ? 'min-h-[280px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
-                            : // Default styling
-                            'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
+                              ? 'min-h-[280px] border-green-500 bg-green-500/10'
+                              : // Edit mode styling
+                                selectedSlotId === slot.id && mode === 'edit'
+                                ? 'min-h-[280px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
+                                : // Default styling
+                                  'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
                         }`}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -845,8 +928,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                             {/* Actions in this slot - Expanded View */}
                             {slot.actions.length === 0 ? (
                               <div className="flex items-center gap-3 rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 p-3">
-                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700">
-                                </div>
+                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700"></div>
                                 <div className="flex-1">
                                   <div className="text-sm text-zinc-500">No overrides yet</div>
                                 </div>
@@ -874,12 +956,12 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                                           setEditingAction({ slotId: slot.id, actionIndex });
 
                                           // Load the action's protocol and set it as selected
-                                          const protocol = protocols.find(p => p.id === action.protocolId);
+                                          const protocol = protocols.find((p) => p.id === action.protocolId);
                                           if (protocol) {
                                             setSelectedProtocol(protocol);
 
                                             // Find the specific action within the protocol
-                                            const foundAction = protocol.actions.find(a => a.id === action.actionId);
+                                            const foundAction = protocol.actions.find((a) => a.id === action.actionId);
                                             if (foundAction) {
                                               setSelectedAction(foundAction);
                                               // Fetch account data for this action
@@ -916,7 +998,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                                             e.stopPropagation();
                                             deleteActionFromSlot(slot.id, actionIndex);
                                           }}
-                                          className="absolute bottom-2 right-2 text-zinc-500 transition-colors hover:text-zinc-300"
+                                          className="absolute right-2 bottom-2 text-zinc-500 transition-colors hover:text-zinc-300"
                                           title="Delete action"
                                         >
                                           <TrashIcon className="h-4 w-4" />
@@ -933,8 +1015,7 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
                             {/* Actions in this slot - Collapsed Icon View */}
                             {slot.actions.length === 0 ? (
                               <div className="flex flex-col items-center gap-2 pt-2">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30">
-                                </div>
+                                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30"></div>
                               </div>
                             ) : (
                               <div className="flex flex-col items-center gap-2 pt-2">
@@ -1024,500 +1105,542 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
             style={{ bottom: '16px' }}
           >
             <div className="pointer-events-auto flex flex-col gap-4">
-            {/* Search Field and Protocol Icons - Animated */}
-            <motion.div
-            initial={false}
-            animate={{
-              opacity: showProtocolPanel ? 0 : 1,
-              y: showProtocolPanel ? 20 : 0,
-            }}
-            transition={{ duration: 0.15, ease: 'easeInOut' }}
-            className={showProtocolPanel ? 'pointer-events-none' : ''}
-          >
-            {/* Search Field */}
-            <div className="mx-auto mb-4 w-[300px]">
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-5">
-                  <MagnifyingGlassIcon className="h-6 w-6 text-zinc-400" aria-hidden="true" />
+              {/* Search Field and Protocol Icons - Animated */}
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: showProtocolPanel ? 0 : 1,
+                  y: showProtocolPanel ? 20 : 0,
+                }}
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                className={showProtocolPanel ? 'pointer-events-none' : ''}
+              >
+                {/* Search Field */}
+                <div className="mx-auto mb-4 w-[300px]">
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-5">
+                      <MagnifyingGlassIcon className="h-6 w-6 text-zinc-400" aria-hidden="true" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search protocols..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pr-5 pl-14 text-base text-zinc-100 shadow-lg backdrop-blur-2xl transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Search protocols..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pl-14 pr-5 text-base text-zinc-100 placeholder:text-zinc-500 backdrop-blur-2xl focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500 transition-all shadow-lg"
-                />
-              </div>
-            </div>
 
-            {/* Protocol Icons Grid - Single Row */}
-            <div className="flex justify-center gap-6">
-              {protocolsLoading ? (
-                <div className="text-sm text-zinc-500">Loading protocols...</div>
-              ) : filteredProtocols.length === 0 ? (
-                <div className="text-sm text-zinc-500">No protocols found</div>
-              ) : (
-                filteredProtocols.map((protocol) => {
-                // Map protocol IDs to local SVG files
-                const localIconMap: Record<string, string> = {
-                  pyth: '/assets/pyth.svg',
-                  switchboard: '/assets/switchboard.svg',
-                  jupiter: '/assets/jupiter.svg',
-                  raydium: '/assets/raydium.svg',
-                  whirlpool: '/assets/whirlpool.svg',
-                  drift: '/assets/drift.svg',
-                  kamino: '/assets/kamino.svg',
-                };
+                {/* Protocol Icons Grid - Single Row */}
+                <div className="flex justify-center gap-6">
+                  {protocolsLoading ? (
+                    <div className="text-sm text-zinc-500">Loading protocols...</div>
+                  ) : filteredProtocols.length === 0 ? (
+                    <div className="text-sm text-zinc-500">No protocols found</div>
+                  ) : (
+                    filteredProtocols.map((protocol) => {
+                      // Map protocol IDs to local SVG files
+                      const localIconMap: Record<string, string> = {
+                        pyth: '/assets/pyth.svg',
+                        switchboard: '/assets/switchboard.svg',
+                        jupiter: '/assets/jupiter.svg',
+                        raydium: '/assets/raydium.svg',
+                        whirlpool: '/assets/whirlpool.svg',
+                        drift: '/assets/drift.svg',
+                        kamino: '/assets/kamino.svg',
+                      };
 
-                const iconSrc = localIconMap[protocol.id] || protocol.icon_url;
+                      const iconSrc = localIconMap[protocol.id] || protocol.icon_url;
 
-                return (
-                  <div
-                    key={protocol.id}
-                    className="group cursor-pointer"
-                    onClick={() => {
-                      setSelectedProtocol(protocol);
-                      if (protocol.actions.length > 0) {
-                        handleActionSelect(protocol.actions[0]);
-                      } else {
-                        setSelectedAction(null);
-                      }
-                      setShowProtocolPanel(true);
-                    }}
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="flex h-16 w-16 items-center justify-center transition-all group-hover:scale-110">
-                        <img src={iconSrc} alt={protocol.title} className="h-16 w-16" />
-                      </div>
-                      <span className="text-center text-xs font-medium text-zinc-400 transition-colors group-hover:text-zinc-100">
-                        {protocol.title}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }))}
-            </div>
-          </motion.div>
-
-          {/* Protocol Panel - Animated */}
-          <motion.div
-            initial={false}
-            animate={{
-              opacity: showProtocolPanel ? 1 : 0,
-              y: showProtocolPanel ? 0 : 20,
-            }}
-            transition={{ duration: 0.15, ease: 'easeInOut' }}
-            className={!showProtocolPanel ? 'pointer-events-none' : ''}
-            style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
-          >
-            {selectedProtocol && (
-              <div className="h-[60vh] w-full overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/40 shadow-2xl backdrop-blur-2xl">
-                <div className="flex h-full flex-col">
-                  {/* Header */}
-                  <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
-                    <div className="flex items-center gap-4">
-                      <img
-                        src={
-                          {
-                            pyth: '/assets/pyth.svg',
-                            switchboard: '/assets/switchboard.svg',
-                            jupiter: '/assets/jupiter.svg',
-                            raydium: '/assets/raydium.svg',
-                            whirlpool: '/assets/whirlpool.svg',
-                            drift: '/assets/drift.svg',
-                            kamino: '/assets/kamino.svg',
-                          }[selectedProtocol.id] || selectedProtocol.icon_url
-                        }
-                        alt={selectedProtocol.title}
-                        className="h-12 w-12"
-                      />
-                      <div>
-                        <h3 className="text-xl font-semibold text-zinc-100">{selectedProtocol.title}</h3>
-                        <p className="text-sm text-zinc-400">{selectedProtocol.description}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowProtocolPanel(false);
-                        setSelectedAction(null);
-                        setEditingAction(null);
-                        setModifiedFields(new Set());
-                        setFetchBeforeUse(false);
-                      }}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Two Column Layout */}
-                  <div className="flex flex-1 overflow-hidden">
-                    {/* Left Column - Actions List */}
-                    <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-700/50 p-6">
-                      {/* Search Field */}
-                      <div className="mb-4 relative">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                          <MagnifyingGlassIcon className="h-5 w-5 text-zinc-400" aria-hidden="true" />
+                      return (
+                        <div
+                          key={protocol.id}
+                          className="group cursor-pointer"
+                          onClick={() => {
+                            setSelectedProtocol(protocol);
+                            if (protocol.actions.length > 0) {
+                              handleActionSelect(protocol.actions[0]);
+                            } else {
+                              setSelectedAction(null);
+                            }
+                            setShowProtocolPanel(true);
+                          }}
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="flex h-16 w-16 items-center justify-center transition-all group-hover:scale-110">
+                              <img src={iconSrc} alt={protocol.title} className="h-16 w-16" />
+                            </div>
+                            <span className="text-center text-xs font-medium text-zinc-400 transition-colors group-hover:text-zinc-100">
+                              {protocol.title}
+                            </span>
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          placeholder="Search overrides..."
-                          value={actionSearchQuery}
-                          onChange={(e) => setActionSearchQuery(e.target.value)}
-                          className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pl-11 pr-4 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 transition-all"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        {filteredActions.map((action) => (
-                          <div
-                            key={action.id}
-                            className={`cursor-pointer rounded-lg border p-4 transition-all ${
-                              selectedAction?.id === action.id
-                                ? 'border-yellow-500 bg-zinc-800/80'
-                                : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
-                            }`}
-                            onClick={() => handleActionSelect(action)}
-                          >
-                            <h5 className="font-semibold text-zinc-100">{action.title}</h5>
-                            <p className="mt-1 text-xs text-zinc-400">{action.description}</p>
+                      );
+                    })
+                  )}
+                </div>
+              </motion.div>
+
+              {/* Protocol Panel - Animated */}
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: showProtocolPanel ? 1 : 0,
+                  y: showProtocolPanel ? 0 : 20,
+                }}
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                className={!showProtocolPanel ? 'pointer-events-none' : ''}
+                style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
+              >
+                {selectedProtocol && (
+                  <div className="h-[60vh] w-full overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/40 shadow-2xl backdrop-blur-2xl">
+                    <div className="flex h-full flex-col">
+                      {/* Header */}
+                      <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={
+                              {
+                                pyth: '/assets/pyth.svg',
+                                switchboard: '/assets/switchboard.svg',
+                                jupiter: '/assets/jupiter.svg',
+                                raydium: '/assets/raydium.svg',
+                                whirlpool: '/assets/whirlpool.svg',
+                                drift: '/assets/drift.svg',
+                                kamino: '/assets/kamino.svg',
+                              }[selectedProtocol.id] || selectedProtocol.icon_url
+                            }
+                            alt={selectedProtocol.title}
+                            className="h-12 w-12"
+                          />
+                          <div>
+                            <h3 className="text-xl font-semibold text-zinc-100">{selectedProtocol.title}</h3>
+                            <p className="text-sm text-zinc-400">{selectedProtocol.description}</p>
                           </div>
-                        ))}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowProtocolPanel(false);
+                            setSelectedAction(null);
+                            setEditingAction(null);
+                            setModifiedFields(new Set());
+                            setFetchBeforeUse(false);
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                        >
+                          ✕
+                        </button>
                       </div>
-                    </div>
 
-                    {/* Right Column - Account Data Editor */}
-                    <div className="flex flex-1 flex-col overflow-y-auto p-6">
-                      {selectedAction ? (
-                        <>
-                          <div className="mb-4">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-semibold tracking-wide text-zinc-400 uppercase">
-                                Account Data
-                              </h4>
-                              <div className="flex items-center gap-3">
-                                <label className="text-sm text-zinc-400">Fetch before use</label>
-                                <Switch
-                                  checked={fetchBeforeUse}
-                                  onChange={setFetchBeforeUse}
-                                  color="purple"
-                                />
-                              </div>
+                      {/* Two Column Layout */}
+                      <div className="flex flex-1 overflow-hidden">
+                        {/* Left Column - Actions List */}
+                        <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-700/50 p-6">
+                          {/* Search Field */}
+                          <div className="relative mb-4">
+                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                              <MagnifyingGlassIcon className="h-5 w-5 text-zinc-400" aria-hidden="true" />
                             </div>
-                            <p className="mt-2 text-xs text-zinc-500">
-                              Fetch account data just before transaction execution. Useful for price feeds, oracle updates, and dynamic balances.
-                            </p>
+                            <input
+                              type="text"
+                              placeholder="Search overrides..."
+                              value={actionSearchQuery}
+                              onChange={(e) => setActionSearchQuery(e.target.value)}
+                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pr-4 pl-11 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+                            />
                           </div>
-                          {loadingAccountData ? (
-                            <div className="flex flex-1 items-center justify-center">
-                              <div className="flex flex-col items-center gap-3">
-                                <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-yellow-500" />
-                                <p className="text-sm text-zinc-500">Loading account data...</p>
+                          <div className="space-y-2">
+                            {filteredActions.map((action) => (
+                              <div
+                                key={action.id}
+                                className={`cursor-pointer rounded-lg border p-4 transition-all ${
+                                  selectedAction?.id === action.id
+                                    ? 'border-yellow-500 bg-zinc-800/80'
+                                    : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
+                                }`}
+                                onClick={() => handleActionSelect(action)}
+                              >
+                                <h5 className="font-semibold text-zinc-100">{action.title}</h5>
+                                <p className="mt-1 text-xs text-zinc-400">{action.description}</p>
                               </div>
-                            </div>
-                          ) : (
-                            <div className="mb-6 flex-1 space-y-4">
-                              {(() => {
-                                const fields = getFieldsFromIDL(selectedAction.template);
+                            ))}
+                          </div>
+                        </div>
 
-                                console.log('🔍 Fields extracted from IDL:', fields);
-                                console.log('🔍 Account type:', selectedAction.template?.accountType);
-                                console.log('🔍 Properties:', selectedAction.template?.properties);
+                        {/* Right Column - Account Data Editor */}
+                        <div className="flex flex-1 flex-col overflow-y-auto p-6">
+                          {selectedAction ? (
+                            <>
+                              <div className="mb-4">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-sm font-semibold tracking-wide text-zinc-400 uppercase">
+                                    Account Data
+                                  </h4>
+                                  <div className="flex items-center gap-3">
+                                    <label className="text-sm text-zinc-400">Fetch before use</label>
+                                    <Switch checked={fetchBeforeUse} onChange={setFetchBeforeUse} color="purple" />
+                                  </div>
+                                </div>
+                                <p className="mt-2 text-xs text-zinc-500">
+                                  Fetch account data just before transaction execution. Useful for price feeds, oracle
+                                  updates, and dynamic balances.
+                                </p>
+                              </div>
+                              {loadingAccountData ? (
+                                <div className="flex flex-1 items-center justify-center">
+                                  <div className="flex flex-col items-center gap-3">
+                                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-yellow-500" />
+                                    <p className="text-sm text-zinc-500">Loading account data...</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mb-6 flex-1 space-y-4">
+                                  {(() => {
+                                    const fields = getFieldsFromIDL(selectedAction.template);
 
-                                if (fields.length === 0) {
-                                  return <p className="text-zinc-500">No editable fields available</p>;
-                                }
+                                    console.log('🔍 Fields extracted from IDL:', fields);
+                                    console.log('🔍 Account type:', selectedAction.template?.accountType);
+                                    console.log('🔍 Properties:', selectedAction.template?.properties);
 
-                                // Get the list of editable properties from the template
-                                const editableProperties = selectedAction.template?.properties || [];
-                                console.log('🔍 Editable properties:', editableProperties);
-                                editableProperties.forEach((prop: string) => {
-                                  console.log('  📌', prop);
-                                });
-
-                                // Helper to check if a field or any of its children should be rendered
-                                const shouldRenderField = (fieldPath: string): boolean => {
-                                  if (editableProperties.length === 0) {
-                                    // If no properties specified, show all fields
-                                    return true;
-                                  }
-
-                                  // Check if this exact path is in properties
-                                  if (editableProperties.includes(fieldPath)) {
-                                    return true;
-                                  }
-
-                                  // Check if any property starts with this path (has children)
-                                  return editableProperties.some((prop: string) => prop.startsWith(fieldPath + '.'));
-                                };
-
-                                const isFieldEditable = (fieldPath: string): boolean => {
-                                  if (editableProperties.length === 0) {
-                                    return true;
-                                  }
-                                  return editableProperties.includes(fieldPath);
-                                };
-
-                                // Recursive function to render fields
-                                const renderField = (field: any, path: string, depth: number = 0): React.ReactNode => {
-                                  const typeInfo = getFieldTypeInfo(field, selectedAction.template?.idl);
-                                  const fieldPath = path ? `${path}.${field.name}` : field.name;
-
-                                  console.log('🔍 Rendering field:', fieldPath, 'type:', typeInfo.type, 'isNested:', typeInfo.isNested, 'shouldRender:', shouldRenderField(fieldPath), 'isEditable:', isFieldEditable(fieldPath));
-
-                                  // Skip this field if it's not in the editable properties and has no children that are
-                                  if (!shouldRenderField(fieldPath)) {
-                                    console.log('❌ Skipping field:', fieldPath);
-                                    return null;
-                                  }
-
-                                  // Get the value from accountData using the path
-                                  const getValue = (path: string) => {
-                                    const keys = path.split('.');
-                                    let value = accountData;
-                                    for (const key of keys) {
-                                      value = value?.[key];
+                                    if (fields.length === 0) {
+                                      return <p className="text-zinc-500">No editable fields available</p>;
                                     }
 
-                                    // Handle undefined/null
-                                    if (value === undefined || value === null) {
-                                      return '';
-                                    }
+                                    // Get the list of editable properties from the template
+                                    const editableProperties = selectedAction.template?.properties || [];
+                                    console.log('🔍 Editable properties:', editableProperties);
+                                    editableProperties.forEach((prop: string) => {
+                                      console.log('  📌', prop);
+                                    });
 
-                                    // Convert objects/arrays to JSON string for display
-                                    if (typeof value === 'object') {
-                                      return JSON.stringify(value);
-                                    }
-
-                                    return value;
-                                  };
-
-                                  // Set the value in accountData using the path
-                                  const setValue = (path: string, newValue: any) => {
-                                    const keys = path.split('.');
-                                    const newData = { ...accountData };
-                                    let current = newData;
-
-                                    for (let i = 0; i < keys.length - 1; i++) {
-                                      if (!current[keys[i]]) {
-                                        current[keys[i]] = {};
+                                    // Helper to check if a field or any of its children should be rendered
+                                    const shouldRenderField = (fieldPath: string): boolean => {
+                                      if (editableProperties.length === 0) {
+                                        // If no properties specified, show all fields
+                                        return true;
                                       }
-                                      current = current[keys[i]];
-                                    }
 
-                                    current[keys[keys.length - 1]] = newValue;
-                                    setAccountData(newData);
+                                      // Check if this exact path is in properties
+                                      if (editableProperties.includes(fieldPath)) {
+                                        return true;
+                                      }
 
-                                    // Mark this field as modified
-                                    setModifiedFields(prev => new Set(prev).add(path));
-                                  };
+                                      // Check if any property starts with this path (has children)
+                                      return editableProperties.some((prop: string) =>
+                                        prop.startsWith(fieldPath + '.')
+                                      );
+                                    };
 
-                                  // Nested struct - render recursively
-                                  if (typeInfo.isNested && typeInfo.nestedFields) {
-                                    console.log('🔍 Nested struct:', fieldPath, 'has', typeInfo.nestedFields.length, 'nested fields');
-                                    console.log('🔍 Nested fields:', typeInfo.nestedFields.map((f: any) => f.name));
+                                    const isFieldEditable = (fieldPath: string): boolean => {
+                                      if (editableProperties.length === 0) {
+                                        return true;
+                                      }
+                                      return editableProperties.includes(fieldPath);
+                                    };
 
-                                    const childFields = typeInfo.nestedFields
-                                      .map((nestedField: any) => renderField(nestedField, fieldPath, depth + 1))
-                                      .filter(Boolean); // Remove null entries
+                                    // Recursive function to render fields
+                                    const renderField = (
+                                      field: any,
+                                      path: string,
+                                      depth: number = 0
+                                    ): React.ReactNode => {
+                                      const typeInfo = getFieldTypeInfo(field, selectedAction.template?.idl);
+                                      const fieldPath = path ? `${path}.${field.name}` : field.name;
 
-                                    console.log('🔍 After filtering, childFields count:', childFields.length);
+                                      console.log(
+                                        '🔍 Rendering field:',
+                                        fieldPath,
+                                        'type:',
+                                        typeInfo.type,
+                                        'isNested:',
+                                        typeInfo.isNested,
+                                        'shouldRender:',
+                                        shouldRenderField(fieldPath),
+                                        'isEditable:',
+                                        isFieldEditable(fieldPath)
+                                      );
 
-                                    // Only render the struct if it has visible children
-                                    if (childFields.length === 0) {
-                                      console.log('❌ No visible children for nested struct:', fieldPath);
-                                      return null;
-                                    }
+                                      // Skip this field if it's not in the editable properties and has no children that are
+                                      if (!shouldRenderField(fieldPath)) {
+                                        console.log('❌ Skipping field:', fieldPath);
+                                        return null;
+                                      }
 
-                                    return (
-                                      <div key={fieldPath} className="space-y-2">
+                                      // Get the value from accountData using the path
+                                      const getValue = (path: string) => {
+                                        const keys = path.split('.');
+                                        let value = accountData;
+                                        for (const key of keys) {
+                                          value = value?.[key];
+                                        }
+
+                                        // Handle undefined/null
+                                        if (value === undefined || value === null) {
+                                          return '';
+                                        }
+
+                                        // Convert objects/arrays to JSON string for display
+                                        if (typeof value === 'object') {
+                                          return JSON.stringify(value);
+                                        }
+
+                                        return value;
+                                      };
+
+                                      // Set the value in accountData using the path
+                                      const setValue = (path: string, newValue: any) => {
+                                        const keys = path.split('.');
+                                        const newData = { ...accountData };
+                                        let current = newData;
+
+                                        for (let i = 0; i < keys.length - 1; i++) {
+                                          if (!current[keys[i]]) {
+                                            current[keys[i]] = {};
+                                          }
+                                          current = current[keys[i]];
+                                        }
+
+                                        current[keys[keys.length - 1]] = newValue;
+                                        setAccountData(newData);
+
+                                        // Mark this field as modified
+                                        setModifiedFields((prev) => new Set(prev).add(path));
+                                      };
+
+                                      // Nested struct - render recursively
+                                      if (typeInfo.isNested && typeInfo.nestedFields) {
+                                        console.log(
+                                          '🔍 Nested struct:',
+                                          fieldPath,
+                                          'has',
+                                          typeInfo.nestedFields.length,
+                                          'nested fields'
+                                        );
+                                        console.log(
+                                          '🔍 Nested fields:',
+                                          typeInfo.nestedFields.map((f: any) => f.name)
+                                        );
+
+                                        const childFields = typeInfo.nestedFields
+                                          .map((nestedField: any) => renderField(nestedField, fieldPath, depth + 1))
+                                          .filter(Boolean); // Remove null entries
+
+                                        console.log('🔍 After filtering, childFields count:', childFields.length);
+
+                                        // Only render the struct if it has visible children
+                                        if (childFields.length === 0) {
+                                          console.log('❌ No visible children for nested struct:', fieldPath);
+                                          return null;
+                                        }
+
+                                        return (
+                                          <div key={fieldPath} className="space-y-2">
+                                            <div
+                                              className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
+                                              style={{ marginLeft: `${depth * 12}px` }}
+                                            >
+                                              <label className="mb-2 block text-sm font-semibold text-zinc-200">
+                                                {String(field.name)}
+                                                <span className="ml-2 text-xs font-normal text-zinc-500">
+                                                  ({String(typeInfo.type)})
+                                                </span>
+                                              </label>
+                                              <div className="space-y-3 pl-3">{childFields}</div>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+
+                                      // Regular field - only render if it's editable
+                                      if (!isFieldEditable(fieldPath)) {
+                                        return null;
+                                      }
+
+                                      // Regular field - render input based on type
+                                      const typeString = String(typeInfo.type);
+                                      const inputType =
+                                        typeString.startsWith('i') || typeString.startsWith('u')
+                                          ? 'number'
+                                          : typeString === 'bool'
+                                            ? 'checkbox'
+                                            : 'text';
+
+                                      // Check if this field has been explicitly modified by the user
+                                      const isModified = modifiedFields.has(fieldPath);
+
+                                      // Determine field state: OVERRIDE > STREAMED > CACHED
+                                      const fieldState = isModified
+                                        ? 'override'
+                                        : fetchBeforeUse
+                                          ? 'streamed'
+                                          : 'cached';
+
+                                      // Function to reset/clear the field
+                                      const resetField = () => {
+                                        const keys = fieldPath.split('.');
+                                        const newData = { ...accountData };
+                                        let current = newData;
+
+                                        for (let i = 0; i < keys.length - 1; i++) {
+                                          if (!current[keys[i]]) return;
+                                          current = current[keys[i]];
+                                        }
+
+                                        delete current[keys[keys.length - 1]];
+                                        setAccountData(newData);
+
+                                        // Remove from modified fields
+                                        setModifiedFields((prev) => {
+                                          const newSet = new Set(prev);
+                                          newSet.delete(fieldPath);
+                                          return newSet;
+                                        });
+                                      };
+
+                                      return (
                                         <div
-                                          className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
+                                          key={fieldPath}
+                                          className="space-y-2"
                                           style={{ marginLeft: `${depth * 12}px` }}
                                         >
-                                          <label className="mb-2 block text-sm font-semibold text-zinc-200">
-                                            {String(field.name)}
-                                            <span className="ml-2 text-xs font-normal text-zinc-500">({String(typeInfo.type)})</span>
-                                          </label>
-                                          <div className="space-y-3 pl-3">
-                                            {childFields}
+                                          <div className="flex items-center justify-between">
+                                            <label className="block text-sm font-medium text-zinc-300">
+                                              {String(field.name)}
+                                              <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                              {fieldState === 'override' && (
+                                                <>
+                                                  <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
+                                                    OVERRIDE VALUE
+                                                  </span>
+                                                  <button
+                                                    onClick={resetField}
+                                                    className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                                                    title="Reset to default"
+                                                  >
+                                                    <ArrowUturnLeftIcon className="h-3 w-3" />
+                                                    Reset
+                                                  </button>
+                                                </>
+                                              )}
+                                              {fieldState === 'streamed' && (
+                                                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-500">
+                                                  FETCH BEFORE USE
+                                                </span>
+                                              )}
+                                              {fieldState === 'cached' && (
+                                                <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs font-medium text-zinc-500">
+                                                  USE CACHED VALUE
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  }
+                                          {inputType === 'checkbox' ? (
+                                            <input
+                                              type="checkbox"
+                                              checked={getValue(fieldPath) === true}
+                                              onChange={(e) => setValue(fieldPath, e.target.checked)}
+                                              className="h-4 w-4 rounded border-zinc-700/50 bg-zinc-800/40 text-yellow-500 focus:ring-1 focus:ring-zinc-500"
+                                            />
+                                          ) : (
+                                            <input
+                                              type={inputType}
+                                              value={getValue(fieldPath)}
+                                              onChange={(e) => {
+                                                let newValue = e.target.value;
 
-                                  // Regular field - only render if it's editable
-                                  if (!isFieldEditable(fieldPath)) {
-                                    return null;
-                                  }
+                                                // Parse based on type
+                                                if (inputType === 'number') {
+                                                  newValue = Number(e.target.value);
+                                                } else if (
+                                                  typeString.includes('array') ||
+                                                  typeString.includes('vec') ||
+                                                  typeString === 'object'
+                                                ) {
+                                                  // Try to parse JSON for complex types
+                                                  try {
+                                                    newValue = e.target.value
+                                                      ? JSON.parse(e.target.value)
+                                                      : e.target.value;
+                                                  } catch {
+                                                    // Keep as string if not valid JSON
+                                                    newValue = e.target.value;
+                                                  }
+                                                }
 
-                                  // Regular field - render input based on type
-                                  const typeString = String(typeInfo.type);
-                                  const inputType =
-                                    typeString.startsWith('i') || typeString.startsWith('u') ? 'number' :
-                                    typeString === 'bool' ? 'checkbox' : 'text';
-
-                                  // Check if this field has been explicitly modified by the user
-                                  const isModified = modifiedFields.has(fieldPath);
-
-                                  // Determine field state: OVERRIDE > STREAMED > CACHED
-                                  const fieldState = isModified ? 'override' : fetchBeforeUse ? 'streamed' : 'cached';
-
-                                  // Function to reset/clear the field
-                                  const resetField = () => {
-                                    const keys = fieldPath.split('.');
-                                    const newData = { ...accountData };
-                                    let current = newData;
-
-                                    for (let i = 0; i < keys.length - 1; i++) {
-                                      if (!current[keys[i]]) return;
-                                      current = current[keys[i]];
-                                    }
-
-                                    delete current[keys[keys.length - 1]];
-                                    setAccountData(newData);
-
-                                    // Remove from modified fields
-                                    setModifiedFields(prev => {
-                                      const newSet = new Set(prev);
-                                      newSet.delete(fieldPath);
-                                      return newSet;
-                                    });
-                                  };
-
-                                  return (
-                                    <div
-                                      key={fieldPath}
-                                      className="space-y-2"
-                                      style={{ marginLeft: `${depth * 12}px` }}
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <label className="block text-sm font-medium text-zinc-300">
-                                          {String(field.name)}
-                                          <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
-                                        </label>
-                                        <div className="flex items-center gap-2">
-                                          {fieldState === 'override' && (
-                                            <>
-                                              <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
-                                                OVERRIDE VALUE
-                                              </span>
-                                              <button
-                                                onClick={resetField}
-                                                className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                                                title="Reset to default"
-                                              >
-                                                <ArrowUturnLeftIcon className="h-3 w-3" />
-                                                Reset
-                                              </button>
-                                            </>
-                                          )}
-                                          {fieldState === 'streamed' && (
-                                            <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-500">
-                                              FETCH BEFORE USE
-                                            </span>
-                                          )}
-                                          {fieldState === 'cached' && (
-                                            <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs font-medium text-zinc-500">
-                                              USE CACHED VALUE
-                                            </span>
+                                                setValue(fieldPath, newValue);
+                                              }}
+                                              placeholder={`Enter ${String(field.name)}...`}
+                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:outline-none ${
+                                                fieldState === 'override'
+                                                  ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
+                                                  : fieldState === 'streamed'
+                                                    ? 'border-purple-500 bg-purple-500/5 focus:border-purple-400 focus:ring-purple-500/50'
+                                                    : 'border-zinc-500 bg-zinc-500/5 focus:border-zinc-400 focus:ring-zinc-500/50'
+                                              }`}
+                                            />
                                           )}
                                         </div>
-                                      </div>
-                                      {inputType === 'checkbox' ? (
-                                        <input
-                                          type="checkbox"
-                                          checked={getValue(fieldPath) === true}
-                                          onChange={(e) => setValue(fieldPath, e.target.checked)}
-                                          className="h-4 w-4 rounded border-zinc-700/50 bg-zinc-800/40 text-yellow-500 focus:ring-1 focus:ring-zinc-500"
-                                        />
-                                      ) : (
-                                        <input
-                                          type={inputType}
-                                          value={getValue(fieldPath)}
-                                          onChange={(e) => {
-                                            let newValue = e.target.value;
+                                      );
+                                    };
 
-                                            // Parse based on type
-                                            if (inputType === 'number') {
-                                              newValue = Number(e.target.value);
-                                            } else if (typeString.includes('array') || typeString.includes('vec') || typeString === 'object') {
-                                              // Try to parse JSON for complex types
-                                              try {
-                                                newValue = e.target.value ? JSON.parse(e.target.value) : e.target.value;
-                                              } catch {
-                                                // Keep as string if not valid JSON
-                                                newValue = e.target.value;
-                                              }
-                                            }
+                                    return fields.map((field: any) => renderField(field, '', 0));
+                                  })()}
+                                </div>
+                              )}
 
-                                            setValue(fieldPath, newValue);
-                                          }}
-                                          placeholder={`Enter ${String(field.name)}...`}
-                                          className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 ${
-                                            fieldState === 'override'
-                                              ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
-                                              : fieldState === 'streamed'
-                                              ? 'border-purple-500 bg-purple-500/5 focus:border-purple-400 focus:ring-purple-500/50'
-                                              : 'border-zinc-500 bg-zinc-500/5 focus:border-zinc-400 focus:ring-zinc-500/50'
-                                          }`}
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                };
-
-                                return fields.map((field: any) => renderField(field, '', 0));
-                              })()}
+                              {/* Add/Update Action Button - Right Aligned */}
+                              {!loadingAccountData && (
+                                <div className="flex justify-end">
+                                  <button
+                                    onClick={() => {
+                                      if (selectedSlotId && selectedProtocol && selectedAction) {
+                                        if (editingAction) {
+                                          // Update existing action
+                                          updateActionInSlot(
+                                            editingAction.slotId,
+                                            editingAction.actionIndex,
+                                            selectedProtocol,
+                                            selectedAction
+                                          );
+                                          setEditingAction(null);
+                                        } else {
+                                          // Add new action
+                                          addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
+                                        }
+                                        setShowProtocolPanel(false);
+                                        setSelectedAction(null);
+                                        setAccountData({});
+                                        setModifiedFields(new Set());
+                                        setFetchBeforeUse(false);
+                                      }
+                                    }}
+                                    disabled={!selectedSlotId || !selectedAction}
+                                    className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {editingAction
+                                      ? 'Update Action'
+                                      : selectedSlotId
+                                        ? 'Add to Selected Slot'
+                                        : 'Select a slot first'}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-zinc-500">
+                              Select an override to edit account data
                             </div>
                           )}
-
-                          {/* Add/Update Action Button - Right Aligned */}
-                          {!loadingAccountData && (
-                            <div className="flex justify-end">
-                            <button
-                              onClick={() => {
-                                if (selectedSlotId && selectedProtocol && selectedAction) {
-                                  if (editingAction) {
-                                    // Update existing action
-                                    updateActionInSlot(editingAction.slotId, editingAction.actionIndex, selectedProtocol, selectedAction);
-                                    setEditingAction(null);
-                                  } else {
-                                    // Add new action
-                                    addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
-                                  }
-                                  setShowProtocolPanel(false);
-                                  setSelectedAction(null);
-                                  setAccountData({});
-                                  setModifiedFields(new Set());
-                                  setFetchBeforeUse(false);
-                                }
-                              }}
-                              disabled={!selectedSlotId || !selectedAction}
-                              className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {editingAction
-                                ? 'Update Action'
-                                : selectedSlotId
-                                  ? 'Add to Selected Slot'
-                                  : 'Select a slot first'}
-                            </button>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-zinc-500">
-                          Select an override to edit account data
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
+                )}
+              </motion.div>
+            </div>
           </motion.div>
-        </div>
-      </motion.div>
         )}
 
         {/* Player Controller - Fixed Position (Read and Play modes) */}
@@ -1532,214 +1655,246 @@ export default function ScenarioEditor({ scenarioId = 'default', initialSteps }:
             style={{ bottom: '116px' }}
           >
             <div className="pointer-events-auto rounded-full border border-zinc-700/50 bg-zinc-900/40 shadow-2xl backdrop-blur-2xl">
-            <div className="flex items-center justify-between px-8 py-6">
-              {/* Timeline/Progress */}
-              <div className="flex flex-1 flex-col gap-1">
-                {/* Slot Labels */}
-<div className="relative flex items-start px-5" style={{ height: '20px' }}>
-                  {slots.map((slot, index) => {
-                    // Calculate position: 12.5% offset + (index * 75% / (slots.length - 1))
-                    const totalSlots = slots.length;
-                    const position = totalSlots > 1
-                      ? 12.5 + (index / (totalSlots - 1)) * 75
-                      : 12.5; // Single slot: position at 12.5%
-                    const isExecuted = mode === 'play' && index <= currentPlaybackSlot;
-                    return (
-                      <div
-                        key={`label-${slot.id}`}
-                        className="absolute flex flex-col items-center gap-0.5"
-                        style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
-                      >
-                        <span className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wide transition-colors ${
-                          isExecuted ? 'text-green-500' : 'text-zinc-400'
-                        }`}>
-                          SLOT {index}
-                        </span>
-                        {/* Small triangle tick pointing down */}
-                        <div className={`h-0 w-0 border-l-[3px] border-r-[3px] border-t-[3px] border-l-transparent border-r-transparent transition-colors ${
-                          isExecuted ? 'border-t-green-500' : 'border-t-zinc-400'
-                        }`} />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Progress Bar */}
-                <div className="relative h-2 w-full rounded-full bg-zinc-800">
-                  {/* Background segments */}
-                  <div className="absolute inset-0 flex rounded-full overflow-hidden">
-                    {/* Start dashed segment (12.5%) */}
-                    <div className="h-2" style={{ width: '12.5%', backgroundImage: 'repeating-linear-gradient(to right, #3f3f46 0px, #3f3f46 4px, transparent 4px, transparent 8px)' }} />
-
-                    {/* Solid middle segments */}
-                    {slots.length === 1 ? (
-                      // Single slot: one 75% solid segment
-                      <div className="h-2 bg-zinc-700" style={{ width: '75%' }} />
-                    ) : (
-                      // Multiple slots: divide 75% among (slots.length - 1) segments
-                      Array.from({ length: slots.length - 1 }).map((_, index) => (
-                        <div key={`segment-${index}`} className="h-2 bg-zinc-700" style={{ width: `${75 / (slots.length - 1)}%` }} />
-                      ))
-                    )}
-
-                    {/* End dashed segment (12.5%) */}
-                    <div className="h-2" style={{ width: '12.5%', backgroundImage: 'repeating-linear-gradient(to right, #3f3f46 0px, #3f3f46 4px, transparent 4px, transparent 8px)' }} />
+              <div className="flex items-center justify-between px-8 py-6">
+                {/* Timeline/Progress */}
+                <div className="flex flex-1 flex-col gap-1">
+                  {/* Slot Labels */}
+                  <div className="relative flex items-start px-5" style={{ height: '20px' }}>
+                    {slots.map((slot, index) => {
+                      // Calculate position: 12.5% offset + (index * 75% / (slots.length - 1))
+                      const totalSlots = slots.length;
+                      const position = totalSlots > 1 ? 12.5 + (index / (totalSlots - 1)) * 75 : 50; // Single slot: centered at 50%
+                      const isExecuted = mode === 'play' && index <= currentPlaybackSlot;
+                      return (
+                        <div
+                          key={`label-${slot.id}`}
+                          className="absolute flex flex-col items-center gap-0.5"
+                          style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
+                        >
+                          <span
+                            className={`font-mono text-[10px] tracking-wide whitespace-nowrap uppercase transition-colors ${
+                              isExecuted ? 'text-green-500' : 'text-zinc-400'
+                            }`}
+                          >
+                            SLOT {index}
+                          </span>
+                          {/* Small triangle tick pointing down */}
+                          <div
+                            className={`h-0 w-0 border-t-[3px] border-r-[3px] border-l-[3px] border-r-transparent border-l-transparent transition-colors ${
+                              isExecuted ? 'border-t-green-500' : 'border-t-zinc-400'
+                            }`}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Pink progress overlay (ready state) - shows when in play mode */}
-                  {mode === 'play' && (
-                    <div className="absolute left-0 top-0 h-2 rounded-full overflow-hidden" style={{ width: '12.5%' }}>
+                  {/* Progress Bar */}
+                  <div className="relative h-2 w-full rounded-full bg-zinc-800">
+                    {/* Background segments */}
+                    <div className="absolute inset-0 flex overflow-hidden rounded-full">
+                      {/* Start dashed segment (12.5%) */}
                       <div
-                        className="h-2 w-full"
+                        className="h-2"
                         style={{
-                          backgroundImage: 'repeating-linear-gradient(to right, #ec4899 0px, #ec4899 4px, transparent 4px, transparent 8px)'
+                          width: '12.5%',
+                          backgroundImage:
+                            'repeating-linear-gradient(to right, #3f3f46 0px, #3f3f46 4px, transparent 4px, transparent 8px)',
+                        }}
+                      />
+
+                      {/* Solid middle segments */}
+                      {slots.length === 1 ? (
+                        // Single slot: one 75% solid segment
+                        <div className="h-2 bg-zinc-700" style={{ width: '75%' }} />
+                      ) : (
+                        // Multiple slots: divide 75% among (slots.length - 1) segments
+                        Array.from({ length: slots.length - 1 }).map((_, index) => (
+                          <div
+                            key={`segment-${index}`}
+                            className="h-2 bg-zinc-700"
+                            style={{ width: `${75 / (slots.length - 1)}%` }}
+                          />
+                        ))
+                      )}
+
+                      {/* End dashed segment (12.5%) */}
+                      <div
+                        className="h-2"
+                        style={{
+                          width: '12.5%',
+                          backgroundImage:
+                            'repeating-linear-gradient(to right, #3f3f46 0px, #3f3f46 4px, transparent 4px, transparent 8px)',
                         }}
                       />
                     </div>
-                  )}
 
-                  {/* Green progress overlay (execution state) */}
-                  {mode === 'play' && (() => {
-                    // For the last slot, extend to 100% and include the final dashed segment
-                    const isLastSlot = currentPlaybackSlot === slots.length - 1;
-
-                    let greenProgress;
-                    if (slots.length === 1) {
-                      // Single slot: always show full progress (100%)
-                      greenProgress = 100;
-                    } else if (currentPlaybackSlot === 0) {
-                      // First slot of multiple: full first dashed (12.5%) + half of first solid segment
-                      greenProgress = 12.5 + (37.5 / (slots.length - 1));
-                    } else if (isLastSlot) {
-                      // Last slot: full progress
-                      greenProgress = 100;
-                    } else {
-                      // Middle slots: calculate position
-                      greenProgress = 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
-                    }
-
-                    return (
-                      <>
-                        {/* Green dashed segment - always 12.5% of full bar */}
+                    {/* Pink progress overlay (ready state) - shows when in play mode */}
+                    {mode === 'play' && (
+                      <div
+                        className="absolute top-0 left-0 h-2 overflow-hidden rounded-full"
+                        style={{ width: '12.5%' }}
+                      >
                         <div
-                          className="absolute left-0 top-0 h-2 transition-all duration-300"
+                          className="h-2 w-full"
                           style={{
-                            width: '12.5%',
-                            backgroundImage: 'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)'
+                            backgroundImage:
+                              'repeating-linear-gradient(to right, #ec4899 0px, #ec4899 4px, transparent 4px, transparent 8px)',
                           }}
                         />
-
-                        {/* Green solid segment - from 12.5% to greenProgress (or 87.5% if last slot) */}
-                        {greenProgress > 12.5 && (
-                          <div
-                            className="absolute top-0 h-2 bg-green-500 transition-all duration-300"
-                            style={{
-                              left: '12.5%',
-                              width: isLastSlot ? `${87.5 - 12.5}%` : `${greenProgress - 12.5}%`
-                            }}
-                          />
-                        )}
-
-                        {/* Last green dashed segment - only for last slot */}
-                        {isLastSlot && (
-                          <div
-                            className="absolute top-0 h-2"
-                            style={{
-                              right: 0,
-                              width: '12.5%',
-                              backgroundImage: 'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)'
-                            }}
-                          />
-                        )}
-                      </>
-                    );
-                  })()}
-
-                  {/* Spinning wheel at end of green progress - not shown for last slot or single slot */}
-                  {mode === 'play' && isExecuting && currentPlaybackSlot < slots.length - 1 && slots.length > 1 && (() => {
-                    const greenProgress = currentPlaybackSlot === 0
-                      ? 12.5 + (37.5 / (slots.length - 1))  // Full first dashed + half of first solid segment
-                      : 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
-
-                    return (
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
-                        style={{ left: `${greenProgress}%` }}
-                      >
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
-                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        </div>
                       </div>
-                    );
-                  })()}
+                    )}
+
+                    {/* Green progress overlay (execution state) */}
+                    {mode === 'play' &&
+                      (() => {
+                        // For the last slot, extend to 100% and include the final dashed segment
+                        const isLastSlot = currentPlaybackSlot === slots.length - 1;
+
+                        let greenProgress;
+                        if (slots.length === 1) {
+                          // Single slot: always show full progress (100%)
+                          greenProgress = 100;
+                        } else if (currentPlaybackSlot === 0) {
+                          // First slot of multiple: full first dashed (12.5%) + half of first solid segment
+                          greenProgress = 12.5 + 37.5 / (slots.length - 1);
+                        } else if (isLastSlot) {
+                          // Last slot: full progress
+                          greenProgress = 100;
+                        } else {
+                          // Middle slots: calculate position
+                          greenProgress = 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
+                        }
+
+                        return (
+                          <>
+                            {/* Green dashed segment - always 12.5% of full bar */}
+                            <div
+                              className="absolute top-0 left-0 h-2 transition-all duration-300"
+                              style={{
+                                width: '12.5%',
+                                backgroundImage:
+                                  'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
+                              }}
+                            />
+
+                            {/* Green solid segment - from 12.5% to greenProgress (or 87.5% if last slot) */}
+                            {greenProgress > 12.5 && (
+                              <div
+                                className="absolute top-0 h-2 bg-green-500 transition-all duration-300"
+                                style={{
+                                  left: '12.5%',
+                                  width: isLastSlot ? `${87.5 - 12.5}%` : `${greenProgress - 12.5}%`,
+                                }}
+                              />
+                            )}
+
+                            {/* Last green dashed segment - only for last slot */}
+                            {isLastSlot && (
+                              <div
+                                className="absolute top-0 h-2"
+                                style={{
+                                  right: 0,
+                                  width: '12.5%',
+                                  backgroundImage:
+                                    'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
+                                }}
+                              />
+                            )}
+                          </>
+                        );
+                      })()}
+
+                    {/* Spinning wheel at end of green progress - not shown for last slot or single slot */}
+                    {mode === 'play' &&
+                      isExecuting &&
+                      currentPlaybackSlot < slots.length - 1 &&
+                      slots.length > 1 &&
+                      (() => {
+                        const greenProgress =
+                          currentPlaybackSlot === 0
+                            ? 12.5 + 37.5 / (slots.length - 1) // Full first dashed + half of first solid segment
+                            : 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
+
+                        return (
+                          <div
+                            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: `${greenProgress}%` }}
+                          >
+                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
+                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="flex items-center gap-3 pl-8">
+                  {mode === 'read' ? (
+                    <>
+                      <button
+                        onClick={handlePlay}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400"
+                        title="Play scenario"
+                      >
+                        <PlayIcon className="h-6 w-6" />
+                      </button>
+                      <button
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
+                        title="Download scenario"
+                      >
+                        <ArrowDownTrayIcon className="h-5 w-5" />
+                      </button>
+                    </>
+                  ) : currentPlaybackSlot >= slots.length - 1 ? (
+                    <>
+                      {/* Playback complete - show checkmark and download */}
+                      <button
+                        onClick={handleComplete}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
+                        title="Complete - back to read mode"
+                      >
+                        <CheckIcon className="h-6 w-6" />
+                      </button>
+                      <button
+                        onClick={exportSnapshot}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
+                        title="Export snapshot"
+                      >
+                        <ArrowDownTrayIcon className="h-5 w-5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Playback in progress - show step forward and stop */}
+                      <button
+                        onClick={handleStepForward}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
+                        title="Step forward"
+                      >
+                        <ForwardIcon className="h-6 w-6" />
+                      </button>
+                      <button
+                        onClick={handleStop}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
+                        title="Stop scenario"
+                      >
+                        <StopIcon className="h-5 w-5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-
-              {/* Controls */}
-              <div className="flex items-center gap-3 pl-8">
-                {mode === 'read' ? (
-                  <>
-                    <button
-                      onClick={handlePlay}
-                      className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400"
-                      title="Play scenario"
-                    >
-                      <PlayIcon className="h-6 w-6" />
-                    </button>
-                    <button
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
-                      title="Download scenario"
-                    >
-                      <ArrowDownTrayIcon className="h-5 w-5" />
-                    </button>
-                  </>
-                ) : currentPlaybackSlot >= slots.length - 1 ? (
-                  <>
-                    {/* Playback complete - show checkmark and download */}
-                    <button
-                      onClick={handleComplete}
-                      className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
-                      title="Complete - back to read mode"
-                    >
-                      <CheckIcon className="h-6 w-6" />
-                    </button>
-                    <button
-                      onClick={exportSnapshot}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
-                      title="Export snapshot"
-                    >
-                      <ArrowDownTrayIcon className="h-5 w-5" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Playback in progress - show step forward and stop */}
-                    <button
-                      onClick={handleStepForward}
-                      className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
-                      title="Step forward"
-                    >
-                      <ForwardIcon className="h-6 w-6" />
-                    </button>
-                    <button
-                      onClick={handleStop}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
-                      title="Stop scenario"
-                    >
-                      <StopIcon className="h-5 w-5" />
-                    </button>
-                  </>
-                )}
-              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
       {/* Transaction Inspector Pane - Right Side (Play mode only) */}
       {mode === 'play' && (
-        <div className="w-[500px] flex-shrink-0 overflow-auto border-l border-zinc-700 bg-zinc-900 pt-4 px-4">
+        <div className="w-[500px] flex-shrink-0 overflow-auto border-l border-zinc-700 bg-zinc-900 px-4 pt-4">
           <TransactionInspector autoStart={true} compact={true} fetchHistorical={false} />
         </div>
       )}
