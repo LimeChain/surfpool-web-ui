@@ -1,56 +1,58 @@
 /* custom-graphiql.css */
 .graphiql-container {
-    background-color: #18181B; /* Change the background color */
-}
-
-.graphiql-toolbar {
-    background-color: #333; /* Change the toolbar background color */
-    color: #fff; /* Change the toolbar text color */
+  background-color: #18181b; /* Change the background color */
 }
 
 .graphiql-editor {
-    background-color: #282c34; /* Change the editor background color */
-    color: #abb2bf; /* Change the editor text color */
+  background-color: #282c34; /* Change the editor background color */
+  color: #abb2bf; /* Change the editor text color */
+}
+
+.graphiql-dialog {
+  background-color: #091113;
+}
+.graphiql-tab.graphiql-tab-active {
+  background-color: #091113;
 }
 
 .graphiql-container .graphiql-editors {
-    background-color: #091113;
+  background-color: #091113;
 }
 .graphiql-editors {
-    background-color: #091113;
+  background-color: #091113;
 }
 
 .graphiql-editor {
-    background-color: #091113;
+  background-color: #091113;
 }
 
-.graphiql-container .CodeMirror, .graphiql-container .CodeMirror-gutters   {
-    background-color: #091113;
+.graphiql-container .CodeMirror,
+.graphiql-container .CodeMirror-gutters {
+  background-color: #091113;
 }
 
 .graphiql-response .result-window .CodeMirror {
-    background-color: #18181B; /* your desired color */
+  background-color: #18181b; /* your desired color */
 }
 
 .graphiql-logo-link {
-    display: none;
+  display: none;
 }
 
 button.graphiql-execute-button {
-    background-color: #E034AE;
-    border-radius: 128px;
+  background-color: #e034ae;
+  border-radius: 128px;
 }
 
 button.graphiql-execute-button:hover {
-    background-color: #b02488;
-    border-radius: 128px;
+  background-color: #b02488;
+  border-radius: 128px;
 }
 
 .graphiql-toolbar {
-    background-color: #091113;
-
+  background-color: #091113;
 }
 .graphiql-container {
-    height: 800px;
-    margin-top: 32px;
-  }
+  height: 800px;
+  margin-top: 32px;
+}

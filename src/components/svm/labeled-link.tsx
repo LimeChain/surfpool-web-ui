@@ -13,9 +13,11 @@ export interface Endpoint {
 interface LabeledLinkProps {
   endpoint: Endpoint
   className?: string
+  status?: 'connected' | 'error' | 'loading'
+  pulsing?: boolean
 }
 
-export function LabeledLink({ endpoint, className = '' }: LabeledLinkProps) {
+export function LabeledLink({ endpoint, className = '', status = 'connected', pulsing = false }: LabeledLinkProps) {
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({})
 
   const copyToClipboard = (text: string, id: string) => {
@@ -37,8 +39,17 @@ export function LabeledLink({ endpoint, className = '' }: LabeledLinkProps) {
           <div className={`flex h-[38px] items-center justify-between overflow-hidden border border-zinc-700 bg-zinc-800 pr-[6px] font-mono text-xs ${className}`}>
             {' '}
             <div className="flex h-full items-center gap-2">
-              <span className="flex h-full w-[40px] sm:w-[72px] items-center justify-center border-r border-zinc-600 bg-zinc-900 p-1 text-zinc-300 uppercase">
-                <span className="hidden sm:inline">{endpoint.name}</span>
+              <span className="flex h-full w-[52px] sm:w-[95px] items-center justify-start gap-2 border-r border-zinc-600 bg-zinc-900 pl-2 text-zinc-300 uppercase">
+                <div
+                  className={`h-2 w-2 flex-shrink-0 rounded-full ${
+                    status === 'connected'
+                      ? 'bg-green-400'
+                      : status === 'error'
+                        ? 'bg-red-400'
+                        : 'bg-gray-500'
+                  } ${pulsing ? 'animate-subtle-pulse' : ''}`}
+                />
+                <span className="hidden sm:inline whitespace-nowrap">{endpoint.name}</span>
                 <span className="sm:hidden">
                   {endpoint.name === 'RPC URL' ? 'RPC' :
                    endpoint.name === 'WS URL' ? 'WS' :

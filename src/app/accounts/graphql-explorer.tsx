@@ -26,13 +26,13 @@ export default function GraphQLExplorer() {
   }, [isMounted, graphqlUrl]);
 
   const style = {
-    height: '100vh',
+    height: '100%',
   };
 
   // Show loading state while config is being fetched
   if (configLoading) {
     return (
-      <div style={style} className="flex items-center justify-center bg-white dark:bg-gray-900">
+      <div style={style} className="flex items-center justify-center bg-white dark:bg-zinc-900">
         <div className="text-lg text-gray-600 dark:text-gray-300">Loading GraphQL configuration...</div>
       </div>
     );
@@ -41,7 +41,7 @@ export default function GraphQLExplorer() {
   // Show error state if config failed to load
   if (configError) {
     return (
-      <div style={style} className="flex items-center justify-center bg-white dark:bg-gray-900">
+      <div style={style} className="flex items-center justify-center bg-white dark:bg-zinc-900">
         <div className="text-lg text-red-600 dark:text-red-400">
           Failed to load GraphQL configuration: {configError}
         </div>
@@ -52,17 +52,11 @@ export default function GraphQLExplorer() {
   // Don't render until mounted and config is loaded
   if (!isMounted) {
     return (
-      <div style={style} className="flex items-center justify-center bg-white dark:bg-gray-900">
+      <div style={style} className="flex items-center justify-center bg-white dark:bg-zinc-900">
         <div className="text-lg text-gray-600 dark:text-gray-300">Initializing GraphQL Explorer...</div>
       </div>
     );
   }
 
-  return (
-    <GraphiQL 
-      fetcher={fetcher}
-      plugins={[explorer]}
-      style={style}
-      shouldPersistHeaders />
-  )
-} 
+  return <GraphiQL fetcher={fetcher} plugins={[explorer]} style={style} className="-mt-12" shouldPersistHeaders />;
+}

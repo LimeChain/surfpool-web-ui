@@ -52,6 +52,7 @@ export interface TransactionInspectorOptions {
   autoStart?: boolean;
   filterByProgram?: string; // Program ID to filter transactions
   filterByAccount?: string; // Account to filter transactions
+  fetchHistorical?: boolean; // Whether to fetch historical/local signatures (default: true)
 }
 
 export interface TransactionInspectorStats {
@@ -77,7 +78,8 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     maxTransactions = 50,
     autoStart = true,
     filterByProgram,
-    filterByAccount
+    filterByAccount,
+    fetchHistorical = true
   } = options;
 
   // Validate that required URLs are provided
@@ -208,21 +210,32 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       setError(null);
       setStats(prev => ({ ...prev, connectionStatus: 'connecting' }));
 
+      // Unsubscribe from any existing subscription before creating a new one
+      if (subscriptionIdRef.current) {
+        console.log('📡 Cleaning up old subscription before reconnecting...');
+        try {
+          solanaWebSocketService.unsubscribeAll();
+        } catch (err) {
+          console.warn('⚠️ Error cleaning up old subscription:', err);
+        }
+        subscriptionIdRef.current = null;
+      }
+
       // Connect to WebSocket service
       console.log('🔗 Connecting to WebSocket service...');
       console.log('🔗 Original WebSocket URL:', wsUrl);
-      
+
       // Convert HTTP URL to WebSocket URL if needed
       const convertedWsUrl = SolanaWebSocketService.convertHttpToWebSocket(wsUrl);
       console.log('🔗 Converted WebSocket URL:', convertedWsUrl);
-      
+
       await solanaWebSocketService.connect(convertedWsUrl);
       console.log('🔗 WebSocket connected successfully');
 
       // Subscribe to transactions
-      const filter = filterByAccount ? { account: filterByAccount } : 
+      const filter = filterByAccount ? { account: filterByAccount } :
                     filterByProgram ? { program: filterByProgram } : undefined;
-      
+
       console.log('📡 Subscribing to transactions with filter:', filter);
       subscriptionIdRef.current = await solanaWebSocketService.subscribeToTransactions(filter);
       console.log('✅ Transaction subscription confirmed, ID:', subscriptionIdRef.current);
@@ -372,18 +385,20 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       startStreaming();
     }
 
+    // Don't stop streaming on unmount - keep connection alive across page navigation
+    // This prevents killing the compact slot widget's subscription
     return () => {
-      stopStreaming();
+      // stopStreaming();
     };
   }, [autoStart, startStreaming, stopStreaming]);
 
   // Fetch local signatures when transaction list is empty
   useEffect(() => {
-    if (transactions.length === 0 && isStreaming && stats.connectionStatus === 'connected') {
+    if (fetchHistorical && transactions.length === 0 && isStreaming && stats.connectionStatus === 'connected') {
       console.log('📭 Transaction list is empty, fetching local signatures...');
       fetchLocalSignatures();
     }
-  }, [transactions.length, isStreaming, stats.connectionStatus, fetchLocalSignatures]);
+  }, [fetchHistorical, transactions.length, isStreaming, stats.connectionStatus, fetchLocalSignatures]);
 
   return {
     transactions,

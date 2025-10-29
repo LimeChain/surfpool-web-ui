@@ -1,0 +1,195 @@
+{
+  "protocols": [
+    {
+      "id": "pyth",
+      "title": "Pyth Oracle",
+      "description": "Override oracle price feeds for testing",
+      "icon_url": "/assets/pyth.svg",
+      "actions": [
+        {
+          "id": "pyth_set_btc_price",
+          "title": "Set BTC/USD Price",
+          "description": "Override Bitcoin price feed to test liquidations, collateral ratios, or price-dependent logic"
+        },
+        {
+          "id": "pyth_set_sol_price",
+          "title": "Set SOL/USD Price",
+          "description": "Override Solana price to test swaps, margin requirements, or oracle-dependent transactions"
+        },
+        {
+          "id": "pyth_set_eth_price",
+          "title": "Set ETH/USD Price",
+          "description": "Override Ethereum price feed for cross-chain or multi-asset testing scenarios"
+        },
+        {
+          "id": "pyth_set_confidence",
+          "title": "Set Price Confidence",
+          "description": "Override confidence interval to test error handling with low-quality oracle data"
+        },
+        {
+          "id": "pyth_set_staleness",
+          "title": "Make Feed Stale",
+          "description": "Force price feed staleness to test time-sensitive oracle validations"
+        }
+      ]
+    },
+    {
+      "id": "switchboard",
+      "title": "Switchboard",
+      "description": "Override oracle aggregators and randomness",
+      "icon_url": "/assets/switchboard.svg",
+      "actions": [
+        {
+          "id": "switchboard_set_feed_value",
+          "title": "Set Feed Result",
+          "description": "Override oracle feed output with custom values"
+        },
+        {
+          "id": "switchboard_set_vrf",
+          "title": "Set VRF Output",
+          "description": "Override random number generation for deterministic testing of games, raffles, or lotteries"
+        },
+        {
+          "id": "switchboard_set_update_interval",
+          "title": "Set Update Interval",
+          "description": "Control feed freshness to test stale data handling"
+        }
+      ]
+    },
+    {
+      "id": "jupiter",
+      "title": "Jupiter",
+      "description": "Override DEX routing and swap quotes",
+      "icon_url": "/assets/jupiter.svg",
+      "actions": [
+        {
+          "id": "jupiter_set_quote",
+          "title": "Set Swap Quote",
+          "description": "Override swap rate to test arbitrage opportunities or unfavorable pricing"
+        },
+        {
+          "id": "jupiter_set_slippage",
+          "title": "Force Slippage",
+          "description": "Simulate high slippage scenarios to test transaction failures"
+        },
+        {
+          "id": "jupiter_set_route",
+          "title": "Override Route",
+          "description": "Force specific DEX routing path for testing"
+        }
+      ]
+    },
+    {
+      "id": "raydium",
+      "title": "Raydium",
+      "description": "Override AMM pool states",
+      "icon_url": "/assets/raydium.svg",
+      "actions": [
+        {
+          "id": "raydium_set_pool_reserves",
+          "title": "Set Pool Reserves",
+          "description": "Override token reserves to test various liquidity depths"
+        },
+        {
+          "id": "raydium_set_fee_rate",
+          "title": "Set Fee Rate",
+          "description": "Override trading fee percentage"
+        },
+        {
+          "id": "raydium_set_farm_rewards",
+          "title": "Set Farm APY",
+          "description": "Override farm yield to test reward calculations"
+        },
+        {
+          "id": "raydium_drain_liquidity",
+          "title": "Drain Liquidity",
+          "description": "Test behavior with near-zero pool reserves"
+        }
+      ]
+    },
+    {
+      "id": "whirlpool",
+      "title": "Orca Whirlpools",
+      "description": "Override concentrated liquidity states",
+      "icon_url": "/assets/whirlpool.svg",
+      "actions": [
+        {
+          "id": "orca_set_tick_liquidity",
+          "title": "Set Tick Liquidity",
+          "description": "Override liquidity at specific price ticks"
+        },
+        {
+          "id": "orca_set_current_price",
+          "title": "Set Current Price",
+          "description": "Move pool price to test position ranges"
+        },
+        {
+          "id": "orca_set_fee_growth",
+          "title": "Set Accumulated Fees",
+          "description": "Override trading fee accumulation"
+        }
+      ]
+    },
+    {
+      "id": "drift",
+      "title": "Drift Protocol",
+      "description": "Override perpetual futures states",
+      "icon_url": "/assets/drift.svg",
+      "actions": [
+        {
+          "id": "drift_set_position_size",
+          "title": "Set Position Size",
+          "description": "Override position notional value to test max leverage"
+        },
+        {
+          "id": "drift_set_collateral",
+          "title": "Set Collateral",
+          "description": "Override account collateral to test liquidation thresholds"
+        },
+        {
+          "id": "drift_set_funding_rate",
+          "title": "Set Funding Rate",
+          "description": "Override perpetual funding to test payment scenarios"
+        },
+        {
+          "id": "drift_trigger_liquidation",
+          "title": "Force Liquidation",
+          "description": "Make position liquidatable to test liquidation mechanics"
+        }
+      ]
+    },
+    {
+      "id": "kamino",
+      "title": "Kamino Finance",
+      "description": "Override lending protocol states",
+      "icon_url": "/assets/kamino.svg",
+      "actions": [
+        {
+          "id": "kamino_set_borrow_rate",
+          "title": "Set Borrow Rate",
+          "description": "Override interest rate (0-100%) to test borrowing costs"
+        },
+        {
+          "id": "kamino_set_utilization",
+          "title": "Set Pool Utilization",
+          "description": "Override utilization ratio to test rate curves"
+        },
+        {
+          "id": "kamino_set_available_liquidity",
+          "title": "Set Available Liquidity",
+          "description": "Control available borrowing capacity"
+        },
+        {
+          "id": "kamino_set_ltv",
+          "title": "Set Loan-to-Value",
+          "description": "Override LTV ratio to test margin calls"
+        },
+        {
+          "id": "kamino_set_flashloan_fee",
+          "title": "Set Flash Loan Fee",
+          "description": "Override flash loan fee rate"
+        }
+      ]
+    }
+  ]
+}

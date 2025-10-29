@@ -1,20 +1,12 @@
 'use client';
 
 import * as Headless from '@headlessui/react';
-import React, { useState, useEffect } from 'react';
-import { Navbar, NavbarItem, NavbarSection, NavbarSpacer } from './navbar';
-import { CircleStackIcon, IdentificationIcon } from '@heroicons/react/16/solid';
-import { Avatar } from './avatar';
-import { Button } from './button';
-import { Dialog, DialogActions, DialogDescription, DialogTitle } from './dialog';
-import { Dropdown, DropdownButton, DropdownItem, DropdownLabel, DropdownMenu } from './dropdown';
-import { ArrowRightStartOnRectangleIcon } from '@heroicons/react/16/solid';
-import { useWorkspaceContext } from '@/contexts/workspace-context';
-import { MagnifyingGlassIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid';
-import { CheckBadgeIcon } from '@heroicons/react/24/solid';
-import { ShieldCheckIcon } from '@heroicons/react/24/solid';
-import { CommandLineIcon, CloudIcon } from '@heroicons/react/24/solid';
+import { CircleStackIcon } from '@heroicons/react/16/solid';
+import { BeakerIcon, CloudIcon, CommandLineIcon } from '@heroicons/react/24/solid';
+import React, { useEffect, useState } from 'react';
 import { PaywallDialog } from '../svm/paywall';
+import { Navbar, NavbarItem, NavbarSpacer } from './navbar';
+import CompactSlotWidget from '../svm/compact-slot-widget';
 
 function OpenMenuIcon() {
   return (
@@ -31,8 +23,6 @@ function CloseMenuIcon() {
     </svg>
   );
 }
-
-
 
 function MobileSidebar({ open, close, children }: React.PropsWithChildren<{ open: boolean; close: () => void }>) {
   return (
@@ -62,8 +52,8 @@ export function StackedLayout({
   navbar,
   sidebar,
   children,
-  path
-}: React.PropsWithChildren<{ navbar: React.ReactNode; sidebar: React.ReactNode, path: string }>) {
+  path,
+}: React.PropsWithChildren<{ navbar: React.ReactNode; sidebar: React.ReactNode; path: string }>) {
   let [showSidebar, setShowSidebar] = useState(false);
   let [showCloudDialog, setShowCloudDialog] = useState(false);
   let [plans, setPlans] = useState<any[]>([]);
@@ -74,33 +64,33 @@ export function StackedLayout({
   useEffect(() => {
     setLoading(true);
     console.log('Fetching plans and stars...');
-    
+
     // Fetch plans
     fetch('https://cloud.txtx.run/api/subscriptions/plans?origin=studio')
-      .then(res => {
+      .then((res) => {
         console.log('Plans response status:', res.status);
         return res.json();
       })
-      .then(data => {
+      .then((data) => {
         console.log('Plans data:', data);
         setPlans(data.plans || []);
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Failed to fetch plans:', err);
       });
-    
+
     // Fetch GitHub stars
     fetch('https://api.github.com/repos/txtx/surfpool')
-      .then(res => {
+      .then((res) => {
         console.log('GitHub response status:', res.status);
         return res.json();
       })
-      .then(data => {
+      .then((data) => {
         console.log('GitHub data:', data);
         setStars(data.stargazers_count || 0);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Failed to fetch GitHub stars:', err);
         setLoading(false);
       });
@@ -114,7 +104,7 @@ export function StackedLayout({
       </MobileSidebar>
 
       {/* Navbar */}
-      <header className="flex items-center px-4">
+      <header className="relative flex items-center px-4">
         <div className="py-2.5 lg:hidden">
           <NavbarItem onClick={() => setShowSidebar(true)} aria-label="Open navigation">
             <OpenMenuIcon />
@@ -122,34 +112,50 @@ export function StackedLayout({
         </div>
         <div className="min-w-0 flex-1">
           <Navbar>
-            <img src="/assets/txtx.png" alt="Txtx Logo" className="h-5 lg:h-4 lg:ml-4 ml-auto" />
+            <img src="/assets/txtx.png" alt="Txtx Logo" className="ml-auto h-5 max-lg:hidden lg:ml-4 lg:h-4" />
             <NavbarItem href="/" current={path.endsWith('/')} className="max-lg:hidden">
-              <CommandLineIcon/>
+              <CommandLineIcon />
               Console
             </NavbarItem>
-            <NavbarItem href="/subgraphs" current={path.endsWith('/subgraphs')} className="max-lg:hidden">
+            <NavbarItem href="/accounts" current={path.endsWith('/accounts')} className="max-lg:hidden">
               <CircleStackIcon />
-              Data Indexing
+              Accounts
+            </NavbarItem>
+            <NavbarItem href="/scenarios" current={path.endsWith('/scenarios')} className="max-lg:hidden">
+              <BeakerIcon />
+              Scenarios
             </NavbarItem>
             <NavbarSpacer />
-            <NavbarItem href="#" onClick={() => setShowCloudDialog(true)} className="max-lg:hidden">
-              Cloud
-              <CloudIcon />
-            </NavbarItem>
           </Navbar>
+        </div>
+
+        {/* Compact Slot Widget - Centered on small, right-aligned with Cloud button on large */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:left-auto lg:right-4 lg:translate-x-0">
+          <div className="pointer-events-auto flex items-center gap-3">
+            <CompactSlotWidget />
+            {/* Cloud Button - only visible on large screens, clickable */}
+            <button
+              onClick={() => setShowCloudDialog(true)}
+              className="hidden lg:flex items-center gap-2 rounded-lg px-3 py-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              title="Surfpool Cloud"
+            >
+              <CloudIcon className="h-5 w-5" />
+              <span className="text-sm font-medium">Surfpool Cloud</span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Content */}
       <main className="flex flex-1 flex-col pb-2 lg:px-2">
-        <div className="grow p-2 lg:rounded-lg lg:bg-white lg:p-2 lg:shadow-xs lg:ring-1 lg:ring-zinc-950/5 dark:lg:bg-zinc-900 dark:lg:ring-white/10">
+        <div className="lg:bg-w0 grow p-0 lg:rounded-lg lg:shadow-xs lg:ring-1 lg:ring-zinc-950/5 dark:lg:bg-zinc-900 dark:lg:ring-white/10">
           <div className="">{children}</div>
         </div>
       </main>
-      
+
       {/* Paywall Dialog */}
-      <PaywallDialog 
-        open={showCloudDialog} 
+      <PaywallDialog
+        open={showCloudDialog}
         onClose={() => setShowCloudDialog(false)}
         plans={plans}
         loading={loading}
