@@ -9,8 +9,8 @@ import { ArrowTopRightOnSquareIcon, CheckIcon, ClipboardIcon, TrashIcon } from '
 import { ArrowPathIcon, InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
-import IndexingGrid from './indexing-grid';
 import CollapsibleSearch from './collapsible-search';
+import IndexingGrid from './indexing-grid';
 
 const GraphQLExplorer = dynamic(() => import('@/app/accounts/graphql-explorer'), {
   ssr: false,
@@ -74,7 +74,7 @@ export default function AccountsBento(): JSX.Element {
         setError(null);
 
         const rpcUrl = config?.rpc_url || 'http://127.0.0.1:8899';
-        const workspaceUrl = 'http://127.0.0.1:18488';
+        const workspaceUrl = config?.studio_url || 'http://127.0.0.1:18488';
 
         // Fetch streamed accounts from RPC
         let streamedAccounts: Account[] = [];
@@ -744,11 +744,7 @@ export default function AccountsBento(): JSX.Element {
         <div className="mx-auto max-w-7xl px-6 pt-4 pb-1 sm:px-6 sm:pt-2 lg:px-8">
           {/* Search */}
           <div className="mb-6">
-            <CollapsibleSearch
-              placeholder="Search accounts"
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
+            <CollapsibleSearch placeholder="Search accounts" value={searchQuery} onChange={setSearchQuery} />
           </div>
 
           {/* Sections */}
