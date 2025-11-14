@@ -11,7 +11,7 @@ import {
   TransactionInfo,
   useTransactionInspector,
 } from '@/lib/solana-transaction-stream';
-import { ArrowTopRightOnSquareIcon, ClipboardIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import React, { useEffect, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -2555,7 +2555,7 @@ export default function TransactionInspector({
             <div className="space-y-6">
               {/* Basic Transaction Info */}
               <div className="grid grid-cols-4 gap-4">
-                <div className="rounded-lg bg-zinc-800/50 p-4">
+                <div className="rounded-lg bg-zinc-800/50 p-3">
                   <div className="mb-2 text-xs text-gray-500">Status</div>
                   <Badge
                     color={
@@ -2571,31 +2571,7 @@ export default function TransactionInspector({
                   </Badge>
                 </div>
 
-                <div className="rounded-lg bg-zinc-800/50 p-4">
-                  <div className="mb-2 text-xs text-gray-500">Compute Units Consumed</div>
-                  <div className="font-mono text-sm">
-                    {transactionProfile && transactionProfile.instructionProfiles
-                      ? transactionProfile.instructionProfiles.reduce(
-                          (sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0),
-                          0
-                        )
-                      : selectedTransaction.meta.computeUnitsConsumed || 'Unknown'}
-                  </div>
-                </div>
-
-                {selectedTransaction.meta ? (
-                  <div className="rounded-lg bg-zinc-800/50 p-4">
-                    <div className="mb-2 text-xs text-gray-500">Fee</div>
-                    <div className="font-mono text-sm">{selectedTransaction.meta.fee || 0} lamports</div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg bg-zinc-800/50 p-4">
-                    <div className="mb-2 text-xs text-gray-500">Fee</div>
-                    <div className="font-mono text-sm">0 lamports</div>
-                  </div>
-                )}
-
-                <div className="rounded-lg bg-zinc-800/50 p-4">
+                <div className="rounded-lg bg-zinc-800/50 p-3">
                   <div className="mb-2 text-xs text-gray-500">Open in Explorer</div>
                   <button
                     onClick={() => {
@@ -2612,34 +2588,97 @@ export default function TransactionInspector({
                     <span>View</span>
                   </button>
                 </div>
-              </div>
 
-              {/* Transaction Header */}
-              {selectedTransaction.transaction?.message?.header && (
-                <div className="rounded-lg bg-zinc-800/50 p-4">
-                  <div className="mb-2 text-xs text-gray-500">Transaction Header</div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <div className="text-gray-400">Required Signatures</div>
-                      <div className="font-mono">
-                        {selectedTransaction.transaction.message.header.numRequiredSignatures}
-                      </div>
+                {/* Accounts Loaded */}
+                {transactionProfile && (
+                  <div className="col-span-2 flex items-center justify-between rounded-lg bg-zinc-800/50 p-3">
+                    <div className="flex items-baseline gap-3">
+                      <span className="font-mono text-3xl font-bold text-zinc-100">
+                        {(() => {
+                          const readonlyCount = Object.keys(transactionProfile.readonlyAccountStates || {}).length;
+                          const writableCount = Object.keys(
+                            transactionProfile.transactionProfile?.accountStates || {}
+                          ).length;
+                          return readonlyCount + writableCount;
+                        })()}
+                      </span>
+                      <span className="text-xs text-gray-500">Accounts Loaded</span>
                     </div>
-                    <div>
-                      <div className="text-gray-400">Readonly Signed</div>
-                      <div className="font-mono">
-                        {selectedTransaction.transaction.message.header.numReadonlySignedAccounts}
+                    <button
+                      onClick={async () => {
+                        try {
+                          const signature = selectedTransaction.transaction?.signatures?.[0];
+                          if (!signature) {
+                            console.error('No transaction signature found');
+                            return;
+                          }
+
+                          // Call surfnet_exportSnapshot RPC method
+                          const response = await fetch(configRpcUrl, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              jsonrpc: '2.0',
+                              id: 1,
+                              method: 'surfnet_exportSnapshot',
+                              params: [{
+                                scope: {
+                                  preTransaction: signature
+                                }
+                              }],
+                            }),
+                          });
+
+                          if (response.ok) {
+                            const data = await response.json();
+                            console.log('📸 Export fixtures response:', data);
+
+                            if (data.result) {
+                              // Download the snapshot as JSON
+                              const jsonString = JSON.stringify(data.result, null, 2);
+                              const blob = new Blob([jsonString], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `fixtures-${signature}.json`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                              console.log('✅ Fixtures exported successfully');
+                            }
+                          } else {
+                            console.error('❌ Error exporting fixtures:', response.statusText);
+                          }
+                        } catch (error) {
+                          console.error('❌ Error exporting fixtures:', error);
+                        }
+                      }}
+                      className="group flex items-center gap-2 rounded-md bg-pink-600 px-3 py-2 text-sm text-white transition-all duration-200 hover:bg-pink-700"
+                    >
+                      <svg
+                        className="h-6 w-6 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                        />
+                      </svg>
+                      <div className="flex flex-col items-start">
+                        <span className="text-xs leading-tight tracking-wide uppercase">Download Fixtures</span>
+                        <span className="text-[9px] leading-tight text-zinc-300 uppercase">Pre-execution Snapshot</span>
                       </div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Readonly Unsigned</div>
-                      <div className="font-mono">
-                        {selectedTransaction.transaction.message.header.numReadonlyUnsignedAccounts}
-                      </div>
-                    </div>
+                    </button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Transaction Profile Loading State */}
               {profileLoading && (
@@ -2687,7 +2726,18 @@ export default function TransactionInspector({
               {/* Transaction Profile - New Detailed View */}
               {transactionProfile && (
                 <>
-                  <div className="mb-3 text-sm font-semibold text-zinc-200">CU Profiling</div>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-zinc-200">CU Profiling</span>
+                    {transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0 && (
+                      <span className="text-sm text-zinc-400">
+                        (
+                        {transactionProfile.instructionProfiles
+                          .reduce((sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0), 0)
+                          .toLocaleString()}{' '}
+                        CU)
+                      </span>
+                    )}
+                  </div>
 
                   {/* Compute Units Stack Bar */}
                   {transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0 && (
