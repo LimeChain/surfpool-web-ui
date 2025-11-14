@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { PlusIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/solid';
 import GenericBento, { BentoItem } from './generic-bento';
 import { Dialog, DialogActions, DialogDescription, DialogTitle } from '@/components/catalyst/dialog';
 import { Button } from '@/components/catalyst/button';
+import { useAppConfig } from '@/hooks/use-app-config';
 
 const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
   ssr: false,
@@ -28,12 +30,22 @@ interface Scenario {
     name: string;
     type: string;
     status?: string;
+    actions?: Array<{
+      protocolId: string;
+      actionId: string;
+      protocol: string;
+      action: string;
+    }>;
   }>;
   metadata?: Record<string, any>;
 }
 
 interface ScenariosBentoProps {
   scenarios: Scenario[];
+  onRefresh?: () => void;
+  onDetailPaneChange?: (isOpen: boolean) => void;
+  initialSelectedId?: string;
+  initialTab?: string;
 }
 
 // Extend Scenario to match BentoItem interface
@@ -54,7 +66,9 @@ interface ScenarioBentoItem extends BentoItem {
   }>;
 }
 
-export default function ScenariosBento({ scenarios: initialScenarios }: ScenariosBentoProps) {
+export default function ScenariosBento({ scenarios: initialScenarios, onRefresh, onDetailPaneChange, initialSelectedId, initialTab }: ScenariosBentoProps) {
+  const router = useRouter();
+  const { studioUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -62,38 +76,171 @@ export default function ScenariosBento({ scenarios: initialScenarios }: Scenario
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
 
+  // Sync scenarios when initialScenarios changes
+  useEffect(() => {
+    console.log('ScenariosBento: scenarios updated, count:', initialScenarios.length, 'IDs:', initialScenarios.map(s => s.id));
+    setScenarios(initialScenarios);
+  }, [initialScenarios]);
+
+  // Notify parent when detail pane state changes
+  useEffect(() => {
+    onDetailPaneChange?.(isDetailPaneOpen);
+  }, [isDetailPaneOpen, onDetailPaneChange]);
+
+  // Handle item clicks - update URL when scenario is selected
+  const handleItemClick = (item: ScenarioBentoItem, tab: string) => {
+    console.log('Scenario clicked:', item.id, 'tab:', tab);
+    router.replace(`/scenarios?id=${item.id}&tab=${tab}`, { scroll: false });
+  };
+
+  // Handle tab changes - update URL to reflect current state
+  const handleTabChange = (tabId: string) => {
+    if (initialSelectedId) {
+      console.log('Tab changed to:', tabId, 'for scenario:', initialSelectedId);
+      // Use replace instead of push to avoid navigation issues
+      router.replace(`/scenarios?id=${initialSelectedId}&tab=${tabId}`, { scroll: false });
+    }
+  };
+
   // Create new scenario
-  const handleCreateScenario = () => {
+  const handleCreateScenario = async () => {
     const newScenario: Scenario = {
-      id: String(Date.now()),
+      id: crypto.randomUUID(),
       name: 'New Scenario',
       description: 'Add a description...',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       steps: [],
     };
-    setScenarios([...scenarios, newScenario]);
-    // Enable title editing for the new scenario
-    setTimeout(() => setEditingTitle(newScenario.id), 100);
-    return newScenario.id;
+
+    try {
+      // POST to backend API
+      const response = await fetch(`${studioUrl}/v1/scenarios`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: newScenario.id,
+          name: newScenario.name,
+          description: newScenario.description,
+          overrides: [], // Backend expects "overrides" not "steps"
+          tags: [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create scenario: ${response.status}`);
+      }
+
+      console.log('Scenario created successfully:', newScenario.id);
+
+      // Refresh from server to get the latest data first
+      if (onRefresh) {
+        onRefresh();
+      }
+
+      // Then navigate to the new scenario with detail pane open
+      // Use a small delay to ensure refresh completes
+      setTimeout(() => {
+        console.log('Navigating to new scenario:', newScenario.id);
+        router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
+      }, 100);
+
+      return newScenario.id;
+    } catch (error) {
+      console.error('Error creating scenario:', error);
+      // Optionally show an error message to the user
+      return null;
+    }
   };
 
   // Update scenario
-  const handleUpdateScenario = (id: string, updates: Partial<Scenario>) => {
+  const handleUpdateScenario = async (id: string, updates: Partial<Scenario>) => {
+    const scenario = scenarios.find(s => s.id === id);
+    if (!scenario) return;
+
+    const updatedScenario = { ...scenario, ...updates, updated_at: new Date().toISOString() };
+
+    // Update local state immediately (optimistic update)
     setScenarios(scenarios.map(s =>
-      s.id === id
-        ? { ...s, ...updates, updated_at: new Date().toISOString() }
-        : s
+      s.id === id ? updatedScenario : s
     ));
+
+    try {
+      // Convert steps back to overrides format for backend
+      const overrides = (updatedScenario.steps || []).flatMap((step, slotIndex) =>
+        (step.actions || []).map((action) => ({
+          id: `${action.protocolId}_${action.actionId}_${slotIndex}`,
+          templateId: `${action.protocolId}_${action.actionId}`,
+          values: {}, // Empty values for now, can be populated later if needed
+          scenarioRelativeSlot: slotIndex + 1,
+          label: action.action,
+          enabled: true,
+          fetchBeforeUse: false,
+          account: { pubkey: '11111111111111111111111111111111' },
+        }))
+      );
+
+      // PATCH to backend API
+      const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: updatedScenario.id,
+          name: updatedScenario.name,
+          description: updatedScenario.description || '',
+          overrides: overrides,
+          tags: [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update scenario: ${response.status}`);
+      }
+
+      console.log('Scenario updated successfully:', id);
+
+      // Only refresh if detail pane is closed
+      if (!isDetailPaneOpen && onRefresh) {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error('Error updating scenario:', error);
+      // Revert the optimistic update on error
+      setScenarios(scenarios.map(s =>
+        s.id === id ? scenario : s
+      ));
+    }
   };
 
   // Delete scenario
-  const handleDeleteScenario = (id: string) => {
-    setScenarios(scenarios.filter(s => s.id !== id));
+  const handleDeleteScenario = async (id: string) => {
+    try {
+      // DELETE from backend API
+      const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete scenario: ${response.status}`);
+      }
+
+      console.log('Scenario deleted successfully:', id);
+
+      // Refresh from server to get the latest data
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error('Error deleting scenario:', error);
+    }
   };
 
-  // Transform scenarios to match BentoItem interface
-  const bentoItems: ScenarioBentoItem[] = scenarios.map((scenario) => ({
+  // Transform scenarios to match BentoItem interface - memoized to prevent infinite loops
+  const bentoItems: ScenarioBentoItem[] = React.useMemo(() => scenarios.map((scenario) => ({
     id: String(scenario.id),
     name: String(scenario.name),
     description: String(scenario.description || 'No description available'),
@@ -107,7 +254,13 @@ export default function ScenariosBento({ scenarios: initialScenarios }: Scenario
     updated_at: scenario.updated_at,
     steps: scenario.steps,
     metadata: scenario.metadata,
-  }));
+  })), [scenarios]);
+
+  // Debug: log bentoItems before passing to GenericBento
+  useEffect(() => {
+    console.log('ScenariosBento: bentoItems ready, count:', bentoItems.length, 'IDs:', bentoItems.map(i => i.id));
+    console.log('ScenariosBento: initialSelectedId:', initialSelectedId, 'initialTab:', initialTab);
+  }, [bentoItems.length, initialSelectedId, initialTab]);
 
   const renderItem = (item: ScenarioBentoItem, isSelected: boolean) => {
     const localIconMap: Record<string, string> = {
@@ -363,6 +516,10 @@ export default function ScenariosBento({ scenarios: initialScenarios }: Scenario
         tabs={tabs}
         defaultTab="overview"
         onSelectionChange={(item) => setIsDetailPaneOpen(item !== null)}
+        onItemClick={handleItemClick}
+        onTabChange={handleTabChange}
+        initialSelectedId={initialSelectedId}
+        initialTab={initialTab}
       />
 
       {/* Add New Scenario Button - Fixed at bottom right, hidden when detail pane is open */}

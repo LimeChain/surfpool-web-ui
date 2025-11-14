@@ -36,6 +36,7 @@ interface Slot {
   id: string;
   height: number;
   actions: {
+    overrideId?: string; // Preserve the override ID from backend
     protocolId: string;
     actionId: string;
     protocol: string;
@@ -57,10 +58,15 @@ interface ScenarioEditorProps {
     type: string;
     status?: string;
     actions?: Array<{
+      overrideId?: string; // Preserve the override ID from backend
       protocolId: string;
       actionId: string;
       protocol: string;
       action: string;
+      account?: any; // Preserve account data from backend
+      fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
+      overrides?: Record<string, any>; // Preserve the values/overrides from backend
+      modifiedFields?: string[]; // Track which fields were modified
     }>;
   }>;
 }
@@ -72,6 +78,7 @@ export default function ScenarioEditor({
   initialSteps,
 }: ScenarioEditorProps) {
   const { rpcUrl, studioUrl } = useAppConfig();
+  const [scenarioTags, setScenarioTags] = React.useState<string[]>([]);
   const [mode, setMode] = useState<'read' | 'edit' | 'play'>('read');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSearchQuery, setActionSearchQuery] = useState('');
@@ -90,6 +97,31 @@ export default function ScenarioEditor({
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
+  const [isFirstSlotsChange, setIsFirstSlotsChange] = useState<boolean>(true);
+
+  // Reset first slots change flag when scenario changes
+  React.useEffect(() => {
+    setIsFirstSlotsChange(true);
+  }, [scenarioId]);
+
+  // Load scenario tags from backend
+  React.useEffect(() => {
+    const loadScenarioTags = async () => {
+      try {
+        const response = await fetch(`${studioUrl}/v1/scenarios/${scenarioId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.scenario?.tags) {
+            setScenarioTags(data.scenario.tags);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading scenario tags:', error);
+      }
+    };
+
+    loadScenarioTags();
+  }, [scenarioId, studioUrl]);
 
   // Load scenario from localStorage on mount
   React.useEffect(() => {
@@ -174,9 +206,97 @@ export default function ScenarioEditor({
 
     localStorage.setItem('scenarios', JSON.stringify(scenarios));
 
-    // Dispatch event to notify other components
-    window.dispatchEvent(new Event('scenarioUpdated'));
-  }, [slots, scenarioId, initialized]);
+    // Only dispatch event and sync with backend after the first change (skip on initial load into editor)
+    if (!isFirstSlotsChange) {
+      // Sync with backend using PATCH endpoint
+      const syncWithBackend = async () => {
+        try {
+          // Convert slots to overrides format for backend
+          const overrides = slots.flatMap((slot) =>
+            slot.actions.map((action) => {
+              const flatValues: Record<string, any> = {};
+
+              if (action.modifiedFields && action.modifiedFields.length > 0) {
+                const overridesData = action.overrides || {};
+
+                action.modifiedFields.forEach((fieldPath) => {
+                  const keys = fieldPath.split('.');
+                  let value: any = overridesData;
+
+                  for (const key of keys) {
+                    if (value && typeof value === 'object' && key in value) {
+                      value = value[key];
+                    } else {
+                      value = undefined;
+                      break;
+                    }
+                  }
+
+                  if (value !== undefined) {
+                    flatValues[fieldPath] = value;
+                  }
+                });
+              }
+
+              const override: any = {
+                // Use existing overrideId if available, otherwise generate one
+                id: action.overrideId || `${action.actionId}_${slot.height}`,
+                templateId: action.actionId, // actionId IS the templateId
+                values: flatValues,
+                scenarioRelativeSlot: slot.height, // 0-indexed to match backend
+                label: action.action,
+                enabled: true,
+                fetchBeforeUse: action.fetchBeforeUse || false,
+              };
+
+              // Only include account if it exists, don't send default values
+              if (action.account) {
+                override.account = action.account;
+              }
+
+              return override;
+            })
+          );
+
+          const patchData = {
+            id: scenarioId,
+            name: scenarioName,
+            description: scenarioDescription,
+            overrides: overrides,
+            tags: scenarioTags, // Preserve existing tags
+          };
+
+          console.log('🔍 PATCH request data:', JSON.stringify(patchData, null, 2));
+
+          const response = await fetch(`${studioUrl}/v1/scenarios/${scenarioId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(patchData),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Failed to sync scenario with backend:', response.status, errorText);
+          } else {
+            console.log('Scenario synced with backend successfully');
+          }
+        } catch (error) {
+          console.error('Error syncing scenario with backend:', error);
+          if (error instanceof Error) {
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+          }
+        }
+      };
+
+      syncWithBackend();
+      window.dispatchEvent(new Event('scenarioUpdated'));
+    } else {
+      setIsFirstSlotsChange(false);
+    }
+  }, [slots, scenarioId, scenarioName, scenarioDescription, initialized, isFirstSlotsChange, studioUrl]);
 
   // Debug: Log selection changes
   React.useEffect(() => {
@@ -670,27 +790,31 @@ export default function ScenarioEditor({
           });
         }
 
-        // Ensure account is present, use a default if missing
-        const account = action.account || { pubkey: '11111111111111111111111111111111' };
-
         // Log account data for debugging
         console.log('🔍 Action account data:', {
           protocolId: action.protocolId,
           actionId: action.actionId,
-          account: account,
+          account: action.account,
           hasAccount: !!action.account,
         });
 
-        return {
-          id: `${action.protocolId}_${action.actionId}_${slot.height}`,
-          templateId: `${action.protocolId}_${action.actionId}`,
+        const override: any = {
+          // Use existing overrideId if available, otherwise generate one
+          id: action.overrideId || `${action.actionId}_${slot.height}`,
+          templateId: action.actionId, // actionId IS the templateId
           values: flatValues,
-          scenarioRelativeSlot: slot.height + 1, // 1-indexed for user-facing display
+          scenarioRelativeSlot: slot.height, // 0-indexed to match backend
           label: action.action,
           enabled: true,
           fetchBeforeUse: action.fetchBeforeUse || false,
-          account: account,
         };
+
+        // Only include account if it exists, don't send default values
+        if (action.account) {
+          override.account = action.account;
+        }
+
+        return override;
       })
     );
 
@@ -875,41 +999,93 @@ export default function ScenarioEditor({
         )}
 
         {/* Timeline */}
-        <div className="relative flex min-h-full items-start justify-center pt-12 pb-64">
-          <div className="flex">
-            {slots.map((slot, index) => (
-              <React.Fragment key={slot.id}>
-                <div className="group/slot-wrapper flex">
+        <div className={`relative flex min-h-full items-start pt-12 pb-64 ${mode === 'play' ? 'justify-center' : 'justify-start pl-12'}`}>
+          <div className={mode === 'play' ? 'relative min-h-[600px]' : 'flex items-start gap-12'}>
+            <AnimatePresence mode="popLayout">
+            {slots.map((slot, index) => {
+              // In play mode, determine slot visibility and state
+              const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
+              const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
+              const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
+              const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot;
+
+              // In play mode, only show previous, current, and next slots
+              if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
+                return null;
+              }
+
+              // Calculate position for play mode carousel
+              let playModePosition = 0;
+              if (mode === 'play') {
+                if (isPreviousSlot) playModePosition = -400; // Previous slot offset to the left
+                if (isCurrentSlot) playModePosition = 0; // Current slot centered
+                if (isNextSlot) playModePosition = 400; // Next slot offset to the right
+              }
+
+              return (
+                <motion.div
+                  key={slot.id}
+                  className="group/slot-wrapper flex"
+                  style={mode === 'play' ? { position: 'absolute', left: '50%' } : {}}
+                  initial={
+                    mode === 'play' && !hasAnimated.has(slot.id)
+                      ? { x: 400 - (shouldExpand ? 150 : 40) }
+                      : false
+                  }
+                  animate={mode === 'play' ? { x: playModePosition - (shouldExpand ? 150 : 40) } : { x: 0 }}
+                  transition={{
+                    x: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
+                  }}
+                >
                   <motion.div
-                    layout
-                    initial={hasAnimated.has(slot.id) ? false : { opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
+                    layout={mode !== 'play'}
+                    initial={
+                      hasAnimated.has(slot.id)
+                        ? false
+                        : mode === 'play' && (isCurrentSlot || isNextSlot)
+                          ? { opacity: 0, scale: 0.85 }
+                          : { opacity: 0, scale: 0.9 }
+                    }
+                    animate={{
+                      opacity: isPreviousSlot || isNextSlot ? 0.3 : 1,
+                      scale: isPreviousSlot || isNextSlot ? 0.85 : 1,
+                      filter: isPreviousSlot || isNextSlot ? 'blur(2px)' : 'blur(0px)',
+                    }}
+                    exit={{ opacity: 0, scale: 0.85 }}
                     transition={{
                       layout: { type: 'spring', stiffness: 350, damping: 30 },
-                      opacity: { duration: 0.3 },
-                      scale: { type: 'spring', stiffness: 400, damping: 25 },
+                      opacity: { duration: 0.5, ease: 'easeInOut' },
+                      scale: { duration: 0.5, ease: 'easeInOut' },
+                      filter: { duration: 0.5 },
                     }}
                     className="flex flex-col gap-3"
                   >
                     {/* Slot Height Label */}
                     <div className="flex items-center justify-center">
-                      <span className="font-mono text-sm text-zinc-400">Slot {slot.height + 1}</span>
+                      <span className="font-mono text-sm text-zinc-400">{slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}</span>
                     </div>
 
                     {/* Slot Card */}
-                    <div
-                      className={`group relative flex-shrink-0 transition-all ${selectedSlotId === slot.id && mode === 'edit' ? 'w-[300px]' : 'w-[80px]'}`}
+                    <motion.div
+                      className="group relative flex-shrink-0"
+                      animate={{
+                        width: shouldExpand ? 300 : 80,
+                      }}
+                      transition={{
+                        width: { duration: 0.35, ease: 'easeInOut' },
+                      }}
                     >
                       <div
-                        className={`cursor-pointer rounded-lg border-2 p-6 transition-all ${
-                          // Play mode styling
-                          mode === 'play' && index === currentPlaybackSlot
-                            ? 'min-h-[280px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
-                            : mode === 'play' && index < currentPlaybackSlot
-                              ? 'min-h-[280px] border-green-500 bg-green-500/10'
+                        className={`cursor-pointer rounded-lg border-2 p-6 transition-all overflow-hidden ${
+                          // Play mode styling - current slot
+                          mode === 'play' && isCurrentSlot
+                            ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
+                            : // Play mode styling - previous/next slots (dimmed)
+                              mode === 'play' && (isPreviousSlot || isNextSlot)
+                              ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
                               : // Edit mode styling
                                 selectedSlotId === slot.id && mode === 'edit'
-                                ? 'min-h-[280px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
+                                ? 'min-h-[450px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
                                 : // Default styling
                                   'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
                         }`}
@@ -923,7 +1099,15 @@ export default function ScenarioEditor({
                           }
                         }}
                       >
-                        {selectedSlotId === slot.id && mode === 'edit' ? (
+                        <AnimatePresence mode="wait">
+                        <motion.div
+                          key={shouldExpand ? 'expanded' : 'collapsed'}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.2, delay: shouldExpand ? 0.2 : 0 }}
+                        >
+                        {shouldExpand ? (
                           <>
                             {/* Actions in this slot - Expanded View */}
                             {slot.actions.length === 0 ? (
@@ -1045,6 +1229,8 @@ export default function ScenarioEditor({
                             )}
                           </>
                         )}
+                        </motion.div>
+                        </AnimatePresence>
                       </div>
 
                       {/* Delete Button - only shown when slot is selected and in Edit mode */}
@@ -1060,11 +1246,11 @@ export default function ScenarioEditor({
                           <TrashIcon className="h-4 w-4" />
                         </button>
                       )}
-                    </div>
+                    </motion.div>
                   </motion.div>
 
                   {/* Gap with insert button - shown when hovering the slot before OR the gap itself, only in Edit mode */}
-                  {mode === 'edit' ? (
+                  {mode === 'edit' && (
                     <div className="group/insert relative" style={{ width: '48px' }}>
                       {/* Vertical line - shorter and positioned lower */}
                       <div
@@ -1082,12 +1268,11 @@ export default function ScenarioEditor({
                         <PlusIcon className="h-5 w-5" />
                       </button>
                     </div>
-                  ) : (
-                    <div style={{ width: '48px' }} />
                   )}
-                </div>
-              </React.Fragment>
-            ))}
+                </motion.div>
+              );
+            })}
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -1676,7 +1861,7 @@ export default function ScenarioEditor({
                               isExecuted ? 'text-green-500' : 'text-zinc-400'
                             }`}
                           >
-                            SLOT {index}
+                            {slots.length < 5 ? `SLOT ${index + 1}` : `${index + 1}`}
                           </span>
                           {/* Small triangle tick pointing down */}
                           <div
