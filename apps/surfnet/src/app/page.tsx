@@ -38,27 +38,58 @@ export default function Home() {
 
   useEffect(() => {
     const hostname = window.location.hostname;
+    const href = window.location.href;
     const searchParams = new URLSearchParams(window.location.search);
     let detectedNetworkId = 'default';
 
-    // On localhost, check for query parameter first (e.g., localhost:3001/?simd-0296)
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // Debug logging for iOS
+    console.log('=== Network Detection Debug ===');
+    console.log('Full URL:', href);
+    console.log('Hostname:', hostname);
+    console.log('Search params:', window.location.search);
+    console.log('Query params:', Array.from(searchParams.entries()));
+
+    // Check if hostname is an IP address (IPv4 pattern)
+    const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    console.log('Is IP address:', isIpAddress);
+
+    // On localhost or IP address, check for query parameter first (e.g., localhost:3001/?simd-0296)
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || isIpAddress) {
+      console.log('Using query parameter detection (localhost/IP)');
       // Get the first query parameter key (e.g., "simd-0296" from "?simd-0296")
       const params = Array.from(searchParams.keys());
+      console.log('Query param keys:', params);
       if (params.length > 0) {
         detectedNetworkId = params[0];
+        console.log('Detected from query param:', detectedNetworkId);
+        // Store in localStorage for persistence
+        localStorage.setItem('surfnet-network-id', detectedNetworkId);
+      } else {
+        // Try to restore from localStorage if no query param
+        const stored = localStorage.getItem('surfnet-network-id');
+        if (stored) {
+          detectedNetworkId = stored;
+          console.log('Restored from localStorage:', detectedNetworkId);
+        }
       }
     } else {
+      console.log('Using subdomain detection (domain)');
       // Extract subdomain (e.g., "simd-0296" from "simd-0296.surfnet.dev")
       const parts = hostname.split('.');
+      console.log('Domain parts:', parts);
       if (parts.length >= 3) {
         // Has subdomain (e.g., ["simd-0296", "surfnet", "dev"])
         detectedNetworkId = parts[0];
+        console.log('Detected from subdomain:', detectedNetworkId);
+        // Store in localStorage for persistence
+        localStorage.setItem('surfnet-network-id', detectedNetworkId);
       }
     }
 
+    console.log('Final network ID:', detectedNetworkId);
+    console.log('===============================');
+
     setNetworkId(detectedNetworkId);
-    console.log(`Loading config for network: ${detectedNetworkId}`);
 
     // Load config.json and index.md in parallel
     Promise.all([
@@ -222,7 +253,7 @@ export default function Home() {
         <div className="border-b border-zinc-800" />
 
         {/* Two-column Layout */}
-        <div className="grid grid-cols-1 items-start gap-8 py-8 px-4 lg:grid-cols-[1fr_450px] bg-zinc-950">
+        <div className="flex flex-col-reverse items-start gap-8 py-8 px-4 lg:grid lg:grid-cols-[1fr_450px] bg-zinc-950">
           {/* Main Content */}
           <div className="w-full">
             <div className="space-y-6">
