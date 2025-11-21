@@ -8,22 +8,25 @@ interface CompactSlotWidgetProps {
   className?: string;
 }
 
-const TOTAL_CIRCLES = 72; // 3 rows x 24 columns
+const TOTAL_BARS = 30; // 30 bars on desktop
 const ACTIVE_SLOT_COLOR = '#62D595';
 const INACTIVE_SLOT_COLOR = '#2F2F32';
+const INACTIVE_SLOT_COLOR_MOBILE_LIGHT = '#18181b'; // zinc-900
+const INACTIVE_SLOT_COLOR_MOBILE_DARK = '#18181b'; // zinc-900
 const DISCONNECTED_SLOT_COLOR = '#ef4444'; // red-500
 
 export default function CompactSlotWidget({ className = '' }: CompactSlotWidgetProps) {
+  const [mounted, setMounted] = useState(false);
   const { rpcUrl, wsUrl } = useAppConfig();
   const [slotHeight, setSlotHeight] = useState<number>(0);
   const [epoch, setEpoch] = useState<number>(0);
   const [epochProgress, setEpochProgress] = useState<number>(0);
-  const [currentRect, setCurrentRect] = useState<number>(0);
-  const [filledRects, setFilledRects] = useState<Set<number>>(new Set());
+  const [activeBarIndex, setActiveBarIndex] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
   const [isDisconnected, setIsDisconnected] = useState<boolean>(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const lastSlotReceivedRef = useRef<number>(Date.now());
   const isClockPausedRef = useRef<boolean>(false);
 
@@ -138,25 +141,9 @@ export default function CompactSlotWidget({ className = '' }: CompactSlotWidgetP
         const progress = (slotIndexInEpoch / slotsInEpoch) * 100;
         setEpochProgress(progress);
 
-        // Update animation - move to next circle and add current to trail
-        setCurrentRect((prev) => {
-          const nextRect = (prev + 1) % TOTAL_CIRCLES;
-
-          // Add the previous circle to trail
-          setFilledRects((prevRects) => {
-            const nextRects = new Set(prevRects);
-            nextRects.add(prev);
-
-            // Reset trail if we're at the end
-            if (nextRect === 0) {
-              return new Set();
-            }
-
-            return nextRects;
-          });
-
-          return nextRect;
-        });
+        // Calculate which bar should be active based on slot % 20
+        const barIndex = slotIndexInEpoch % TOTAL_BARS;
+        setActiveBarIndex(barIndex);
       }
     };
 
@@ -242,26 +229,60 @@ export default function CompactSlotWidget({ className = '' }: CompactSlotWidgetP
     return () => clearInterval(blinkInterval);
   }, [isClockPaused]);
 
-  // Helper to determine circle color with blinking effect
-  const getCircleColor = (index: number) => {
-    const isFilled = index === currentRect || filledRects.has(index);
+  // Detect dark mode
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    };
 
-    // If disconnected, show red for filled dots
+    checkDarkMode();
+
+    // Watch for theme changes
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Hydration fix - set mounted after all hooks
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Helper to determine bar color with blinking effect
+  const getCircleColor = (index: number, isMobile: boolean = false) => {
+    // Fill all bars from 0 to activeBarIndex (inclusive)
+    const isActive = index <= activeBarIndex;
+
+    // Determine inactive color based on screen size and theme
+    const inactiveColor = isMobile
+      ? (isDarkMode ? INACTIVE_SLOT_COLOR_MOBILE_DARK : INACTIVE_SLOT_COLOR_MOBILE_LIGHT)
+      : INACTIVE_SLOT_COLOR;
+
+    // If disconnected, show red for filled bars
     if (isDisconnected) {
-      return isFilled ? DISCONNECTED_SLOT_COLOR : INACTIVE_SLOT_COLOR;
+      return isActive ? DISCONNECTED_SLOT_COLOR : inactiveColor;
     }
 
-    if (!isFilled) {
-      return INACTIVE_SLOT_COLOR;
+    if (!isActive) {
+      return inactiveColor;
     }
 
     // Apply blinking effect when clock is paused
     if (isClockPaused && dimmingPhase === 0) {
-      return INACTIVE_SLOT_COLOR; // Blink off
+      return inactiveColor; // Blink off
     }
 
     return ACTIVE_SLOT_COLOR;
   };
+
+  // Don't render until mounted (prevents hydration errors)
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <div
@@ -269,42 +290,38 @@ export default function CompactSlotWidget({ className = '' }: CompactSlotWidgetP
         isDisconnected
           ? 'border-red-500/30 bg-red-900/20'
           : 'border-zinc-200/40 bg-white max-lg:bg-zinc-100 dark:border-zinc-700/30 dark:bg-zinc-900 max-lg:dark:bg-zinc-800'
-      } ${className} gap-2 px-3 py-2.5 max-w-[280px] lg:gap-3 lg:px-4 lg:py-2 lg:w-[400px] lg:max-w-none`}
+      } ${className} gap-2 px-3 py-2.5 max-w-[290px] lg:gap-3 lg:px-4 lg:py-2 lg:w-[410px] lg:max-w-none`}
     >
-      {/* Mini Slot Grid - 3 rows x 6 columns on mobile, 24 columns on desktop */}
-      <div className="flex flex-col gap-0.5 lg:gap-0.5">
-        {[0, 1, 2].map((row) => (
-          <div key={row} className="flex gap-0.5 lg:gap-0.5">
-            {/* Mobile: 6 columns */}
-            {Array.from({ length: 6 }).map((_, col) => {
-              const index = row * 24 + col * 4; // Sample every 4th dot to maintain animation continuity
-              const color = getCircleColor(index);
-              return (
-                <div
-                  key={`${row}-${col}`}
-                  className="h-1.5 w-1.5 rounded-full lg:hidden"
-                  style={{
-                    backgroundColor: color,
-                  }}
-                />
-              );
-            })}
-            {/* Desktop: 24 columns */}
-            {Array.from({ length: 24 }).map((_, col) => {
-              const index = row * 24 + col;
-              const color = getCircleColor(index);
-              return (
-                <div
-                  key={`${row}-${col}-desktop`}
-                  className="hidden h-1 w-1 rounded-full lg:block"
-                  style={{
-                    backgroundColor: color,
-                  }}
-                />
-              );
-            })}
-          </div>
-        ))}
+      {/* Mini Slot Grid - Vertical bars: 6 bars on mobile, 30 bars on desktop */}
+      <div className="flex gap-0.5 lg:gap-0.5">
+        {/* Mobile: 6 bars */}
+        {Array.from({ length: 6 }).map((_, col) => {
+          const index = col * 5; // Sample every 5th position to maintain animation continuity
+          const color = getCircleColor(index, true);
+          return (
+            <div
+              key={`bar-${col}`}
+              className="h-[18px] w-1.5 rounded-sm lg:hidden"
+              style={{
+                backgroundColor: color,
+              }}
+            />
+          );
+        })}
+        {/* Desktop: 30 bars */}
+        {Array.from({ length: 30 }).map((_, col) => {
+          const index = col;
+          const color = getCircleColor(index);
+          return (
+            <div
+              key={`bar-${col}-desktop`}
+              className="hidden h-[14px] w-1 rounded-sm lg:block"
+              style={{
+                backgroundColor: color,
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Slot Height */}
