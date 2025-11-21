@@ -1,4 +1,4 @@
-name: Build and Upload Studio UI to S3
+name: Build and Upload Apps to S3
 
 on:
   push:
@@ -13,32 +13,37 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Next.js app
-        run: |
-          npm run build
+      - name: Build Studio app
+        run: pnpm --filter studio run build
 
       - name: Zip dist folder
         run: |
-          cd out
-          zip -r ../studio-ui-dist.zip .
+          cd apps/studio/out
+          zip -r ../../../studio-ui-dist.zip .
 
-      - name: ls
+      - name: List build artifacts
         run: |
-          ls
+          ls -la
+          ls -la apps/studio/
 
       - name: Read version from package.json
         id: pkg
         run: |
-          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+          echo "VERSION=$(jq -r .version apps/studio/package.json)" >> $GITHUB_OUTPUT
 
       - name: Upload zip to S3 (versioned)
         run: |
@@ -51,6 +56,35 @@ jobs:
       - name: Upload zip to S3 (latest)
         run: |
           aws s3 cp studio-ui-dist.zip s3://${{ secrets.S3_BUCKET_NAME }}/surfpool-studio-ui/latest.zip --acl public-read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Build Surfnet app
+        run: pnpm --filter surfnet run build
+
+      - name: Zip Surfnet dist folder
+        run: |
+          cd apps/surfnet/out
+          zip -r ../../../surfnet-dist.zip .
+
+      - name: Read Surfnet version from package.json
+        id: surfnet_pkg
+        run: |
+          echo "VERSION=$(jq -r .version apps/surfnet/package.json)" >> $GITHUB_OUTPUT
+
+      - name: Upload Surfnet zip to S3 (versioned)
+        run: |
+          aws s3 cp surfnet-dist.zip s3://${{ secrets.S3_BUCKET_NAME }}/surfnet/v${{ steps.surfnet_pkg.outputs.VERSION }}.zip --acl public-read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Upload Surfnet zip to S3 (latest)
+        run: |
+          aws s3 cp surfnet-dist.zip s3://${{ secrets.S3_BUCKET_NAME }}/surfnet/latest.zip --acl public-read
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
