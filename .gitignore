@@ -41,3 +41,16 @@ yarn-error.log*
 next-env.d.ts
 
 package-lock.json
+apps/studio/.next
+
+apps/studio/node_modules
+
+apps/surfnet/.next
+
+apps/surfnet/node_modules
+packages/shared/node_modules
+
+packages/svm/node_modules
+packages/ui/node_modules
+apps/studio/out
+apps/surfnet/out
