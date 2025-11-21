@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CompactSlotWidget, Faucet, solanaWebSocketService } from '@surfpool/svm';
@@ -34,44 +35,47 @@ export default function Home() {
   const [markdown, setMarkdown] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
+  const [networkId, setNetworkId] = useState<string>('default');
+
   useEffect(() => {
     const hostname = window.location.hostname;
     const searchParams = new URLSearchParams(window.location.search);
-    let networkId = 'default';
+    let detectedNetworkId = 'default';
 
     // On localhost, check for query parameter first (e.g., localhost:3001/?simd-0296)
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       // Get the first query parameter key (e.g., "simd-0296" from "?simd-0296")
       const params = Array.from(searchParams.keys());
       if (params.length > 0) {
-        networkId = params[0];
+        detectedNetworkId = params[0];
       }
     } else {
       // Extract subdomain (e.g., "simd-0296" from "simd-0296.surfnet.dev")
       const parts = hostname.split('.');
       if (parts.length >= 3) {
         // Has subdomain (e.g., ["simd-0296", "surfnet", "dev"])
-        networkId = parts[0];
+        detectedNetworkId = parts[0];
       }
     }
 
-    console.log(`Loading config for network: ${networkId}`);
+    setNetworkId(detectedNetworkId);
+    console.log(`Loading config for network: ${detectedNetworkId}`);
 
     // Load config.json and index.md in parallel
     Promise.all([
-      fetch(`/${networkId}/config.json`)
+      fetch(`/${detectedNetworkId}/config.json`)
         .then((res) => {
           if (!res.ok) {
-            console.warn(`Config file ${networkId}/config.json not found, falling back to default`);
+            console.warn(`Config file ${detectedNetworkId}/config.json not found, falling back to default`);
             return fetch('/default/config.json');
           }
           return res;
         })
         .then((res) => res.json()),
-      fetch(`/${networkId}/index.md`)
+      fetch(`/${detectedNetworkId}/index.md`)
         .then((res) => {
           if (!res.ok) {
-            console.warn(`Markdown file ${networkId}/index.md not found, falling back to default`);
+            console.warn(`Markdown file ${detectedNetworkId}/index.md not found, falling back to default`);
             return fetch('/default/index.md');
           }
           return res;
@@ -112,10 +116,33 @@ export default function Home() {
     );
   }
 
+  const pageTitle = `${config.network_name} - Surfnet`;
+  const ogImageUrl = `/og/${networkId}.png`;
+
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Main wrapper with vertical lines */}
-      <div className="mx-auto max-w-[1265px] min-h-screen border-x border-zinc-800">
+    <>
+      <Head>
+        <title>{pageTitle}</title>
+        <meta name="description" content={config.network_description} />
+
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={config.network_name} />
+        <meta property="og:description" content={config.network_description} />
+        <meta property="og:image" content={ogImageUrl} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={config.network_name} />
+        <meta name="twitter:description" content={config.network_description} />
+        <meta name="twitter:image" content={ogImageUrl} />
+      </Head>
+
+      <div className="min-h-screen bg-black text-white">
+        {/* Main wrapper with vertical lines */}
+        <div className="mx-auto max-w-[1265px] min-h-screen border-x border-zinc-800">
         {/* Banner Header */}
         <div className="relative h-[300px] w-full lg:h-[400px]">
           <img
@@ -209,6 +236,7 @@ export default function Home() {
         {/* Footer */}
         <Footer />
       </div>
-    </div>
+      </div>
+    </>
   );
 }

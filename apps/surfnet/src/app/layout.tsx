@@ -4,6 +4,15 @@ import '@/styles/tailwind.css';
 export const metadata: Metadata = {
   title: 'Surfnet',
   description: 'Surfnet - A high-performance Solana-based testnet',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://surfnet.dev'),
+  openGraph: {
+    type: 'website',
+    siteName: 'Surfnet',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    site: '@surfnet',
+  },
 };
 
 export default function RootLayout({
