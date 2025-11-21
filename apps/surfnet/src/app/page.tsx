@@ -25,7 +25,28 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/network-config.json')
+    // Get subdomain from hostname
+    const hostname = window.location.hostname;
+    let configFile = 'default.json';
+
+    // Extract subdomain (e.g., "simd-0296" from "simd-0296.surfnet.dev")
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
+      // Has subdomain (e.g., ["simd-0296", "surfnet", "dev"])
+      const subdomain = parts[0];
+      configFile = `${subdomain}.json`;
+    }
+
+    console.log(`Loading config from: ${configFile}`);
+
+    fetch(`/${configFile}`)
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`Config file ${configFile} not found, falling back to default.json`);
+          return fetch('/default.json');
+        }
+        return res;
+      })
       .then((res) => res.json())
       .then((data) => {
         setConfig(data);
