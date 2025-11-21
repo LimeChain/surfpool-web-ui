@@ -12,12 +12,14 @@ async function generateOGImage(networkId, config) {
   console.log(`Generating OG image for ${config.network_name}...`)
 
   try {
-    // Read banner and logo
+    // Read banner, logo, and txtx logo
     const bannerPath = join(publicDir, config.network_banner_image_url)
     const logoPath = join(publicDir, config.network_logo_image_url)
+    const txtxLogoPath = join(publicDir, 'txtx.svg')
 
     const banner = await readFile(bannerPath)
     const logo = await readFile(logoPath)
+    const txtxLogo = await readFile(txtxLogoPath)
 
     // Load font
     const fontPath = join(__dirname, 'font.ttf')
@@ -87,7 +89,6 @@ async function generateOGImage(networkId, config) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  zIndex: 10,
                   gap: 32,
                   padding: '0 120px',
                   width: '100%',
@@ -99,10 +100,10 @@ async function generateOGImage(networkId, config) {
                     props: {
                       src: `data:image/jpeg;base64,${logo.toString('base64')}`,
                       style: {
-                        width: 180,
-                        height: 180,
-                        borderRadius: 24,
-                        border: '8px solid white',
+                        width: 150,
+                        height: 150,
+                        borderRadius: 20,
+                        border: '6px solid white',
                         boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
                       }
                     }
@@ -112,7 +113,7 @@ async function generateOGImage(networkId, config) {
                     type: 'div',
                     props: {
                       style: {
-                        fontSize: 72,
+                        fontSize: 60,
                         fontWeight: 700,
                         fontFamily: 'Montserrat',
                         color: 'white',
@@ -123,22 +124,87 @@ async function generateOGImage(networkId, config) {
                       children: config.network_name
                     }
                   },
-                  // RPC URL
+                  // RPC URL with green status dot
                   {
                     type: 'div',
                     props: {
                       style: {
-                        fontSize: 36,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 14,
+                        fontSize: 32,
                         fontWeight: 700,
                         fontFamily: 'Montserrat',
                         color: 'rgba(255,255,255,0.8)',
                         textAlign: 'center',
                         textShadow: '0 2px 8px rgba(0,0,0,0.8)',
                         backgroundColor: 'rgba(0,0,0,0.4)',
-                        padding: '16px 32px',
+                        padding: '14px 28px',
                         borderRadius: 12,
                       },
-                      children: config.rpc_url
+                      children: [
+                        // Green status dot with glow
+                        {
+                          type: 'div',
+                          props: {
+                            style: {
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              position: 'relative',
+                            },
+                            children: [
+                              // Outer glow
+                              {
+                                type: 'div',
+                                props: {
+                                  style: {
+                                    position: 'absolute',
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: '50%',
+                                    backgroundColor: 'rgba(98, 213, 149, 0.2)',
+                                  }
+                                }
+                              },
+                              // Middle glow
+                              {
+                                type: 'div',
+                                props: {
+                                  style: {
+                                    position: 'absolute',
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: '50%',
+                                    backgroundColor: 'rgba(98, 213, 149, 0.4)',
+                                  }
+                                }
+                              },
+                              // Core dot
+                              {
+                                type: 'div',
+                                props: {
+                                  style: {
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: '50%',
+                                    backgroundColor: '#62D595',
+                                    boxShadow: '0 0 8px rgba(98, 213, 149, 0.6)',
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        // RPC URL text
+                        {
+                          type: 'div',
+                          props: {
+                            style: {},
+                            children: config.rpc_url
+                          }
+                        }
+                      ]
                     }
                   }
                 ]
@@ -161,8 +227,26 @@ async function generateOGImage(networkId, config) {
       }
     )
 
-    // Convert SVG to PNG
-    const png = await sharp(Buffer.from(svg))
+    // Convert SVG to PNG first
+    let pngBuffer = await sharp(Buffer.from(svg))
+      .png()
+      .toBuffer()
+
+    // Convert txtx SVG to PNG for compositing
+    const txtxPngBuffer = await sharp(txtxLogo)
+      .resize(120, null, { fit: 'contain' })
+      .png()
+      .toBuffer()
+
+    // Composite txtx logo onto the main image (bottom-right corner)
+    const finalPng = await sharp(pngBuffer)
+      .composite([
+        {
+          input: txtxPngBuffer,
+          top: 630 - 55 - 30, // 55px from bottom, assuming ~30px height after resize
+          left: 1200 - 50 - 120, // 50px from right, 120px width
+        }
+      ])
       .png()
       .toBuffer()
 
@@ -171,7 +255,7 @@ async function generateOGImage(networkId, config) {
 
     // Write PNG file
     const outputPath = join(ogDir, `${networkId}.png`)
-    await writeFile(outputPath, png)
+    await writeFile(outputPath, finalPng)
 
     console.log(`✓ Generated ${outputPath}`)
   } catch (error) {

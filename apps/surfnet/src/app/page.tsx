@@ -253,7 +253,7 @@ export default function Home() {
         <div className="border-b border-zinc-800" />
 
         {/* Two-column Layout */}
-        <div className="flex flex-col-reverse items-start gap-8 py-8 px-4 lg:grid lg:grid-cols-[1fr_450px] bg-zinc-950">
+        <div className="flex flex-col-reverse gap-8 py-8 px-4 lg:grid lg:grid-cols-[1fr_450px] lg:gap-8 bg-zinc-950">
           {/* Main Content */}
           <div className="w-full">
             <div className="space-y-6">
@@ -267,13 +267,13 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Sidebar - Fixed 450px width like studio */}
-          <div className="w-full lg:w-[450px] lg:max-w-[450px] lg:min-w-[450px]">
-            <div className="space-y-4">
+          {/* Sidebar - Sticky faucet (desktop only) */}
+          <aside className="w-full lg:w-[450px]">
+            <div className="lg:sticky lg:top-4">
               {/* Faucet Widget */}
               {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} />}
             </div>
-          </div>
+          </aside>
         </div>
 
         {/* Footer */}
