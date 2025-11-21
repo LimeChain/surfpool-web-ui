@@ -1,0 +1,21 @@
+{
+  "network_name": "SIMD-0296 Surfnet",
+  "network_handle": "Solana Foundation",
+  "network_description": "Official Solana Foundation Surfnet for SIMD-0296: Larger Transaction Sizes. Test transactions up to 4096 bytes with advanced cryptographic proofs and complex on-chain operations.",
+  "network_url": "https://simd-0296.surfnet.dev:8899",
+  "rpc_url": "https://simd-0296.surfnet.dev:8899",
+  "ws_url": "https://simd-0296.surfnet.dev:8900",
+  "network_banner_image_url": "simd-0296/banner.jpg",
+  "network_logo_image_url": "simd-0296/logo.jpg",
+  "primary_color": "#8B5CF6",
+  "secondary_color": "#EC4899",
+  "primary_button": {
+    "label": "Open SIMD-0296",
+    "url": "https://github.com/solana-foundation/solana-improvement-documents/pull/296",
+    "color": "#8B5CF6"
+  },
+  "faucet_enabled": true,
+  "faucet_amount_sol": 10,
+  "faucet_daily_limit_sol": 100,
+  "faucet_cooldown_minutes": 5
+}
