@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Head from 'next/head';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CompactSlotWidget, Faucet, solanaWebSocketService } from '@surfpool/svm';
@@ -93,12 +92,48 @@ export default function Home() {
       });
   }, []);
 
-  // Update page title when config loads
+  // Update page title and meta tags when config loads
   useEffect(() => {
     if (config) {
-      document.title = `Surfnet - ${config.network_name}`;
+      const pageTitle = `${config.network_name} - Surfnet`;
+      const ogImageUrl = `${window.location.origin}/og/${networkId}.png`;
+
+      // Update document title
+      document.title = pageTitle;
+
+      // Helper function to update or create meta tag
+      const setMetaTag = (property: string, content: string, isProperty = true) => {
+        const attribute = isProperty ? 'property' : 'name';
+        let element = document.querySelector(`meta[${attribute}="${property}"]`);
+
+        if (!element) {
+          element = document.createElement('meta');
+          element.setAttribute(attribute, property);
+          document.head.appendChild(element);
+        }
+
+        element.setAttribute('content', content);
+      };
+
+      // Update meta description
+      setMetaTag('description', config.network_description, false);
+
+      // Update Open Graph tags
+      setMetaTag('og:type', 'website');
+      setMetaTag('og:title', config.network_name);
+      setMetaTag('og:description', config.network_description);
+      setMetaTag('og:image', ogImageUrl);
+      setMetaTag('og:image:width', '1200');
+      setMetaTag('og:image:height', '630');
+      setMetaTag('og:url', window.location.href);
+
+      // Update Twitter Card tags
+      setMetaTag('twitter:card', 'summary_large_image', false);
+      setMetaTag('twitter:title', config.network_name, false);
+      setMetaTag('twitter:description', config.network_description, false);
+      setMetaTag('twitter:image', ogImageUrl, false);
     }
-  }, [config]);
+  }, [config, networkId]);
 
   if (loading) {
     return (
@@ -116,33 +151,10 @@ export default function Home() {
     );
   }
 
-  const pageTitle = `${config.network_name} - Surfnet`;
-  const ogImageUrl = `/og/${networkId}.png`;
-
   return (
-    <>
-      <Head>
-        <title>{pageTitle}</title>
-        <meta name="description" content={config.network_description} />
-
-        {/* Open Graph / Facebook */}
-        <meta property="og:type" content="website" />
-        <meta property="og:title" content={config.network_name} />
-        <meta property="og:description" content={config.network_description} />
-        <meta property="og:image" content={ogImageUrl} />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-
-        {/* Twitter */}
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={config.network_name} />
-        <meta name="twitter:description" content={config.network_description} />
-        <meta name="twitter:image" content={ogImageUrl} />
-      </Head>
-
-      <div className="min-h-screen bg-black text-white">
-        {/* Main wrapper with vertical lines */}
-        <div className="mx-auto max-w-[1265px] min-h-screen border-x border-zinc-800">
+    <div className="min-h-screen bg-black text-white">
+      {/* Main wrapper with vertical lines */}
+      <div className="mx-auto max-w-[1265px] min-h-screen border-x border-zinc-800">
         {/* Banner Header */}
         <div className="relative h-[300px] w-full lg:h-[400px]">
           <img
@@ -236,7 +248,6 @@ export default function Home() {
         {/* Footer */}
         <Footer />
       </div>
-      </div>
-    </>
+    </div>
   );
 }
