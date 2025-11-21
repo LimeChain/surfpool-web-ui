@@ -2,7 +2,7 @@
 
 import { convertToRawAmount, truncateAddress as truncateAddressUtil } from './lib/address-utils';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
-import { PlayIcon, PlusIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, PlusIcon, SparklesIcon } from '@heroicons/react/24/solid';
 import { generateKeyPair, lamports } from '@solana/kit';
 import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
@@ -46,9 +46,10 @@ const DEFAULT_LAMPORTS_TO_FUND = LAMPORTS_PER_SOL; // 1 SOL
 
 interface FaucetProps {
   rpcUrl: string;
+  primaryColor?: string;
 }
 
-export default function Faucet({ rpcUrl }: FaucetProps) {
+export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps) {
   const defaultFundingRequest = {
     token: {
       ticker: 'SOL',
@@ -198,7 +199,7 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
         console.log(``);
 
         const is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
-      
+
         const accountBalance = await getAccountBalance(recipient.address || '', rpcUrl);  // if > 0, the account already exists else account not exists
         if (!accountBalance && is_spl_token) {
           try {
@@ -207,14 +208,14 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
           } catch (error) {
             console.error('Error in RPC request:', error);
           }
-        }  
+        }
         let rpcRequest: any = {};
         // now that the account exists lets see if we need to fund it with spl-tokens or lamports
         if (tokenFundingRequest.token.address && is_spl_token){
           const tokenAcountInfo = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
           const balanceUiAmount = Number(tokenAcountInfo?.tokenAmount?.uiAmount) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
-          const totalUiAmount = balanceUiAmount + fundingAmount; 
+          const totalUiAmount = balanceUiAmount + fundingAmount;
           const ata_address = tokenAcountInfo?.ata_address;
           rpcRequest = {
             id: 1,
@@ -231,7 +232,7 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
             const existingBalances = tokenBalancesMap.get(recipient.address) || [];
             existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount });
             tokenBalancesMap.set(recipient.address, existingBalances);
-            
+
             // Use map to deduplicate recipients by address
             const existing = recipientMap.get(recipient.address);
             if (existing) {
@@ -246,7 +247,7 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
         } else {
           const balanceUiAmount = Number(accountBalance) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
-          const totalUiAmount = balanceUiAmount + fundingAmount; 
+          const totalUiAmount = balanceUiAmount + fundingAmount;
           rpcRequest = {
             id: 1,
             jsonrpc: '2.0',
@@ -261,7 +262,7 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
             const existingBalances = tokenBalancesMap.get(recipient.address) || [];
             existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount });
             tokenBalancesMap.set(recipient.address, existingBalances);
-            
+
             // Use map to deduplicate recipients by address
             const existing = recipientMap.get(recipient.address);
             if (!existing) {
@@ -286,7 +287,7 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
         }
       }
     }
-    
+
     // Convert map back to array
     const uniqueRecipients = Array.from(recipientMap.values());
     setProcessedRecipients(uniqueRecipients);
@@ -394,8 +395,31 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
     return hasValidAmount && hasValidAddress;
   };
 
+  // Helper function to darken a color
+  const darkenColor = (color: string, amount: number = 0.3) => {
+    // Convert hex to RGB
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Darken
+    const newR = Math.round(r * (1 - amount));
+    const newG = Math.round(g * (1 - amount));
+    const newB = Math.round(b * (1 - amount));
+
+    return `rgb(${newR}, ${newG}, ${newB})`;
+  };
+
+  const darkerColor = darkenColor(primaryColor);
+
   return (
-    <div className="faucet relative z-10 mx-auto mt-3 flex min-h-[340px] w-full items-center justify-center rounded-xl bg-zinc-800 pb-5 shadow-lg md:mt-0">
+    <div
+      className="faucet relative z-10 mx-auto mt-3 flex min-h-[340px] w-full items-center justify-center rounded-xl pb-5 shadow-lg md:mt-0"
+      style={{
+        backgroundColor: primaryColor
+      }}
+    >
       <div className="flex flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
         <Field className="w-full pl-4 uppercase">
@@ -403,9 +427,8 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
         </Field>
 
         {tokenFundingRequests.map((tokenFundingRequest, index) => (
-          <div key={index} className="flex flex-col items-center pr-1 pl-1">
-            <Field className="rounded-xl bg-zinc-900 p-4">
-              <Label className="text-lg sm:text-lg md:text-lg lg:text-lg">Amount</Label>
+          <div key={index} className="flex flex-col items-center pr-4 pl-4">
+            <Field className="rounded-xl p-4" style={{ backgroundColor: darkerColor }}>
               <div className="flex items-center space-x-2">
                 <input
                   id={`amount-${index}`}
@@ -416,7 +439,8 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                 />
                 <div
-                  className="flex cursor-pointer items-center justify-between rounded-full border-2 border-dashed border-zinc-600 p-2 uppercase hover:bg-zinc-800 hover:border-zinc-500 sm:text-xl md:text-xl lg:text-xl"
+                  className="flex cursor-pointer items-center justify-between rounded-full p-2 uppercase transition-colors hover:brightness-90 sm:text-xl md:text-xl lg:text-xl"
+                  style={{ backgroundColor: darkenColor(primaryColor, 0.5) }}
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
@@ -424,8 +448,8 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
                     alt={tokenFundingRequest.token.ticker}
                     className="mr-2 h-8 w-8 rounded-full object-cover"
                   />
-                  <span className="mr-5 flex-grow text-right">{tokenFundingRequest.token.ticker}</span>
-                  <ChevronDownIcon className="h-4 w-4" />
+                  <span className="mr-2 flex-grow text-right">{tokenFundingRequest.token.ticker}</span>
+                  <ChevronDownIcon className="h-5 w-5" />
                 </div>
               </div>
             </Field>
@@ -445,13 +469,13 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
 
         <div className="mb-6 w-full">
           {reccipients.map((reccipient, index) => (
-            <div key={index} className="relative flex w-full flex-col items-center pt-1 pr-1 pl-1">
-              <Field className="w-full rounded-xl bg-zinc-900 p-4 pt-5 pb-5">
-                <div className="flex w-full items-center space-x-2">
+            <div key={index} className="flex w-full flex-col items-center pt-1 pr-4 pl-4">
+              <Field className="w-full rounded-xl p-4 pt-5 pb-5" style={{ backgroundColor: darkerColor }}>
+                <div className="flex w-full items-center gap-2">
                   <input
                     type="text"
                     placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
-                    className="w-full border-none bg-transparent text-left focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
+                    className="flex-1 border-none bg-transparent text-left focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
                     value={reccipient.address}
                     onChange={(e) => {
                       const newRecipients = [...reccipients];
@@ -459,22 +483,16 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
                       setReccipients(newRecipients);
                     }}
                   />
+                  <button
+                    onClick={() => generateKeypair(index)}
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:brightness-90"
+                    style={{ backgroundColor: darkenColor(primaryColor, 0.5) }}
+                    title="Generate new keypair"
+                  >
+                    <SparklesIcon className="h-4 w-4 text-white" />
+                  </button>
                 </div>
               </Field>
-              <button
-                onClick={() => generateKeypair(index)}
-                className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full text-zinc-400 transition-colors"
-                title="Generate new keypair"
-              >
-                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-              </button>
             </div>
           ))}
 
@@ -488,12 +506,28 @@ export default function Faucet({ rpcUrl }: FaucetProps) {
 
         <div className="absolute right-8 bottom-0 translate-y-1/2 transform">
           <div
-            className={`flex gap-2 rounded-full p-4 text-center text-sm uppercase transition-colors ${
-              canActivateFaucet() ? 'cursor-pointer bg-[#E034AE] hover:bg-[#C02A8F]' : 'cursor-not-allowed bg-zinc-600'
+            className={`flex gap-2 rounded-full p-4 text-center text-sm uppercase transition-all ${
+              canActivateFaucet() ? 'cursor-pointer' : 'cursor-not-allowed'
             }`}
+            style={canActivateFaucet() ? {
+              backgroundColor: darkenColor(primaryColor, 0.6),
+              boxShadow: `0 0 20px ${darkenColor(primaryColor, 0.6)}80`
+            } : {
+              backgroundColor: '#52525b'
+            }}
             onClick={() => {
               if (canActivateFaucet()) {
                 handleClaimTokens();
+              }
+            }}
+            onMouseEnter={(e) => {
+              if (canActivateFaucet()) {
+                e.currentTarget.style.filter = 'brightness(1.2)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (canActivateFaucet()) {
+                e.currentTarget.style.filter = 'brightness(1)';
               }
             }}
           >

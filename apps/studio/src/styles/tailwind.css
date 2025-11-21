@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
-@source '../../packages/svm/src';
-@source '../../packages/ui/src';
+@source '../../../../packages/svm/src';
+@source '../../../../packages/ui/src';
 
 @theme {
   --font-sans: Inter, sans-serif;

@@ -271,7 +271,7 @@ export default function Home() {
           <aside className="w-full lg:w-[450px]">
             <div className="lg:sticky lg:top-4">
               {/* Faucet Widget */}
-              {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} />}
+              {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} primaryColor={config.primary_color} />}
             </div>
           </aside>
         </div>

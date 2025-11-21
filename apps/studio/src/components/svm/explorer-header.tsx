@@ -236,7 +236,7 @@ const ExplorerHeader = () => {
           </div>
         </div>
 
-        <Faucet rpcUrl={rpcUrl} />
+        <Faucet rpcUrl={rpcUrl} primaryColor="#71717a" />
 
         {/* Control Buttons */}
         <div className="mt-6 flex w-full items-center justify-center gap-4">
