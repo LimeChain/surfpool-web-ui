@@ -290,7 +290,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
           <div className="flex items-start justify-between p-6 pb-4">
             <div className="min-w-0 flex-1">
               <h3 className="text-md truncate font-semibold text-zinc-950 dark:text-zinc-50">{item.name}</h3>
-              {item.description && item.description !== 'null' && item.description !== 'No description available' && (
+              {item.description && item.description !== 'null' && item.description !== 'No description available' && item.description !== 'Add a description...' && (
                 <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{item.description}</p>
               )}
             </div>
@@ -430,7 +430,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
                   </h3>
                   {editingDescription === item.id ? (
                     <textarea
-                      value={item.description === 'No description available' ? '' : item.description}
+                      value={item.description === 'No description available' || item.description === 'Add a description...' ? '' : item.description}
                       onChange={(e) => handleUpdateScenario(item.id, { description: e.target.value })}
                       onBlur={() => setEditingDescription(null)}
                       autoFocus
@@ -442,7 +442,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
                       className="group cursor-pointer text-sm text-zinc-950 dark:text-zinc-50 hover:text-zinc-700 dark:hover:text-zinc-300"
                       onClick={() => setEditingDescription(item.id)}
                     >
-                      {item.description && item.description !== 'null' && item.description !== 'No description available'
+                      {item.description && item.description !== 'null' && item.description !== 'No description available' && item.description !== 'Add a description...'
                         ? item.description
                         : 'Click to add description...'}
                     </p>
