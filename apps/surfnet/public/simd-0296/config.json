@@ -1,5 +1,5 @@
 {
-  "network_name": "SIMD-0296 Surfnet",
+  "network_name": "SIMD-0296 - Ephemeral Network",
   "network_handle": "Solana Foundation",
   "network_description": "Official Solana Foundation Surfnet for SIMD-0296: Larger Transaction Sizes. Test transactions up to 4096 bytes with advanced cryptographic proofs and complex on-chain operations.",
   "network_url": "https://simd-0296.surfnet.dev:8899",

@@ -89,6 +89,13 @@ export default function Home() {
       });
   }, []);
 
+  // Update page title when config loads
+  useEffect(() => {
+    if (config) {
+      document.title = `Surfnet - ${config.network_name}`;
+    }
+  }, [config]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black">
@@ -195,25 +202,6 @@ export default function Home() {
             <div className="space-y-4">
               {/* Faucet Widget */}
               {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} />}
-
-              {/* Quick Links */}
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                <h3 className="mb-4 text-lg font-bold">Quick Links</h3>
-                <div className="space-y-2">
-                  <a href="#" className="block rounded-lg p-2 text-sm transition-colors hover:bg-zinc-900">
-                    📚 Documentation
-                  </a>
-                  <a href="#" className="block rounded-lg p-2 text-sm transition-colors hover:bg-zinc-900">
-                    💬 Discord
-                  </a>
-                  <a href="#" className="block rounded-lg p-2 text-sm transition-colors hover:bg-zinc-900">
-                    🐦 Twitter
-                  </a>
-                  <a href="#" className="block rounded-lg p-2 text-sm transition-colors hover:bg-zinc-900">
-                    📖 GitHub
-                  </a>
-                </div>
-              </div>
             </div>
           </div>
         </div>
