@@ -439,16 +439,16 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                 />
                 <div
-                  className="flex cursor-pointer items-center justify-between rounded-full p-2 uppercase transition-colors hover:brightness-90 sm:text-xl md:text-xl lg:text-xl"
+                  className="flex cursor-pointer items-center gap-2 rounded-full pl-3 pr-4 py-2 uppercase transition-colors hover:brightness-90 sm:text-xl md:text-xl lg:text-xl"
                   style={{ backgroundColor: darkenColor(primaryColor, 0.5) }}
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
                     src={tokenFundingRequest.token.imageUrl}
                     alt={tokenFundingRequest.token.ticker}
-                    className="mr-2 h-8 w-8 rounded-full object-cover"
+                    className="h-8 w-8 rounded-full object-cover"
                   />
-                  <span className="mr-2 flex-grow text-right">{tokenFundingRequest.token.ticker}</span>
+                  <span>{tokenFundingRequest.token.ticker}</span>
                   <ChevronDownIcon className="h-5 w-5" />
                 </div>
               </div>
