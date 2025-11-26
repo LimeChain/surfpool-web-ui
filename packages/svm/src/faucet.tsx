@@ -83,6 +83,9 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
     },
   ]);
   const [tokenSearch, setTokenSearch] = useState('');
+  const [animatingRecipient, setAnimatingRecipient] = useState<number | null>(null);
+  const [revealedChars, setRevealedChars] = useState(0);
+  const [displayAddress, setDisplayAddress] = useState<string>('');
 
   const [tokens, setTokens] = useState<any[]>([]);
 
@@ -185,11 +188,27 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
+
+    // Confetti rain from the top
+    const duration = 2000;
+    const end = Date.now() + duration;
+
+    const frame = () => {
+      confetti({
+        particleCount: 3,
+        angle: 90,
+        spread: 120,
+        origin: { x: Math.random(), y: -0.1 },
+        gravity: 1.2,
+        drift: 0,
+        ticks: 300,
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    };
+    frame();
 
     for (const tokenFundingRequest of tokenFundingRequests) {
       for (const recipient of reccipients) {
@@ -356,10 +375,69 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
     }
 
     const newRecipients = [...reccipients];
-    newRecipients[index].address = result;
     newRecipients[index].isGenerated = true;
     newRecipients[index].privateKey = Array.from(fullKeypair);
-    setReccipients(newRecipients);
+
+    const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const finalAddress = result;
+    const addressLength = finalAddress.length;
+
+    // Initialize with random characters immediately to prevent layout shift
+    const initialRandom = Array.from({ length: addressLength }, () =>
+      base58Alphabet[Math.floor(Math.random() * base58Alphabet.length)]
+    ).join('');
+
+    // Start bruteforce animation
+    setAnimatingRecipient(index);
+    setRevealedChars(0);
+    setDisplayAddress(initialRandom);
+
+    let currentChar = 0;
+
+    // Bruteforce effect: reveal characters one by one with random chars cycling before settling
+    const revealInterval = setInterval(() => {
+      if (currentChar >= addressLength) {
+        clearInterval(revealInterval);
+        newRecipients[index].address = finalAddress;
+        setReccipients([...newRecipients]);
+        setAnimatingRecipient(null);
+        setDisplayAddress('');
+        return;
+      }
+
+      // Build the display string: revealed chars + current cycling char + remaining random chars
+      const revealed = finalAddress.slice(0, currentChar);
+      const remaining = Array.from({ length: addressLength - currentChar - 1 }, () =>
+        base58Alphabet[Math.floor(Math.random() * base58Alphabet.length)]
+      ).join('');
+
+      // Cycle through a few random chars before settling on the real one
+      const cycleCount = Math.floor(Math.random() * 3) + 2;
+      let cycle = 0;
+
+      const cycleInterval = setInterval(() => {
+        if (cycle >= cycleCount) {
+          clearInterval(cycleInterval);
+          setDisplayAddress(revealed + finalAddress[currentChar] + remaining.slice(0, -1 || undefined));
+          currentChar++;
+          setRevealedChars(currentChar);
+          return;
+        }
+
+        const randomChar = base58Alphabet[Math.floor(Math.random() * base58Alphabet.length)];
+        setDisplayAddress(revealed + randomChar + remaining);
+        cycle++;
+      }, 15);
+    }, 25);
+
+    // Safety cleanup
+    setTimeout(() => {
+      clearInterval(revealInterval);
+      newRecipients[index].address = finalAddress;
+      setReccipients([...newRecipients]);
+      setAnimatingRecipient(null);
+      setDisplayAddress('');
+    }, 3000);
   };
 
   const handleTokenFundingRequestChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
@@ -420,7 +498,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
         backgroundColor: primaryColor
       }}
     >
-      <div className="flex flex-col items-center space-y-2 pt-1">
+      <div className="flex w-full flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
         <Field className="w-full pl-4 uppercase">
           <Label className="text-sm sm:text-sm md:text-sm lg:text-sm">Faucet</Label>
@@ -470,19 +548,50 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
         <div className="mb-6 w-full">
           {reccipients.map((reccipient, index) => (
             <div key={index} className="flex w-full flex-col items-center pt-1 pr-4 pl-4">
-              <Field className="w-full rounded-xl p-4 pt-5 pb-5" style={{ backgroundColor: darkerColor }}>
+              <Field className="w-full rounded-xl p-4 pt-5 pb-5 overflow-hidden" style={{ backgroundColor: darkerColor }}>
                 <div className="flex w-full items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
-                    className="flex-1 border-none bg-transparent text-left focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
-                    value={reccipient.address}
-                    onChange={(e) => {
-                      const newRecipients = [...reccipients];
-                      newRecipients[index].address = e.target.value;
-                      setReccipients(newRecipients);
-                    }}
-                  />
+                  <div className="relative flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+                    {animatingRecipient === index ? (
+                      <div
+                        className="w-full text-left sm:text-[12px] md:text-[12px] lg:text-[12px]"
+                        style={{
+                          fontFamily: 'monospace',
+                          letterSpacing: '0.05em',
+                          whiteSpace: 'nowrap',
+                          height: '24px',
+                          lineHeight: '24px',
+                          overflow: 'hidden',
+                          textOverflow: 'clip',
+                        }}
+                      >
+                        <span style={{ color: darkenColor(primaryColor, 0.7) }}>
+                          {displayAddress.slice(0, revealedChars)}
+                        </span>
+                        <span style={{ color: '#9ca3af', opacity: 0.7 }}>
+                          {displayAddress.slice(revealedChars)}
+                        </span>
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
+                        className="w-full border-none bg-transparent text-left focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
+                        style={{
+                          fontFamily: 'monospace',
+                          letterSpacing: '0.05em',
+                          height: '24px',
+                          lineHeight: '24px',
+                          overflow: 'hidden',
+                        }}
+                        value={reccipient.address}
+                        onChange={(e) => {
+                          const newRecipients = [...reccipients];
+                          newRecipients[index].address = e.target.value;
+                          setReccipients(newRecipients);
+                        }}
+                      />
+                    )}
+                  </div>
                   <button
                     onClick={() => generateKeypair(index)}
                     className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:brightness-90"

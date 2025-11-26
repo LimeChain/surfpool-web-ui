@@ -6,9 +6,7 @@ import { solanaWebSocketService } from '@/lib/solana-websocket-service';
 import { useEffect, useState } from 'react';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon } from '@heroicons/react/24/solid';
-import { Dialog, DialogActions, DialogBody, DialogTitle } from '@surfpool/ui';
-import { Button } from '@surfpool/ui';
-import { Listbox, ListboxOption } from '@surfpool/ui';
+import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption } from '@surfpool/ui';
 
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
 
@@ -18,10 +16,13 @@ const ExplorerHeader = () => {
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
   const [timeTravelMode, setTimeTravelMode] = useState<TimeTravelMode>('date');
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
   const [selectedEpoch, setSelectedEpoch] = useState<number>(0);
   const [selectedSlot, setSelectedSlot] = useState<number>(0);
+  const [selectedTimeUnit, setSelectedTimeUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'years'>('days');
+  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number | null>(null);
+  const [currentEpoch, setCurrentEpoch] = useState<number>(0);
+  const [currentSlot, setCurrentSlot] = useState<number>(0);
+  const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
 
   // Track WebSocket connection status
   useEffect(() => {
@@ -68,6 +69,69 @@ const ExplorerHeader = () => {
       window.removeEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
     };
   }, []);
+
+  // Fetch epoch data on mount
+  useEffect(() => {
+    const fetchEpochData = async () => {
+      try {
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getEpochInfo',
+          }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result) {
+            setCurrentEpoch(data.result.epoch);
+            setCurrentSlot(data.result.slotIndex);
+            setSlotsInEpoch(data.result.slotsInEpoch);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching epoch data:', error);
+      }
+    };
+    if (rpcUrl) fetchEpochData();
+  }, [rpcUrl]);
+
+  // Listen for epoch changes (from time travel or slot updates)
+  useEffect(() => {
+    const handleEpochChange = (event: CustomEvent) => {
+      if (event.detail.epoch !== undefined) {
+        setCurrentEpoch(event.detail.epoch);
+      }
+      if (event.detail.slotIndex !== undefined) {
+        setCurrentSlot(event.detail.slotIndex);
+      }
+    };
+
+    window.addEventListener('epochChanged', handleEpochChange as EventListener);
+
+    return () => {
+      window.removeEventListener('epochChanged', handleEpochChange as EventListener);
+    };
+  }, []);
+
+  // Listen for slot updates from WebSocket
+  useEffect(() => {
+    const handleSlot = (data: any) => {
+      if (data?.parent) {
+        const newSlot = data.parent;
+        const slotIndexInEpoch = newSlot % slotsInEpoch;
+        setCurrentSlot(slotIndexInEpoch);
+      }
+    };
+
+    solanaWebSocketService.on('slot', handleSlot);
+
+    return () => {
+      solanaWebSocketService.off('slot', handleSlot);
+    };
+  }, [slotsInEpoch]);
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
@@ -142,6 +206,20 @@ const ExplorerHeader = () => {
     }
   };
 
+  // Helper function to convert time units to milliseconds
+  const getTimeUnitInMs = (unit: string): number => {
+    switch (unit) {
+      case 'seconds': return 1000;
+      case 'minutes': return 60 * 1000;
+      case 'hours': return 60 * 60 * 1000;
+      case 'days': return 24 * 60 * 60 * 1000;
+      case 'weeks': return 7 * 24 * 60 * 60 * 1000;
+      case 'months': return 30 * 24 * 60 * 60 * 1000;
+      case 'years': return 365 * 24 * 60 * 60 * 1000;
+      default: return 1000;
+    }
+  };
+
   // Handle time travel
   const handleTimeTravel = async () => {
     try {
@@ -149,8 +227,13 @@ const ExplorerHeader = () => {
 
       switch (timeTravelMode) {
         case 'date':
-          const dateTimeString = `${selectedDate}T${selectedTime}`;
-          const targetTimestamp = Math.floor(new Date(dateTimeString).getTime() / 1000);
+          if (selectedTimeAmount === null || selectedTimeAmount === 0) {
+            console.error('Please enter a valid time amount');
+            return;
+          }
+          const now = new Date();
+          const timeAmountMs = selectedTimeAmount * getTimeUnitInMs(selectedTimeUnit);
+          const targetTimestamp = Math.floor(now.getTime() + timeAmountMs);
           timeTravelConfig = { absoluteTimestamp: targetTimestamp };
           break;
         case 'epoch':
@@ -288,32 +371,26 @@ const ExplorerHeader = () => {
             <button
               onClick={() => setTimeTravelMode('date')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'date'
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'date' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
-              Date & Time
+              DATE
             </button>
             <button
               onClick={() => setTimeTravelMode('epoch')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'epoch'
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'epoch' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
-              Epoch
+              EPOCH
             </button>
             <button
               onClick={() => setTimeTravelMode('slot')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'slot'
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'slot' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
-              Slot
+              SLOT
             </button>
           </div>
 
@@ -321,60 +398,74 @@ const ExplorerHeader = () => {
             {timeTravelMode === 'date' && (
               <div className="space-y-4">
                 <div>
-                  <label className="mb-2 block text-left text-sm font-medium text-zinc-300">Date</label>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-left text-sm font-medium text-zinc-300">Time</label>
-                  <input
-                    type="time"
-                    value={selectedTime}
-                    onChange={(e) => setSelectedTime(e.target.value)}
-                    className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
-                  />
+                  <div className="relative">
+                    <div className="-ml-8 flex items-center justify-center gap-3">
+                      <input
+                        type="number"
+                        value={selectedTimeAmount || ''}
+                        onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value) || null)}
+                        className="w-24 [appearance:textfield] border-none bg-transparent text-right text-2xl font-bold text-zinc-300 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        placeholder="7"
+                        autoFocus
+                      />
+                      <div className="w-25">
+                        <Listbox value={selectedTimeUnit} onChange={setSelectedTimeUnit}>
+                          <ListboxOption value="seconds">Seconds</ListboxOption>
+                          <ListboxOption value="minutes">Minutes</ListboxOption>
+                          <ListboxOption value="hours">Hours</ListboxOption>
+                          <ListboxOption value="days">Days</ListboxOption>
+                          <ListboxOption value="weeks">Weeks</ListboxOption>
+                          <ListboxOption value="months">Months</ListboxOption>
+                          <ListboxOption value="years">Years</ListboxOption>
+                        </Listbox>
+                      </div>
+                      <span className="text-sm text-zinc-400">from clock</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             {timeTravelMode === 'epoch' && (
-              <div>
-                <label className="mb-2 block text-left text-sm font-medium text-zinc-300">Epoch Number</label>
-                <input
-                  type="number"
-                  value={selectedEpoch}
-                  onChange={(e) => setSelectedEpoch(Number(e.target.value))}
-                  className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
-                  placeholder="Enter epoch number"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-400">Provide Epoch to set</label>
+                  <input
+                    type="number"
+                    value={selectedEpoch || ''}
+                    onChange={(e) => setSelectedEpoch(parseInt(e.target.value) || 0)}
+                    className="w-full [appearance:textfield] border-none bg-transparent text-center text-5xl font-bold text-zinc-300 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    placeholder={`${currentEpoch + 1}`}
+                    autoFocus
+                  />
+                </div>
               </div>
             )}
 
             {timeTravelMode === 'slot' && (
-              <div>
-                <label className="mb-2 block text-left text-sm font-medium text-zinc-300">Slot Number</label>
-                <input
-                  type="number"
-                  value={selectedSlot}
-                  onChange={(e) => setSelectedSlot(Number(e.target.value))}
-                  className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
-                  placeholder="Enter slot number"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-xs font-medium text-zinc-400">Provide Absolute Slot to set</label>
+                  <input
+                    type="number"
+                    value={selectedSlot || ''}
+                    onChange={(e) => setSelectedSlot(parseInt(e.target.value) || 0)}
+                    className="w-full [appearance:textfield] border-none bg-transparent text-center text-3xl font-bold text-zinc-300 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    placeholder={`${currentSlot + currentEpoch * slotsInEpoch}`}
+                    autoFocus
+                  />
+                </div>
               </div>
             )}
           </DialogBody>
 
-          <DialogActions>
-            <Button color="dark" onClick={() => setShowTimeTravel(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleTimeTravel}>
-              Travel
-            </Button>
+          <DialogActions className="!justify-center">
+            <button
+              onClick={handleTimeTravel}
+              className="rounded border border-[#E034AE] bg-[#E034AE] px-6 py-2 font-medium text-white transition-colors hover:bg-[#C02A8F]"
+            >
+              Jump
+            </button>
           </DialogActions>
         </div>
       </Dialog>
