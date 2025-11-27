@@ -12,7 +12,7 @@ import {
   useTransactionInspector,
 } from '@/lib/solana-transaction-stream';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 
@@ -394,26 +394,34 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
   toggleAccountViewMode,
   className = '',
 }) => {
+  const prettyJsonRef = useRef<HTMLDivElement>(null);
+  const lastJsonStringRef = useRef<string>('');
+
+  const jsonString = useMemo(() => {
+    try {
+      const extractedData = extractProgramData(data);
+      return typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+    } catch {
+      return JSON.stringify(extractProgramData(data), null, 2);
+    }
+  }, [data, extractProgramData]);
+
+  useEffect(() => {
+    if (prettyJsonRef.current && typeof window !== 'undefined' && getAccountViewMode(address, context) === 'parsed') {
+      // Only update if the JSON string actually changed
+      if (lastJsonStringRef.current !== jsonString) {
+        lastJsonStringRef.current = jsonString;
+        prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
+      }
+    }
+  }, [jsonString, address, context, getAccountViewMode]);
+
   return (
     <div
       className={`w-full overflow-x-auto bg-zinc-950 p-2 pr-5 pb-4 pl-5 font-mono text-xs whitespace-pre ${className}`}
     >
       {getAccountViewMode(address, context) === 'parsed' ? (
-        <div
-          ref={(el) => {
-            if (el && typeof window !== 'undefined') {
-              try {
-                const extractedData = extractProgramData(data);
-                // Ensure we pass a properly serialized JSON string to pretty-json
-                const jsonString =
-                  typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
-                el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
-              } catch (error) {
-                el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractProgramData(data), null, 2)}</pre>`;
-              }
-            }
-          }}
-        />
+        <div ref={prettyJsonRef} />
       ) : (
         <div
           className="space-y-1 font-mono text-xs"
@@ -798,6 +806,40 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   const tempBeforeData = beforeData;
   const tempAfterData = afterData;
 
+  // Refs for pretty-json to prevent re-rendering on expand/collapse
+  const prettyJsonRef = useRef<HTMLDivElement>(null);
+  const lastJsonStringRef = useRef<string>('');
+
+  const jsonString = useMemo(() => {
+    try {
+      const extractedData = extractProgramData(afterData);
+      if (extractedData === '<none>') return '<none>';
+      return typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
+    } catch {
+      return JSON.stringify(extractProgramData(afterData), null, 2);
+    }
+  }, [afterData, extractProgramData]);
+
+  useEffect(() => {
+    const viewMode = getAccountViewMode(address, context);
+    const hasChange =
+      viewMode === 'parsed'
+        ? JSON.stringify(extractProgramData(tempBeforeData)) !== JSON.stringify(extractProgramData(tempAfterData))
+        : getHexData(tempBeforeData) !== getHexData(tempAfterData);
+
+    if (prettyJsonRef.current && typeof window !== 'undefined' && viewMode === 'parsed' && !hasChange) {
+      // Only update if the JSON string actually changed
+      if (lastJsonStringRef.current !== jsonString) {
+        lastJsonStringRef.current = jsonString;
+        if (jsonString === '<none>') {
+          prettyJsonRef.current.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
+        } else {
+          prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
+        }
+      }
+    }
+  }, [jsonString, address, context, getAccountViewMode, extractProgramData, getHexData, tempBeforeData, tempAfterData]);
+
   // Helper function to generate hex data from account data
   const generateHexData = (data: any) => {
     const getDataString = (data: any) => {
@@ -853,25 +895,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
             <div>{renderUnifiedJsonDiff(extractProgramData(beforeData), extractProgramData(afterData))}</div>
           ) : (
             <div>
-              <div
-                ref={(el) => {
-                  if (el && typeof window !== 'undefined') {
-                    const extractedData = extractProgramData(afterData);
-                    if (extractedData === '<none>') {
-                      el.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
-                    } else {
-                      try {
-                        // Ensure we pass a properly serialized JSON string to pretty-json
-                        const jsonString =
-                          typeof extractedData === 'string' ? extractedData : JSON.stringify(extractedData, null, 2);
-                        el.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
-                      } catch (error) {
-                        el.innerHTML = `<pre class="font-mono text-xs">${JSON.stringify(extractedData, null, 2)}</pre>`;
-                      }
-                    }
-                  }
-                }}
-              />
+              <div ref={prettyJsonRef} />
             </div>
           )}
         </div>
