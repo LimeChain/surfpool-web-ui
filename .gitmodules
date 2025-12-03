@@ -1,0 +1,3 @@
+[submodule "apps/surfnet/public/simd-0296"]
+	path = apps/surfnet/public/simd-0296
+	url = https://github.com/txtx/simd-0296

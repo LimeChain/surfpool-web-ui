@@ -91,7 +91,7 @@ export default function Home() {
 
     setNetworkId(detectedNetworkId);
 
-    // Load config.json and index.md in parallel
+    // Load config.json and README.md in parallel
     Promise.all([
       fetch(`/${detectedNetworkId}/config.json`)
         .then((res) => {
@@ -102,11 +102,11 @@ export default function Home() {
           return res;
         })
         .then((res) => res.json()),
-      fetch(`/${detectedNetworkId}/index.md`)
+      fetch(`/${detectedNetworkId}/README.md`)
         .then((res) => {
           if (!res.ok) {
-            console.warn(`Markdown file ${detectedNetworkId}/index.md not found, falling back to default`);
-            return fetch('/default/index.md');
+            console.warn(`Markdown file ${detectedNetworkId}/README.md not found, falling back to default`);
+            return fetch('/default/README.md');
           }
           return res;
         })
