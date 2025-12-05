@@ -5,6 +5,7 @@
   "network_url": "http://localhost:8899",
   "rpc_url": "http://localhost:8899",
   "ws_url": "ws://localhost:8900",
+  "explorer_cluster_query": "cluster=custom&customUrl=http://localhost:8899",
   "network_banner_image_url": "default/banner.jpg",
   "network_logo_image_url": "default/logo.jpg",
   "primary_color": "#8B5CF6",

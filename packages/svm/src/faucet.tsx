@@ -47,9 +47,10 @@ const DEFAULT_LAMPORTS_TO_FUND = LAMPORTS_PER_SOL; // 1 SOL
 interface FaucetProps {
   rpcUrl: string;
   primaryColor?: string;
+  explorerClusterQuery?: string;
 }
 
-export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps) {
+export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClusterQuery }: FaucetProps) {
   const defaultFundingRequest = {
     token: {
       ticker: 'SOL',
@@ -91,6 +92,17 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
 
   const [networkStatuses, setNetworkStatuses] = useState<Record<string, boolean>>({});
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
+  const [isMobileDevice, setIsMobileDevice] = useState<boolean>(false);
+
+  // Detect mobile device on mount
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+      setIsMobileDevice(isMobile);
+    };
+    checkMobile();
+  }, []);
 
   // Helper functions for AddressDisplay
   const copyToClipboard = (text: string, id: string) => {
@@ -511,6 +523,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                 <input
                   id={`amount-${index}`}
                   type="text"
+                  inputMode="decimal"
                   placeholder="0"
                   value={inputValues[index] || ''}
                   className="w-full border-none bg-transparent text-left !text-4xl focus:outline-none sm:text-4xl md:text-4xl lg:text-4xl"
@@ -535,10 +548,11 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
         ))}
 
         <div
-          className="-mt-6 cursor-pointer gap-2 rounded-xl border-2 border-zinc-800 bg-zinc-950 p-2 uppercase"
+          className="-mt-6 flex h-12 w-12 sm:h-10 sm:w-10 cursor-pointer items-center justify-center rounded-xl border-2 bg-zinc-950 uppercase"
+          style={{ borderColor: primaryColor }}
           onClick={() => handleAddFundingRequest()}
         >
-          <PlusIcon className="h-6 w-6" />
+          <PlusIcon className="h-6 w-6 sm:h-5 sm:w-5" />
         </div>
 
         <Field className="w-full pt-4 pl-4 uppercase">
@@ -606,16 +620,17 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
           ))}
 
           <div
-            className="absolute left-1/2 z-10 -mt-4 h-11 w-11 -translate-x-1/2 transform cursor-pointer rounded-xl border-2 border-zinc-800 bg-zinc-950 p-2 uppercase"
+            className="absolute left-1/2 z-10 -mt-4 flex h-12 w-12 sm:h-10 sm:w-10 -translate-x-1/2 transform cursor-pointer items-center justify-center rounded-xl border-2 bg-zinc-950 uppercase"
+            style={{ borderColor: primaryColor }}
             onClick={() => handleAddAddress()}
           >
-            <PlusIcon className="h-6 w-6" />
+            <PlusIcon className="h-6 w-6 sm:h-5 sm:w-5" />
           </div>
         </div>
 
         <div className="absolute right-8 bottom-0 translate-y-1/2 transform">
           <div
-            className={`flex gap-2 rounded-full p-4 text-center text-sm uppercase transition-all ${
+            className={`flex gap-2 rounded-full p-5 text-center text-sm uppercase transition-all ${
               canActivateFaucet() ? 'cursor-pointer' : 'cursor-not-allowed'
             }`}
             style={canActivateFaucet() ? {
@@ -640,7 +655,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
               }
             }}
           >
-            <PaperAirplaneIcon className="h-5 w-5" />
+            <PaperAirplaneIcon className="h-6 w-6" />
           </div>
           {/* <div className="flex h-full w-36 items-center justify-center gap-2 rounded-lg bg-zinc-700 p-2 text-center text-sm uppercase">
               Get Config
@@ -705,7 +720,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
       <Dialog open={successDialogOpen} onClose={() => setSuccessDialogOpen(false)} size="3xl">
         <DialogTitle>Token Accounts Updated</DialogTitle>
         <DialogDescription>{''}</DialogDescription>
-        <div className="space-y-6">
+        <div className="space-y-6 -mx-2 sm:mx-0">
           {processedRecipients.map((recipient, recipientIndex) => {
             // Get all tokens sent to this recipient
             const tokensForRecipient = processedTokens.map((fundingRequest, tokenIndex) => ({
@@ -718,9 +733,9 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
             const isGeneratedAddress = recipient.isGenerated;
 
             return (
-              <div key={recipientIndex} className="rounded-lg bg-zinc-800/50 p-4">
+              <div key={recipientIndex} className="rounded-lg bg-zinc-800/50 p-3 sm:p-4">
                 <div className="mb-4">
-                  <div className="text-sm font-medium text-zinc-400 mb-2">Wallet Address:</div>
+                  <div className="text-base sm:text-sm font-medium text-zinc-400 mb-2">Wallet Address:</div>
                   {recipient.address ? (
                     <AddressDisplay
                       address={recipient.address}
@@ -731,6 +746,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                       showCopyButton={true}
                       aggressiveTruncate={false}
                       rpcUrl={rpcUrl}
+                      explorerClusterQuery={explorerClusterQuery}
                     />
                   ) : (
                     <div className="text-zinc-500">No address</div>
@@ -738,7 +754,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-zinc-400 mb-2">Updated Balances:</div>
+                  <div className="text-base sm:text-sm font-medium text-zinc-400 mb-2">Updated Balances:</div>
                   {(() => {
                     const tokenBalances = processedTokenBalances.get(recipient.address || '') || [];
                     return tokenBalances.map((tokenBalance, index) => (
@@ -746,13 +762,13 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                         <img
                           src={tokenBalance.token.imageUrl}
                           alt={tokenBalance.token.ticker}
-                          className="h-6 w-6 rounded-full"
+                          className="h-8 w-8 sm:h-6 sm:w-6 rounded-full flex-shrink-0"
                         />
-                        <div className="flex flex-1 flex-col">
-                          <div className="font-medium text-sm">{tokenBalance.token.ticker}</div>
+                        <div className="flex flex-1 flex-col min-w-0">
+                          <div className="font-medium text-base sm:text-sm">{tokenBalance.token.ticker}</div>
                           {/* Show ATA address first for SPL tokens if available */}
                           {tokenBalance.token.ticker !== 'SOL' && recipient.ataAddress && (
-                            <div className="text-xs text-zinc-400">
+                            <div className="text-sm sm:text-xs text-zinc-400">
                               <span className="text-zinc-500">Associated Token Address (ATA):</span>
                               <AddressDisplay
                                 address={recipient.ataAddress}
@@ -763,12 +779,13 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                                 showCopyButton={true}
                                 aggressiveTruncate={false}
                                 rpcUrl={rpcUrl}
+                                explorerClusterQuery={explorerClusterQuery}
                               />
                             </div>
                           )}
                           {/* Show token mint address for SPL tokens */}
                           {tokenBalance.token.address && tokenBalance.token.address.trim() !== '' && (
-                            <div className="text-xs text-zinc-400 mt-1">
+                            <div className="text-sm sm:text-xs text-zinc-400 mt-1">
                               <span className="text-zinc-500">Token Address:</span>
                               <AddressDisplay
                                 address={tokenBalance.token.address}
@@ -779,11 +796,12 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                                 showCopyButton={true}
                                 aggressiveTruncate={false}
                                 rpcUrl={rpcUrl}
+                                explorerClusterQuery={explorerClusterQuery}
                               />
                             </div>
                           )}
                         </div>
-                        <div className="text-sm font-bold text-zinc-300">
+                        <div className="text-base sm:text-sm font-bold text-zinc-300 flex-shrink-0">
                           <TokenAmountDisplay
                             amount={convertToRawAmount(tokenBalance.finalBalance, tokenBalance.token.decimals)}
                             decimals={tokenBalance.token.decimals}
@@ -797,29 +815,59 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
                 </div>
 
                 {isGeneratedAddress && recipient.privateKey && (
-                  <div className="mt-4 pt-4 border-t border-zinc-700 flex justify-end">
+                  <div className="mt-4 pt-4 border-t border-zinc-700">
                     <button
-                      onClick={() => {
-                        // Use the actual private key stored when the keypair was generated
+                      onClick={async () => {
                         const keypairData = recipient.privateKey;
+                        const jsonContent = JSON.stringify(keypairData);
+                        const fileName = `${recipient.address}.json`;
 
-                        // Create and download the JSON file in Solana keypair format
-                        const blob = new Blob([JSON.stringify(keypairData)], { type: 'application/json' });
+                        // On mobile, try native share API (iOS/Android)
+                        if (isMobileDevice && navigator.share && navigator.canShare) {
+                          const file = new File([jsonContent], fileName, { type: 'application/json' });
+                          if (navigator.canShare({ files: [file] })) {
+                            try {
+                              await navigator.share({
+                                files: [file],
+                                title: 'Solana Keypair',
+                                text: `Keypair for ${recipient.address}`,
+                              });
+                            } catch (err) {
+                              // User cancelled or share failed - don't fall through to download
+                            }
+                            return;
+                          }
+                        }
+
+                        // Download on desktop or when share API not available
+                        const blob = new Blob([jsonContent], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${recipient.address}.json`;
+                        a.download = fileName;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
                       }}
-                      className="flex items-center gap-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg px-6 py-4 sm:py-3 text-base sm:text-sm font-semibold text-white transition-colors"
+                      style={{ backgroundColor: primaryColor }}
                     >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Download Keypair
+                      {isMobileDevice ? (
+                        <>
+                          <svg className="h-5 w-5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                          </svg>
+                          Share Keypair
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-5 w-5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download Keypair
+                        </>
+                      )}
                     </button>
                   </div>
                 )}

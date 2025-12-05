@@ -297,33 +297,35 @@ export default function CompactSlotWidget({
           : 'border-zinc-200/40 bg-white max-lg:bg-zinc-100 dark:border-zinc-700/30 dark:bg-zinc-900 max-lg:dark:bg-zinc-800'
       } ${className} gap-2 px-3 py-2.5 max-w-[290px] lg:gap-3 lg:px-4 lg:py-2 lg:w-[410px] lg:max-w-none`}
     >
-      {/* Mini Slot Grid - Vertical bars: 6 bars on mobile, 30 bars on desktop */}
-      <div className="flex gap-0.5 lg:gap-0.5">
-        {/* Mobile: 6 bars */}
-        {Array.from({ length: 6 }).map((_, col) => {
-          const index = col * 5; // Sample every 5th position to maintain animation continuity
-          const color = getCircleColor(index, true);
+      {/* Mini Slot Grid - 5 bars on mobile, 30 bars on desktop */}
+      <div className="flex gap-0.5">
+        {/* Mobile: 5 bars */}
+        {Array.from({ length: 5 }).map((_, col) => {
+          const mobileActiveIndex = activeBarIndex % 5;
+          const isActive = col <= mobileActiveIndex;
+          const inactiveColor = isDarkMode ? INACTIVE_SLOT_COLOR_MOBILE_DARK : INACTIVE_SLOT_COLOR_MOBILE_LIGHT;
+          let color = inactiveColor;
+          if (isDisconnected) {
+            color = isActive ? DISCONNECTED_SLOT_COLOR : inactiveColor;
+          } else if (isActive) {
+            color = (isClockPaused && dimmingPhase === 0) ? inactiveColor : ACTIVE_SLOT_COLOR;
+          }
           return (
             <div
-              key={`bar-${col}`}
+              key={`bar-mobile-${col}`}
               className="h-[18px] w-1.5 rounded-sm lg:hidden"
-              style={{
-                backgroundColor: color,
-              }}
+              style={{ backgroundColor: color }}
             />
           );
         })}
         {/* Desktop: 30 bars */}
         {Array.from({ length: 30 }).map((_, col) => {
-          const index = col;
-          const color = getCircleColor(index);
+          const color = getCircleColor(col);
           return (
             <div
-              key={`bar-${col}-desktop`}
+              key={`bar-desktop-${col}`}
               className="hidden h-[14px] w-1 rounded-sm lg:block"
-              style={{
-                backgroundColor: color,
-              }}
+              style={{ backgroundColor: color }}
             />
           );
         })}

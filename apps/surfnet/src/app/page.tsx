@@ -25,6 +25,7 @@ interface NetworkConfig {
   network_url: string;
   rpc_url: string;
   ws_url: string;
+  explorer_cluster_query?: string;
   network_banner_image_url: string;
   network_logo_image_url: string;
   primary_color: string;
@@ -39,6 +40,18 @@ interface NetworkConfig {
   faucet_daily_limit_sol: number;
   faucet_cooldown_minutes: number;
 }
+
+// Helper to build explorer URL from query string (handles encoding)
+const buildExplorerUrl = (query: string): string => {
+  const params = new URLSearchParams();
+  query.split('&').forEach(pair => {
+    const [key, value] = pair.split('=');
+    if (key && value !== undefined) {
+      params.set(key, value);
+    }
+  });
+  return `https://explorer.solana.com/?${params.toString()}`;
+};
 
 export default function Home() {
   const [config, setConfig] = useState<NetworkConfig | null>(null);
@@ -202,7 +215,7 @@ export default function Home() {
           <img
             src={`/${config.network_banner_image_url}`}
             alt={`${config.network_name} Banner`}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover object-top sm:object-center"
           />
           {/* Slot Widget - Top Right */}
           <div className="absolute right-4 top-4 z-10 lg:right-8 lg:top-8">
@@ -236,25 +249,25 @@ export default function Home() {
             <p className="mt-3 text-[15px] leading-5">{config.network_description}</p>
 
             {/* Action Buttons */}
-            <div className="mt-4 flex gap-3 pb-6">
+            <div className="mt-4 flex flex-col gap-3 pb-6 sm:flex-row sm:justify-start">
               {config.primary_button && (
                 <a
                   href={config.primary_button.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg px-6 py-2 text-sm font-semibold text-white transition-colors"
+                  className="rounded-lg px-6 py-4 text-center text-base font-semibold text-white transition-colors sm:py-3 sm:text-sm"
                   style={{ backgroundColor: config.primary_button.color }}
                 >
                   {config.primary_button.label}
                 </a>
               )}
               <a
-                href={getSolanaExplorerUrl(config.rpc_url)}
+                href={config.explorer_cluster_query ? buildExplorerUrl(config.explorer_cluster_query) : getSolanaExplorerUrl(config.rpc_url)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-lg border border-zinc-700 bg-transparent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-900"
+                className="rounded-lg border border-zinc-700 bg-transparent px-6 py-4 text-center text-base font-semibold text-white transition-colors hover:bg-zinc-900 sm:py-3 sm:text-sm"
               >
-                View Explorer
+                Explore Cluster
               </a>
             </div>
           </div>
@@ -308,7 +321,7 @@ export default function Home() {
           <aside className="w-full lg:w-[450px]">
             <div className="lg:sticky lg:top-4">
               {/* Faucet Widget */}
-              {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} primaryColor={config.primary_color} />}
+              {config.faucet_enabled && <Faucet rpcUrl={config.rpc_url} primaryColor={config.primary_color} explorerClusterQuery={config.explorer_cluster_query} />}
             </div>
           </aside>
         </div>
