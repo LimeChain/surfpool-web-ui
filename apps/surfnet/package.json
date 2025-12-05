@@ -11,6 +11,7 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@amplitude/analytics-browser": "^2.31.3",
     "@headlessui/react": "2.2.4",
     "@surfpool/shared": "workspace:*",
     "@surfpool/svm": "workspace:*",

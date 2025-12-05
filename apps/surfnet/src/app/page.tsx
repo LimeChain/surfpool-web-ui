@@ -17,6 +17,7 @@ SyntaxHighlighter.registerLanguage('ts', typescript);
 import { CompactSlotWidget, Faucet, solanaWebSocketService } from '@surfpool/svm';
 import { getSolanaExplorerUrl } from '@surfpool/shared';
 import Footer from '@/components/footer';
+import { initAmplitude, trackPageView, trackExplorerClicked, trackPrimaryButtonClicked } from '@/lib/amplitude';
 
 interface NetworkConfig {
   network_name: string;
@@ -59,6 +60,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   const [networkId, setNetworkId] = useState<string>('default');
+
+  // Initialize Amplitude on mount
+  useEffect(() => {
+    initAmplitude();
+  }, []);
 
   useEffect(() => {
     const hostname = window.location.hostname;
@@ -187,6 +193,9 @@ export default function Home() {
       setMetaTag('twitter:title', config.network_name, false);
       setMetaTag('twitter:description', config.network_description, false);
       setMetaTag('twitter:image', ogImageUrl, false);
+
+      // Track page view
+      trackPageView(networkId, config.network_name);
     }
   }, [config, networkId]);
 
@@ -257,6 +266,7 @@ export default function Home() {
                   rel="noopener noreferrer"
                   className="rounded-lg px-6 py-4 text-center text-base font-semibold text-white transition-colors sm:py-3 sm:text-sm"
                   style={{ backgroundColor: config.primary_button.color }}
+                  onClick={() => trackPrimaryButtonClicked(networkId, config.primary_button!.label)}
                 >
                   {config.primary_button.label}
                 </a>
@@ -266,6 +276,7 @@ export default function Home() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-lg border border-zinc-700 bg-transparent px-6 py-4 text-center text-base font-semibold text-white transition-colors hover:bg-zinc-900 sm:py-3 sm:text-sm"
+                onClick={() => trackExplorerClicked(networkId)}
               >
                 Explore Cluster
               </a>
