@@ -815,7 +815,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                 </div>
 
                 {isGeneratedAddress && recipient.privateKey && (
-                  <div className="mt-4 pt-4 border-t border-zinc-700">
+                  <div className="mt-4 pt-4 border-t border-zinc-700 flex gap-3">
                     <button
                       onClick={async () => {
                         const keypairData = recipient.privateKey;
@@ -850,7 +850,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
                       }}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg px-6 py-4 sm:py-3 text-base sm:text-sm font-semibold text-white transition-colors"
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-4 sm:py-3 text-base sm:text-sm font-semibold text-white transition-colors"
                       style={{ backgroundColor: primaryColor }}
                     >
                       {isMobileDevice ? (
@@ -869,6 +869,26 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                         </>
                       )}
                     </button>
+                    {!isMobileDevice && (
+                      <button
+                        onClick={() => {
+                          const explorerUrl = explorerClusterQuery
+                            ? `https://explorer.solana.com/address/${recipient.address}?${new URLSearchParams(explorerClusterQuery.split('&').reduce((acc, pair) => {
+                                const [key, value] = pair.split('=');
+                                if (key && value !== undefined) acc[key] = value;
+                                return acc;
+                              }, {} as Record<string, string>)).toString()}`
+                            : `https://explorer.solana.com/address/${recipient.address}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+                          window.open(explorerUrl, '_blank');
+                        }}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Open in Explorer
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
