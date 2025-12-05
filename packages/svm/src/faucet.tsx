@@ -2,7 +2,7 @@
 
 import { convertToRawAmount, truncateAddress as truncateAddressUtil } from './lib/address-utils';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
-import { PlayIcon, PlusIcon, SparklesIcon } from '@heroicons/react/24/solid';
+import { PaperAirplaneIcon, PlusIcon, SparklesIcon } from '@heroicons/react/24/solid';
 import { generateKeyPair, lamports } from '@solana/kit';
 import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
@@ -505,8 +505,8 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
         </Field>
 
         {tokenFundingRequests.map((tokenFundingRequest, index) => (
-          <div key={index} className="flex flex-col items-center pr-4 pl-4">
-            <Field className="rounded-xl p-4" style={{ backgroundColor: darkerColor }}>
+          <div key={index} className="flex w-full flex-col items-center pr-4 pl-4">
+            <Field className="w-full rounded-xl p-4" style={{ backgroundColor: darkerColor }}>
               <div className="flex items-center space-x-2">
                 <input
                   id={`amount-${index}`}
@@ -640,7 +640,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6' }: FaucetProps
               }
             }}
           >
-            <PlayIcon className="h-5 w-5" />
+            <PaperAirplaneIcon className="h-5 w-5" />
           </div>
           {/* <div className="flex h-full w-36 items-center justify-center gap-2 rounded-lg bg-zinc-700 p-2 text-center text-sm uppercase">
               Get Config

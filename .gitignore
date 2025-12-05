@@ -54,3 +54,5 @@ packages/svm/node_modules
 packages/ui/node_modules
 apps/studio/out
 apps/surfnet/out
+.turbo
+.surfpool
