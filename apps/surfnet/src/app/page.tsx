@@ -3,6 +3,17 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json';
+import javascript from 'react-syntax-highlighter/dist/cjs/languages/prism/javascript';
+import typescript from 'react-syntax-highlighter/dist/cjs/languages/prism/typescript';
+
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('js', javascript);
+SyntaxHighlighter.registerLanguage('typescript', typescript);
+SyntaxHighlighter.registerLanguage('ts', typescript);
 import { CompactSlotWidget, Faucet, solanaWebSocketService } from '@surfpool/svm';
 import { getSolanaExplorerUrl } from '@surfpool/shared';
 import Footer from '@/components/footer';
@@ -258,8 +269,34 @@ export default function Home() {
           <div className="w-full">
             <div className="space-y-6">
               <div className="rounded-2xl bg-zinc-950 p-6">
-                <article className="prose prose-zinc max-w-none prose-invert prose-headings:text-white prose-p:text-zinc-300 prose-a:text-purple-400 prose-code:text-white prose-code:bg-zinc-800 prose-code:rounded prose-code:px-1.5 prose-code:py-0.5 prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-800">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <article className="prose prose-zinc max-w-none prose-invert prose-headings:text-white prose-p:text-zinc-300 prose-a:text-purple-400 prose-code:text-white prose-code:bg-zinc-800 prose-code:rounded prose-code:px-1.5 prose-code:py-0.5 prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-transparent prose-pre:p-0 prose-pre:border-0">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const isInline = !match;
+                        return !isInline ? (
+                          <SyntaxHighlighter
+                            style={oneDark}
+                            language={match[1]}
+                            PreTag="div"
+                            customStyle={{
+                              margin: 0,
+                              borderRadius: '0.5rem',
+                              border: '1px solid rgb(39 39 42)',
+                            }}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
                     {markdown}
                   </ReactMarkdown>
                 </article>
