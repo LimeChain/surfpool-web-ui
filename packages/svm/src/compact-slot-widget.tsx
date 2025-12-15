@@ -7,6 +7,8 @@ interface CompactSlotWidgetProps {
   rpcUrl: string;
   wsUrl: string;
   solanaWebSocketService: any; // We'll type this properly later
+  /** If true, use direct WebSocket instead of shared service. Use when widget may remount. */
+  cleanupOnUnmount?: boolean;
 }
 
 const TOTAL_BARS = 30; // 30 bars on desktop
@@ -20,7 +22,8 @@ export default function CompactSlotWidget({
   className = '',
   rpcUrl,
   wsUrl,
-  solanaWebSocketService
+  solanaWebSocketService: externalWsService,
+  cleanupOnUnmount = false
 }: CompactSlotWidgetProps) {
   const [mounted, setMounted] = useState(false);
   const [slotHeight, setSlotHeight] = useState<number>(0);
@@ -34,11 +37,20 @@ export default function CompactSlotWidget({
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const lastSlotReceivedRef = useRef<number>(Date.now());
   const isClockPausedRef = useRef<boolean>(false);
+  const slotsInEpochRef = useRef<number>(432000);
 
-  // Keep ref in sync with state
+  // Direct WebSocket refs for cleanupOnUnmount mode
+  const directWsRef = useRef<WebSocket | null>(null);
+  const directSubscriptionIdRef = useRef<number | null>(null);
+
+  // Keep refs in sync with state
   useEffect(() => {
     isClockPausedRef.current = isClockPaused;
   }, [isClockPaused]);
+
+  useEffect(() => {
+    slotsInEpochRef.current = slotsInEpoch;
+  }, [slotsInEpoch]);
 
   // Fetch initial epoch data
   useEffect(() => {
@@ -69,120 +81,187 @@ export default function CompactSlotWidget({
     fetchEpochData();
   }, [rpcUrl]);
 
-  // WebSocket subscription for slot updates - persistent across page changes
+  // Handle slot data from either direct WS or service
+  const handleSlotData = (slotData: any) => {
+    if (slotData?.parent !== undefined) {
+      const newSlot = slotData.parent;
+      const currentSlotsInEpoch = slotsInEpochRef.current;
+      const slotIndexInEpoch = newSlot % currentSlotsInEpoch;
+
+      lastSlotReceivedRef.current = Date.now();
+      setSlotHeight(slotIndexInEpoch);
+
+      const progress = (slotIndexInEpoch / currentSlotsInEpoch) * 100;
+      setEpochProgress(progress);
+
+      const barIndex = slotIndexInEpoch % TOTAL_BARS;
+      setActiveBarIndex(barIndex);
+    }
+  };
+
+  // Direct WebSocket connection for cleanupOnUnmount mode
   useEffect(() => {
-    let subscriptionId: string | null = null;
+    if (!cleanupOnUnmount) return;
+
+    let isMounted = true;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const connectDirectWebSocket = () => {
+      // Close existing connection
+      if (directWsRef.current) {
+        directWsRef.current.close();
+        directWsRef.current = null;
+      }
+
+      console.log('CompactSlotWidget: Direct WS connecting to', wsUrl);
+      const ws = new WebSocket(wsUrl);
+      directWsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!isMounted) {
+          ws.close();
+          return;
+        }
+        console.log('CompactSlotWidget: Direct WS connected');
+        setIsDisconnected(false);
+
+        // Subscribe to slots
+        const subscribeMsg = {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'slotSubscribe'
+        };
+        ws.send(JSON.stringify(subscribeMsg));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Handle subscription confirmation
+          if (data.id === 1 && data.result !== undefined) {
+            directSubscriptionIdRef.current = data.result;
+            console.log('CompactSlotWidget: Direct WS subscribed, ID:', data.result);
+          }
+
+          // Handle slot notifications
+          if (data.method === 'slotNotification' && data.params?.result) {
+            const slot = data.params.result?.parent;
+            console.log('CompactSlotWidget: Slot received:', slot);
+            handleSlotData(data.params.result);
+          }
+        } catch (err) {
+          console.error('CompactSlotWidget: Direct WS message parse error', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('CompactSlotWidget: Direct WS closed');
+        setIsDisconnected(true);
+        directWsRef.current = null;
+        directSubscriptionIdRef.current = null;
+
+        // Reconnect after 2 seconds if still mounted
+        if (isMounted) {
+          reconnectTimeout = setTimeout(connectDirectWebSocket, 2000);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('CompactSlotWidget: Direct WS error', err);
+        setIsDisconnected(true);
+      };
+    };
+
+    connectDirectWebSocket();
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (directWsRef.current) {
+        console.log('CompactSlotWidget: Cleaning up direct WS');
+        directWsRef.current.close();
+        directWsRef.current = null;
+      }
+    };
+  }, [wsUrl, cleanupOnUnmount]);
+
+  // Shared service WebSocket subscription (when not using cleanupOnUnmount)
+  useEffect(() => {
+    if (cleanupOnUnmount) return;
+
     let reconnectInterval: NodeJS.Timeout | null = null;
     let isSubscribing = false;
+    let isMounted = true;
 
     const startSlotSubscription = async () => {
-      // Prevent multiple concurrent subscription attempts
-      if (isSubscribing) {
-        console.log('CompactSlotWidget: Subscription already in progress, skipping...');
-        return;
-      }
+      if (isSubscribing || !isMounted) return;
 
       try {
         isSubscribing = true;
-        console.log('CompactSlotWidget: Connecting to WebSocket...');
+        await externalWsService.connect(wsUrl);
+        if (!isMounted) return;
 
-        // Unsubscribe from any existing subscription before creating a new one
-        if (subscriptionId) {
-          console.log('CompactSlotWidget: Cleaning up old subscription before reconnecting...');
-          try {
-            solanaWebSocketService.unsubscribeAll();
-          } catch (err) {
-            console.warn('CompactSlotWidget: Error cleaning up old subscription:', err);
-          }
-          subscriptionId = null;
-        }
-
-        await solanaWebSocketService.connect(wsUrl);
-        subscriptionId = await solanaWebSocketService.subscribeToSlots();
-        console.log('CompactSlotWidget: Subscribed to slots with ID:', subscriptionId);
+        await externalWsService.subscribeToSlots();
+        console.log('CompactSlotWidget: Service subscribed to slots');
         isSubscribing = false;
       } catch (error) {
         isSubscribing = false;
-        console.error('CompactSlotWidget: Error starting slot subscription:', error);
-        // Retry connection after 2 seconds
-        setTimeout(startSlotSubscription, 2000);
+        console.error('CompactSlotWidget: Service subscription error:', error);
+        if (isMounted) {
+          setTimeout(startSlotSubscription, 2000);
+        }
       }
     };
 
+    // Listen for slot events from shared service
+    const handleServiceSlot = (data: any) => {
+      handleSlotData(data);
+    };
+
+    externalWsService.on('slot', handleServiceSlot);
     startSlotSubscription();
 
-    // Watchdog: Check if we're still receiving slots, reconnect if not
     reconnectInterval = setInterval(() => {
       const timeSinceLastSlot = Date.now() - lastSlotReceivedRef.current;
-      // If no slot received in 5 seconds, reconnect
-      if (timeSinceLastSlot > 5000) {
+      if (timeSinceLastSlot > 5000 && isMounted) {
         console.log('CompactSlotWidget: No slots received for 5s, reconnecting...');
         startSlotSubscription();
       }
     }, 5000);
 
-    // Don't unsubscribe on cleanup - keep the connection alive
-    // This widget is always visible in the header
     return () => {
+      isMounted = false;
       if (reconnectInterval) clearInterval(reconnectInterval);
-      isSubscribing = false;
-      // Keep subscription alive across page navigations
+      externalWsService.off('slot', handleServiceSlot);
     };
-  }, [wsUrl]);
+  }, [wsUrl, cleanupOnUnmount, externalWsService]);
 
-  // Listen for slot events
+
+  // Listen for WebSocket connection status (only for shared service mode)
   useEffect(() => {
-    const handleSlot = (data: any) => {
-      if (data?.parent && data?.root) {
-        const newSlot = data.parent;
-        const slotIndexInEpoch = newSlot % slotsInEpoch;
+    if (cleanupOnUnmount) return; // Direct WS mode handles its own connection status
 
-        // Update last received timestamp (using ref to avoid re-renders)
-        lastSlotReceivedRef.current = Date.now();
-
-        setSlotHeight(slotIndexInEpoch);
-
-        // Calculate epoch progress
-        const progress = (slotIndexInEpoch / slotsInEpoch) * 100;
-        setEpochProgress(progress);
-
-        // Calculate which bar should be active based on slot % 20
-        const barIndex = slotIndexInEpoch % TOTAL_BARS;
-        setActiveBarIndex(barIndex);
-      }
-    };
-
-    solanaWebSocketService.on('slot', handleSlot);
-
-    return () => {
-      solanaWebSocketService.off('slot', handleSlot);
-    };
-  }, [slotsInEpoch]);
-
-  // Listen for WebSocket connection status
-  useEffect(() => {
     const handleConnected = () => {
-      console.log('CompactSlotWidget: WebSocket connected');
+      console.log('CompactSlotWidget: Service WebSocket connected');
       setIsDisconnected(false);
     };
 
     const handleDisconnected = () => {
-      console.log('CompactSlotWidget: WebSocket disconnected');
+      console.log('CompactSlotWidget: Service WebSocket disconnected');
       setIsDisconnected(true);
     };
 
-    // Listen for WebSocket connection events
-    solanaWebSocketService.on('connected', handleConnected);
-    solanaWebSocketService.on('disconnected', handleDisconnected);
+    externalWsService.on('connected', handleConnected);
+    externalWsService.on('disconnected', handleDisconnected);
 
-    // Check initial connection status
-    setIsDisconnected(!solanaWebSocketService.isConnected());
+    setIsDisconnected(!externalWsService.isConnected());
 
     return () => {
-      solanaWebSocketService.off('connected', handleConnected);
-      solanaWebSocketService.off('disconnected', handleDisconnected);
+      externalWsService.off('connected', handleConnected);
+      externalWsService.off('disconnected', handleDisconnected);
     };
-  }, []);
+  }, [cleanupOnUnmount, externalWsService]);
 
   // Listen for global pause state changes from other components
   useEffect(() => {
@@ -208,7 +287,7 @@ export default function CompactSlotWidget({
       if (event.detail.slotIndex !== undefined) {
         setSlotHeight(event.detail.slotIndex);
         // Recalculate progress with the new slot index
-        const progress = (event.detail.slotIndex / slotsInEpoch) * 100;
+        const progress = (event.detail.slotIndex / slotsInEpochRef.current) * 100;
         setEpochProgress(progress);
       }
     };
@@ -218,7 +297,7 @@ export default function CompactSlotWidget({
     return () => {
       window.removeEventListener('epochChanged', handleEpochChange as EventListener);
     };
-  }, [slotsInEpoch]);
+  }, []);
 
   // Blinking animation when clock is paused
   useEffect(() => {

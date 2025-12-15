@@ -1,9 +1,8 @@
 'use client';
 
-import { useAppConfig } from '@/hooks/use-app-config';
-import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
-import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
-import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
+import { truncateAddress as truncateAddressUtil } from './lib/address-utils';
+import { analyzeHexDiff } from './lib/hex-diff-analyzer';
+import { getTransactionStatus, TransactionInfo, useTransactionInspector } from './lib/solana-transaction-stream';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { Badge, Dialog, DialogBody } from '@surfpool/ui';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -1178,8 +1177,8 @@ if (typeof window !== 'undefined') {
 }
 
 interface TransactionInspectorProps {
-  rpcUrl?: string;
-  wsUrl?: string;
+  rpcUrl: string;
+  wsUrl: string;
   maxTransactions?: number;
   autoStart?: boolean;
   filterByProgram?: string;
@@ -1474,8 +1473,8 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
 };
 
 export default function TransactionInspector({
-  rpcUrl: propRpcUrl,
-  wsUrl: propWsUrl,
+  rpcUrl,
+  wsUrl,
   maxTransactions = 50,
   autoStart = true,
   filterByProgram,
@@ -1499,7 +1498,6 @@ export default function TransactionInspector({
       };
     }
   }, []);
-  const { rpcUrl: configRpcUrl, wsUrl: configWsUrl } = useAppConfig();
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [transactionProfile, setTransactionProfile] = useState<any>(null);
@@ -1515,9 +1513,6 @@ export default function TransactionInspector({
 
   // Move the large JSON object inside the component and memoize it
 
-  // Use props if provided, otherwise use config values
-  const rpcUrl = propRpcUrl || configRpcUrl;
-  const wsUrl = propWsUrl || configWsUrl;
   const { transactions, isStreaming, error, stats, toggleStreaming, clearTransactions, fetchLocalSignatures } =
     useTransactionInspector({
       rpcUrl,
@@ -2533,7 +2528,7 @@ export default function TransactionInspector({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
+                            const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
                             window.open(explorerUrl, '_blank');
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
@@ -2586,7 +2581,7 @@ export default function TransactionInspector({
                     onClick={() => {
                       const signature = selectedTransaction.transaction?.signatures?.[0];
                       if (signature) {
-                        const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
+                        const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
                         window.open(explorerUrl, '_blank');
                       }
                     }}
@@ -2623,7 +2618,7 @@ export default function TransactionInspector({
                           }
 
                           // Call surfnet_exportSnapshot RPC method
-                          const response = await fetch(configRpcUrl, {
+                          const response = await fetch(rpcUrl, {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',

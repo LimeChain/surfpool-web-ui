@@ -1,12 +1,9 @@
 'use client';
 
-import { Badge } from '@surfpool/ui';
-import { Link } from '@surfpool/ui';
-import { Navbar, NavbarItem, NavbarSection } from '@surfpool/ui';
-import { Switch } from '@surfpool/ui';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { ArrowTopRightOnSquareIcon, CheckIcon, ClipboardIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { ArrowPathIcon, InformationCircleIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { Badge, EmptyState, Link, Navbar, NavbarItem, NavbarSection, Switch } from '@surfpool/ui';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import CollapsibleSearch from './collapsible-search';
@@ -515,7 +512,7 @@ export default function AccountsBento(): JSX.Element {
         </div>
 
         {/* Shadow layer with ring effects */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-lg ring-1 shadow-zinc-950/[0.03] ring-zinc-950/5 transition-shadow duration-200 group-hover:shadow-xl group-hover:shadow-zinc-950/[0.05] dark:shadow-zinc-950/50 dark:ring-zinc-50/10 dark:group-hover:shadow-zinc-950/70" />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-lg shadow-zinc-950/[0.03] ring-1 ring-zinc-950/5 transition-shadow duration-200 group-hover:shadow-xl group-hover:shadow-zinc-950/[0.05] dark:shadow-zinc-950/50 dark:ring-zinc-50/10 dark:group-hover:shadow-zinc-950/70" />
       </div>
     );
   };
@@ -543,7 +540,7 @@ export default function AccountsBento(): JSX.Element {
           {/* Main content */}
           <div className="p-6 pb-4">
             <div className="mb-3">
-              <h3 className="font-mono text-sm font-semibold break-all text-zinc-950 dark:text-zinc-50">
+              <h3 className="break-all font-mono text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                 {a.address || a.name || a.id}
               </h3>
             </div>
@@ -585,7 +582,7 @@ export default function AccountsBento(): JSX.Element {
         </div>
 
         {/* Shadow layer with ring effects */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-lg ring-1 shadow-zinc-950/[0.03] ring-zinc-950/5 transition-shadow duration-200 group-hover:shadow-xl group-hover:shadow-zinc-950/[0.05] dark:shadow-zinc-950/50 dark:ring-zinc-50/10 dark:group-hover:shadow-zinc-950/70" />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-lg shadow-zinc-950/[0.03] ring-1 ring-zinc-950/5 transition-shadow duration-200 group-hover:shadow-xl group-hover:shadow-zinc-950/[0.05] dark:shadow-zinc-950/50 dark:ring-zinc-50/10 dark:group-hover:shadow-zinc-950/70" />
       </div>
     );
   };
@@ -741,7 +738,7 @@ export default function AccountsBento(): JSX.Element {
             : 'h-full'
         } transition-all duration-300 ease-in-out`}
       >
-        <div className="mx-auto max-w-7xl px-6 pt-4 pb-1 sm:px-6 sm:pt-2 lg:px-8">
+        <div className="mx-auto max-w-7xl px-6 pb-1 pt-4 sm:px-6 sm:pt-2 lg:px-8">
           {/* Search */}
           <div className="mb-6">
             <CollapsibleSearch placeholder="Search accounts" value={searchQuery} onChange={setSearchQuery} />
@@ -770,55 +767,36 @@ export default function AccountsBento(): JSX.Element {
             {!searchQuery.trim() && (
               <>
                 <section>
-                  <div className="mb-1">
-                    <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">IDL-to-SQL Indexers</h2>
-                  </div>
-
-                  {collections.length > 0 && (
-                    <p className="pt-2 pb-4 text-xs text-zinc-500 dark:text-zinc-400">
-                      Surfpool collects IDL data from your project and actively indexes insertions/updates.{' '}
-                      <Link href={EMPTY_VIDEO_URL} className="text-[#E034AE]" target="_blank">
-                        Watch introduction to data indexing
-                      </Link>
-                      .
-                    </p>
-                  )}
-
                   {collections.length === 0 ? (
-                    <div className="flex items-center justify-center py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-                      <div className="max-w-md">
-                        <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-                          <InformationCircleIcon className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
-                        </div>
-                        <h3 className="mb-1 text-base font-medium text-zinc-900 dark:text-zinc-50">
-                          No indexed accounts yet
-                        </h3>
-                        <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
-                          Indexed accounts from your projects will appear here.
-                        </p>
-                        <div className="flex items-center justify-center">
-                          <a
-                            href={EMPTY_VIDEO_URL}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                          >
-                            Watch Surfpool 101
-                          </a>
-                        </div>
-                      </div>
-                    </div>
+                    <EmptyState
+                      title="No indexed accounts yet"
+                      description="Index and query your program's on-chain data—accounts, events, state changes—without writing custom parsing logic."
+                      videoLink="https://www.youtube.com/watch?v=obDiHVQggYk&list=PL0FMgRjJMRzO1FdunpMS-aUS4GNkgyr3T&index=9"
+                      videoImageUrl="/assets/101-indexing.png"
+                    />
                   ) : (
-                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                      {collections.map((c) =>
-                        renderCollectionCard(c, () => {
-                          setSelectedCollection(c);
-                          setSelectedAccount(null);
-                          setCollectionTab('overview');
-                          setIsCollectionExpanded(false);
-                        })
-                      )}
-                    </div>
+                    <>
+                      <div className="mb-1">
+                        <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">IDL-to-SQL Indexers</h2>
+                      </div>
+                      <p className="pb-4 pt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        Surfpool collects IDL data from your project and actively indexes insertions/updates.{' '}
+                        <Link href={EMPTY_VIDEO_URL} className="text-[#E034AE]" target="_blank">
+                          Watch introduction to data indexing
+                        </Link>
+                        .
+                      </p>
+                      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                        {collections.map((c) =>
+                          renderCollectionCard(c, () => {
+                            setSelectedCollection(c);
+                            setSelectedAccount(null);
+                            setCollectionTab('overview');
+                            setIsCollectionExpanded(false);
+                          })
+                        )}
+                      </div>
+                    </>
                   )}
                 </section>
 
@@ -850,12 +828,12 @@ export default function AccountsBento(): JSX.Element {
 
       {/* Detail Pane */}
       {selectedAccount && (
-        <div className="-mr-5 -ml-5 flex h-1/2 flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="-ml-5 -mr-5 flex h-1/2 flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex flex-1 items-center gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="font-mono text-base font-semibold break-all text-zinc-950 dark:text-zinc-50">
+                  <h2 className="break-all font-mono text-base font-semibold text-zinc-950 dark:text-zinc-50">
                     {selectedAccount.address || selectedAccount.name || selectedAccount.id}
                   </h2>
                   <button
@@ -957,7 +935,7 @@ export default function AccountsBento(): JSX.Element {
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     <div className="space-y-4">
                       <div>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                           Address / ID
                         </h3>
                         <p className="text-sm text-zinc-950 dark:text-zinc-50">
@@ -966,14 +944,14 @@ export default function AccountsBento(): JSX.Element {
                       </div>
                       {selectedAccount.token_mint && (
                         <div>
-                          <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             Token Mint
                           </h3>
                           <p className="text-sm text-zinc-950 dark:text-zinc-50">{selectedAccount.token_mint}</p>
                         </div>
                       )}
                       <div>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                           Balance
                         </h3>
                         <p className="text-sm text-zinc-950 dark:text-zinc-50">
@@ -992,14 +970,14 @@ export default function AccountsBento(): JSX.Element {
                     </div>
                     <div className="space-y-4">
                       <div>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                           Source
                         </h3>
-                        <p className="text-sm text-zinc-950 capitalize dark:text-zinc-50">{selectedAccount.source}</p>
+                        <p className="text-sm capitalize text-zinc-950 dark:text-zinc-50">{selectedAccount.source}</p>
                       </div>
                       {selectedAccount.metadata && Object.keys(selectedAccount.metadata).length > 0 && (
                         <div>
-                          <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             Metadata
                           </h3>
                           <div className="space-y-1 text-sm text-zinc-950 dark:text-zinc-50">
@@ -1031,7 +1009,7 @@ export default function AccountsBento(): JSX.Element {
         <div
           className={`${
             isCollectionExpanded ? 'h-[87.5%]' : 'h-1/2'
-          } -mr-5 -ml-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
+          } -ml-5 -mr-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
         >
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex flex-1 items-center gap-4">
@@ -1104,7 +1082,7 @@ export default function AccountsBento(): JSX.Element {
                     <div className="space-y-4">
                       {selectedCollection.description && (
                         <div>
-                          <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             Description
                           </h3>
                           <p className="text-sm text-zinc-950 dark:text-zinc-50">{selectedCollection.description}</p>
@@ -1112,23 +1090,23 @@ export default function AccountsBento(): JSX.Element {
                       )}
                       {selectedCollection.lastIndexed && (
                         <div>
-                          <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             Last Indexed
                           </h3>
                           <p className="text-sm text-zinc-950 dark:text-zinc-50">{selectedCollection.lastIndexed}</p>
                         </div>
                       )}
                       <div>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                           GraphQL URL
                         </h3>
-                        <p className="font-mono text-sm break-all text-zinc-900 dark:text-zinc-100">{graphqlUrl}</p>
+                        <p className="break-all font-mono text-sm text-zinc-900 dark:text-zinc-100">{graphqlUrl}</p>
                       </div>
                     </div>
                     <div className="space-y-4">
                       {selectedCollection.ingestRate !== undefined && (
                         <div>
-                          <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             Ingest Rate
                           </h3>
                           <p className="text-sm text-zinc-950 dark:text-zinc-50">
@@ -1137,10 +1115,10 @@ export default function AccountsBento(): JSX.Element {
                         </div>
                       )}
                       <div>
-                        <h3 className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                           Status
                         </h3>
-                        <p className="text-sm text-zinc-950 capitalize dark:text-zinc-50">
+                        <p className="text-sm capitalize text-zinc-950 dark:text-zinc-50">
                           {selectedCollection.count > 0 ? 'Active' : 'Empty'}
                         </p>
                       </div>
@@ -1148,7 +1126,7 @@ export default function AccountsBento(): JSX.Element {
                   </div>
                   <div className="pb-8">
                     <div className="rounded-lg border border-zinc-200/40 bg-zinc-50/50 p-6 dark:border-zinc-700/30 dark:bg-zinc-800/50">
-                      <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         About Indexing
                       </h3>
                       <div className="space-y-3 text-sm text-zinc-700 dark:text-zinc-300">

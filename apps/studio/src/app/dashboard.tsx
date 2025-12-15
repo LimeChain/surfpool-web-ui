@@ -84,8 +84,8 @@ export function Dashboard({ children }: { children: React.ReactNode }) {
     >
       {children}
 
-      {/* Watch Tutorials Button - Fixed at bottom left */}
-      <div className="fixed left-6 bottom-6 z-50">
+      {/* Watch Tutorials Button - Fixed at bottom left, below detail panes */}
+      <div className="fixed left-6 bottom-6 z-10">
         <button
           className="flex cursor-pointer items-center gap-2 rounded-[9999px] border border-zinc-700 bg-zinc-800 px-6 py-3 text-white shadow-lg transition-all duration-200 hover:bg-zinc-700 hover:shadow-xl"
           onClick={() => {

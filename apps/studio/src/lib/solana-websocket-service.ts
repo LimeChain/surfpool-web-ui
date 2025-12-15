@@ -213,7 +213,7 @@ class SolanaWebSocketService extends EventEmitter {
       const mentions = [];
       if (filter.account) mentions.push(filter.account);
       if (filter.program) mentions.push(filter.program);
-      
+
       message = {
         jsonrpc: '2.0',
         id: subscriptionId,
@@ -222,7 +222,9 @@ class SolanaWebSocketService extends EventEmitter {
           {
             mentions: mentions
           },
-          'processed'
+          {
+            commitment: 'processed'
+          }
         ]
       };
     } else {
@@ -232,9 +234,7 @@ class SolanaWebSocketService extends EventEmitter {
         id: subscriptionId,
         method: 'logsSubscribe',
         params: [
-          {
-            mentions: []
-          },
+          'all',
           {
             commitment: 'processed'
           }

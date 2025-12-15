@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { convertTokenAmount } from './lib/address-utils';
+import { convertTokenAmount } from '@/lib/address-utils';
 
 interface TokenAmountDisplayProps {
   amount: number;
@@ -17,27 +17,27 @@ interface TokenAmountDisplayProps {
   variant?: 'default' | 'compact' | 'badge';
 }
 
-const TokenAmountDisplay: React.FC<TokenAmountDisplayProps> = ({
-  amount,
-  decimals,
-  symbol,
-  className = '',
+const TokenAmountDisplay: React.FC<TokenAmountDisplayProps> = ({ 
+  amount, 
+  decimals, 
+  symbol, 
+  className = "",
   showSymbol = true,
   formatOptions = {},
-  variant = 'default',
+  variant = 'default'
 }) => {
   // Format the amount with proper decimal places
   const formatAmount = (value: number, options: any) => {
     const {
       minimumFractionDigits = 0,
       maximumFractionDigits = 9,
-      useGrouping = true,
+      useGrouping = true
     } = options;
 
     return new Intl.NumberFormat('en-US', {
       minimumFractionDigits,
       maximumFractionDigits,
-      useGrouping,
+      useGrouping
     }).format(value);
   };
 
@@ -58,7 +58,11 @@ const TokenAmountDisplay: React.FC<TokenAmountDisplayProps> = ({
     }
   };
 
-  return <span className={`${getVariantClasses()} ${className}`}>{displayText}</span>;
+  return (
+    <span className={`${getVariantClasses()} ${className}`}>
+      {displayText}
+    </span>
+  );
 };
 
-export default TokenAmountDisplay;
+export default TokenAmountDisplay; 
