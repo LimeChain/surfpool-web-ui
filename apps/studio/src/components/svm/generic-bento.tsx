@@ -20,6 +20,7 @@ interface GenericBentoProps<T extends BentoItem> {
   items: T[];
   searchPlaceholder?: string;
   emptyMessage?: string;
+  emptyState?: ReactNode; // Custom empty state component (overrides emptyMessage)
   renderItem: (item: T, isSelected: boolean) => ReactNode;
   renderDetailHeader: (item: T, onClose?: () => void) => ReactNode;
   renderDetailContent: (item: T, activeTab: string) => ReactNode;
@@ -31,9 +32,11 @@ interface GenericBentoProps<T extends BentoItem> {
   }>;
   defaultTab?: string;
   headerContent?: ReactNode;
+  leftActions?: ReactNode; // Content to render on the left side of search
   onSelectionChange?: (item: T | null) => void;
   onItemClick?: (item: T, tab: string) => void; // When an item is clicked
   onTabChange?: (tabId: string) => void;
+  onClose?: () => void; // Called when detail pane is closed
   initialSelectedId?: string; // For deep linking
   initialTab?: string; // For deep linking to a specific tab
 }
@@ -42,6 +45,7 @@ export default function GenericBento<T extends BentoItem>({
   items,
   searchPlaceholder = 'Search...',
   emptyMessage = 'No items found',
+  emptyState,
   renderItem,
   renderDetailHeader,
   renderDetailContent,
@@ -49,9 +53,11 @@ export default function GenericBento<T extends BentoItem>({
   tabs = [],
   defaultTab = 'overview',
   headerContent,
+  leftActions,
   onSelectionChange,
   onItemClick,
   onTabChange,
+  onClose,
   initialSelectedId,
   initialTab,
 }: GenericBentoProps<T>) {
@@ -59,6 +65,13 @@ export default function GenericBento<T extends BentoItem>({
   const [selectedItem, setSelectedItem] = useState<T | null>(null);
   const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Helper to close detail pane and notify parent
+  const handleClose = () => {
+    setSelectedItem(null);
+    setSelectedItemId(null);
+    onClose?.();
+  };
 
   // Auto-select newly created item
   const [previousItemCount, setPreviousItemCount] = useState(items.length);
@@ -163,8 +176,7 @@ export default function GenericBento<T extends BentoItem>({
       // If the item no longer exists in the list, deselect it
       if (!updatedItem) {
         console.log('GenericBento: selected item no longer exists, deselecting');
-        setSelectedItem(null);
-        setSelectedItemId(null);
+        handleClose();
         return;
       }
 
@@ -184,7 +196,7 @@ export default function GenericBento<T extends BentoItem>({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedItem) {
-        setSelectedItem(null);
+        handleClose();
       }
     };
 
@@ -218,21 +230,30 @@ export default function GenericBento<T extends BentoItem>({
         }}
       >
         <div className="mx-auto max-w-7xl px-[24px] pt-4 pb-1 sm:px-6 sm:pt-2 lg:px-8">
-          {/* Search Field and Header Content */}
-          <div className="mb-6">
-            <CollapsibleSearch
-              placeholder={searchPlaceholder}
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
-          </div>
+          {/* Search Field and Header Content - hide when empty */}
+          {items.length > 0 && (
+            <div className="mb-6 flex items-center justify-between">
+              {leftActions && <div>{leftActions}</div>}
+              <CollapsibleSearch
+                placeholder={searchPlaceholder}
+                value={searchQuery}
+                onChange={setSearchQuery}
+              />
+            </div>
+          )}
 
           {filteredItems.length === 0 ? (
-            <div className="flex h-64 items-center justify-center">
-              <p className="text-zinc-500 dark:text-zinc-400">
-                {searchQuery ? 'No items match your search' : emptyMessage}
-              </p>
-            </div>
+            searchQuery ? (
+              <div className="flex h-64 items-center justify-center">
+                <p className="text-zinc-500 dark:text-zinc-400">No items match your search</p>
+              </div>
+            ) : emptyState ? (
+              emptyState
+            ) : (
+              <div className="flex h-64 items-center justify-center">
+                <p className="text-zinc-500 dark:text-zinc-400">{emptyMessage}</p>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 gap-x-[20px] gap-y-[20px]">
               {' '}
@@ -265,20 +286,20 @@ export default function GenericBento<T extends BentoItem>({
         <div
           className={`${
             isExpanded ? 'h-[87.5%]' : 'h-1/2'
-          } -mr-5 -ml-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
+          } relative z-20 -mr-5 -ml-5 flex flex-col border-t-2 border-zinc-200 bg-zinc-50 transition-all duration-300 ease-in-out dark:border-zinc-800 dark:bg-zinc-900`}
         >
           {/* Header */}
           <div className="flex items-start justify-between px-6 py-3 gap-3">
-            {renderDetailHeader(selectedItem, () => setSelectedItem(null))}
+            {renderDetailHeader(selectedItem, handleClose)}
             <div className="flex flex-col items-end gap-1.5">
               <button
-                onClick={() => setSelectedItem(null)}
+                onClick={handleClose}
                 className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                 title="Close details"
               >
                 <XMarkIcon className="h-4 w-4" />
               </button>
-              {renderDetailActions && renderDetailActions(selectedItem, () => setSelectedItem(null))}
+              {renderDetailActions && renderDetailActions(selectedItem, handleClose)}
             </div>
           </div>
 

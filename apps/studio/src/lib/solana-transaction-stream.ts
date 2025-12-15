@@ -128,7 +128,8 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           signature,
           {
             encoding: 'jsonParsed',
-            maxSupportedTransactionVersion: 0
+            maxSupportedTransactionVersion: 0,
+            commitment: 'processed'
           }
         ]
       };

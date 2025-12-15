@@ -6,6 +6,7 @@ interface Config {
   rpc_datasource_url: string
   studio_url: string
   graphql_query_route_url: string
+  mcp_url?: string
 }
 
 interface ConfigContextType {

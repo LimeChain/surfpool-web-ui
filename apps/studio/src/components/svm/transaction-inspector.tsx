@@ -1,17 +1,11 @@
 'use client';
 
-import { Badge } from '@surfpool/ui';
-import { Dialog, DialogBody } from '@surfpool/ui';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
-import {
-  formatSignature,
-  getTransactionStatus,
-  TransactionInfo,
-  useTransactionInspector,
-} from '@/lib/solana-transaction-stream';
+import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
+import { Badge, Dialog, DialogBody } from '@surfpool/ui';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -418,7 +412,7 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
 
   return (
     <div
-      className={`w-full overflow-x-auto bg-zinc-950 p-2 pr-5 pb-4 pl-5 font-mono text-xs whitespace-pre ${className}`}
+      className={`w-full overflow-x-auto whitespace-pre bg-zinc-950 p-2 pb-4 pl-5 pr-5 font-mono text-xs ${className}`}
     >
       {getAccountViewMode(address, context) === 'parsed' ? (
         <div ref={prettyJsonRef} />
@@ -462,7 +456,7 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
               </button>
             </div>
           ) : (
-            <div className="text-[12px] font-medium text-gray-400 uppercase">
+            <div className="text-[12px] font-medium uppercase text-gray-400">
               DROP IDL.JSON FILE TO GET DATA DECODED
             </div>
           )}
@@ -888,7 +882,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
       : getHexData(tempBeforeData) !== getHexData(tempAfterData);
 
   return (
-    <div className="w-full overflow-x-auto border-t border-gray-600/30 bg-black/20 p-3 font-mono text-xs whitespace-pre">
+    <div className="w-full overflow-x-auto whitespace-pre border-t border-gray-600/30 bg-black/20 p-3 font-mono text-xs">
       {viewMode === 'parsed' ? (
         <div>
           {hasChange ? (
@@ -1115,7 +1109,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
               {(() => {
                 const hexData = getHexDataForUpdates(afterData);
                 if (hexData === '<none>') {
-                  return <div className="text-xs text-gray-500 italic">No data</div>;
+                  return <div className="text-xs italic text-gray-500">No data</div>;
                 }
                 return <div dangerouslySetInnerHTML={{ __html: hexData }} />;
               })()}
@@ -1155,7 +1149,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
               </button>
             </div>
           ) : (
-            <div className="text-[12px] font-medium text-gray-400 uppercase">
+            <div className="text-[12px] font-medium uppercase text-gray-400">
               DROP IDL.JSON FILE TO GET DATA DECODED
             </div>
           )}
@@ -2423,7 +2417,7 @@ export default function TransactionInspector({
     return (
       <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
         <div className="mb-0 flex items-center justify-between">
-          <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
         </div>
         <div className="flex h-[280px] items-center justify-center">
           <div className="h-3 w-3 animate-pulse rounded-full bg-pink-500"></div>
@@ -2435,7 +2429,7 @@ export default function TransactionInspector({
   return (
     <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
       <div className="mb-0">
-        <h2 className="text-sm font-medium tracking-wide text-white uppercase">Transaction Inspector</h2>
+        <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
       </div>
 
       <div className="rounded-lg">
@@ -2487,11 +2481,6 @@ export default function TransactionInspector({
           ) : (
             transactions.map((tx: TransactionInfo, index: number) => {
               const status = getTransactionStatus(tx);
-              const statusColors = {
-                success: 'border-l-[3px] border-[#60d695]',
-                failed: 'border-l-[3px] border-[#ff6b6b]',
-                pending: 'border-l-[3px] border-[#606060]',
-              };
 
               const badgeColors = {
                 success: 'green',
@@ -2499,70 +2488,66 @@ export default function TransactionInspector({
                 pending: 'zinc',
               };
 
+              const signature = tx.transaction.signatures[0];
+              const shortSig = `${signature.slice(0, 4)}...${signature.slice(-4)}`;
+              const timeStr = tx.blockTime
+                ? new Date(tx.blockTime * 1000).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                : null;
+
               return (
                 <div
-                  key={`${tx.transaction.signatures[0]}-${index}`}
-                  className={`rounded bg-zinc-800 p-4 ${statusColors[status as keyof typeof statusColors]} cursor-pointer transition-colors hover:bg-zinc-700`}
+                  key={`${signature}-${index}`}
+                  className="group cursor-pointer rounded-xl bg-zinc-800 px-5 py-4 transition-colors hover:bg-zinc-700"
                   onClick={() => handleTransactionClick(tx)}
                 >
-                  <div className="mb-0 flex flex-col gap-1">
-                    {compact ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono text-xs text-gray-300">
-                          {truncateAddress(tx.transaction.signatures[0])}
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Left: Status dot + Signature + Actions */}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`h-3 w-3 flex-shrink-0 rounded-full ${
+                          status === 'success' ? 'bg-[#60d695]' : status === 'failed' ? 'bg-[#ff6b6b]' : 'bg-zinc-500'
+                        }`}
+                      />
+                      <div className="flex flex-col">
+                        <span className="truncate font-mono text-base font-bold text-white">{shortSig}</span>
+                        {/* Hidden full signature for browser search (Cmd+F) */}
+                        <span className="block max-w-[200px] truncate text-[2px] leading-[2px] text-transparent selection:bg-[#60d695] selection:text-white">
+                          {signature}
                         </span>
-                        <div className="flex flex-shrink-0 items-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyToClipboard(tx.transaction.signatures[0], `sig-${tx.transaction.signatures[0]}`);
-                            }}
-                            className="flex h-6 w-6 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
-                            title="Copy signature"
-                          >
-                            <ClipboardIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const signature = tx.transaction.signatures[0];
-                              const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
-                              window.open(explorerUrl, '_blank');
-                            }}
-                            className="flex h-6 w-6 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
-                            title="Open in explorer"
-                          >
-                            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                          </button>
-                        </div>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="font-mono text-[8px] text-gray-300 sm:text-xs md:text-sm">
-                          {formatSignature(tx.transaction.signatures[0])}
-                        </span>
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            copyToClipboard(
-                              formatSignature(tx.transaction.signatures[0]),
-                              `sig-${tx.transaction.signatures[0]}`
-                            );
+                            copyToClipboard(signature, `sig-${signature}`);
                           }}
-                          className="ml-1 flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300 sm:hidden"
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
+                          title="Copy signature"
                         >
-                          <ClipboardIcon className="h-2.5 w-2.5" />
+                          <ClipboardIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
+                            window.open(explorerUrl, '_blank');
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
+                          title="Open in explorer"
+                        >
+                          <ArrowTopRightOnSquareIcon className="h-5 w-5" />
                         </button>
                       </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <Badge color={badgeColors[status as keyof typeof badgeColors] as any} className="w-fit text-xs">
-                        {status.toUpperCase()}
-                      </Badge>
-                      <div className="flex items-center gap-1 text-xs text-gray-400">
-                        <span className="tracking-wide text-gray-500 uppercase">SLOT</span>
-                        <span className="font-mono font-bold text-white">{tx.slot}</span>
-                      </div>
+                    </div>
+
+                    {/* Right: Slot + Time stacked */}
+                    <div className="flex flex-shrink-0 flex-col items-end">
+                      <span className="font-mono text-base font-bold text-zinc-300">#{tx.slot.toLocaleString()}</span>
+                      {timeStr && <span className="text-sm text-zinc-500">{timeStr}</span>}
                     </div>
                   </div>
                 </div>
@@ -2647,11 +2632,13 @@ export default function TransactionInspector({
                               jsonrpc: '2.0',
                               id: 1,
                               method: 'surfnet_exportSnapshot',
-                              params: [{
-                                scope: {
-                                  preTransaction: signature
-                                }
-                              }],
+                              params: [
+                                {
+                                  scope: {
+                                    preTransaction: signature,
+                                  },
+                                },
+                              ],
                             }),
                           });
 
@@ -2661,7 +2648,7 @@ export default function TransactionInspector({
 
                             if (data.result) {
                               // Download the snapshot as JSON
-                              const jsonString = JSON.stringify(data.result, null, 2);
+                              const jsonString = JSON.stringify(data.result.value, null, 2);
                               const blob = new Blob([jsonString], { type: 'application/json' });
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
@@ -2696,8 +2683,8 @@ export default function TransactionInspector({
                         />
                       </svg>
                       <div className="flex flex-col items-start">
-                        <span className="text-xs leading-tight tracking-wide uppercase">Download Fixtures</span>
-                        <span className="text-[9px] leading-tight text-zinc-300 uppercase">Pre-execution Snapshot</span>
+                        <span className="text-xs uppercase leading-tight tracking-wide">Download Fixtures</span>
+                        <span className="text-[9px] uppercase leading-tight text-zinc-300">Pre-execution Snapshot</span>
                       </div>
                     </button>
                   </div>
@@ -2798,7 +2785,7 @@ export default function TransactionInspector({
                               title={`Instruction ${index + 1}: ${cu} CU (${percentage.toFixed(1)}%)`}
                             >
                               {/* Tooltip on hover */}
-                              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 transform rounded bg-black/90 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 transform whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                                 Instruction {index + 1}: {cu} CU
                               </div>
                             </div>
@@ -3159,9 +3146,9 @@ export default function TransactionInspector({
                             </div>
                           )}
                           {instruction.data && (
-                            <div className="mt-1 ml-4 text-xs text-gray-400">
+                            <div className="ml-4 mt-1 text-xs text-gray-400">
                               <div className="mb-1 text-gray-500">Data:</div>
-                              <div className="rounded bg-zinc-900/50 p-2 font-mono break-all">{instruction.data}</div>
+                              <div className="break-all rounded bg-zinc-900/50 p-2 font-mono">{instruction.data}</div>
                             </div>
                           )}
                         </div>

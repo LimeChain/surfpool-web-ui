@@ -2,11 +2,11 @@
 
 import * as Headless from '@headlessui/react';
 import { CircleStackIcon } from '@heroicons/react/16/solid';
-import { BeakerIcon, CloudIcon, CommandLineIcon } from '@heroicons/react/24/solid';
-import React, { useEffect, useState } from 'react';
-import { PaywallDialog } from '../svm/paywall';
+import { BeakerIcon, CommandLineIcon } from '@heroicons/react/24/solid';
+import React, { useState } from 'react';
 import { Navbar, NavbarItem, NavbarSpacer } from '@surfpool/ui';
-import CompactSlotWidget from '../svm/compact-slot-widget';
+import { CompactSlotWidget, solanaWebSocketService } from '@surfpool/svm';
+import { useAppConfig } from '@/hooks/use-app-config';
 
 function OpenMenuIcon() {
   return (
@@ -55,46 +55,7 @@ export function StackedLayout({
   path,
 }: React.PropsWithChildren<{ navbar: React.ReactNode; sidebar: React.ReactNode; path: string }>) {
   let [showSidebar, setShowSidebar] = useState(false);
-  let [showCloudDialog, setShowCloudDialog] = useState(false);
-  let [plans, setPlans] = useState<any[]>([]);
-  let [loading, setLoading] = useState(false);
-  let [stars, setStars] = useState<number>(0);
-
-  // Fetch plans and stars proactively when component mounts
-  useEffect(() => {
-    setLoading(true);
-    console.log('Fetching plans and stars...');
-
-    // Fetch plans
-    fetch('https://cloud.txtx.run/api/subscriptions/plans?origin=studio')
-      .then((res) => {
-        console.log('Plans response status:', res.status);
-        return res.json();
-      })
-      .then((data) => {
-        console.log('Plans data:', data);
-        setPlans(data.plans || []);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch plans:', err);
-      });
-
-    // Fetch GitHub stars
-    fetch('https://api.github.com/repos/txtx/surfpool')
-      .then((res) => {
-        console.log('GitHub response status:', res.status);
-        return res.json();
-      })
-      .then((data) => {
-        console.log('GitHub data:', data);
-        setStars(data.stargazers_count || 0);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch GitHub stars:', err);
-        setLoading(false);
-      });
-  }, []); // Empty dependency array means this runs once when component mounts
+  const { rpcUrl, wsUrl } = useAppConfig();
 
   return (
     <div className="relative isolate flex min-h-svh w-full flex-col bg-white lg:bg-zinc-100 dark:bg-zinc-900 dark:lg:bg-zinc-950">
@@ -112,7 +73,7 @@ export function StackedLayout({
         </div>
         <div className="min-w-0 flex-1">
           <Navbar>
-            <img src="/assets/txtx.png" alt="Txtx Logo" className="ml-auto h-5 max-lg:hidden lg:ml-4 lg:h-4" />
+            <img src="/assets/surfpool.svg" alt="Surfpool Logo" className="h-6 max-lg:hidden lg:ml-4 lg:h-5" />
             <NavbarItem href="/" current={path.endsWith('/')} className="max-lg:hidden">
               <CommandLineIcon />
               Console
@@ -129,19 +90,15 @@ export function StackedLayout({
           </Navbar>
         </div>
 
-        {/* Compact Slot Widget - Centered on small, right-aligned with Cloud button on large */}
+        {/* Compact Slot Widget + Txtx Logo - Centered on small, right-aligned on large */}
         <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:left-auto lg:right-4 lg:translate-x-0">
-          <div className="pointer-events-auto flex items-center gap-3">
-            <CompactSlotWidget />
-            {/* Cloud Button - only visible on large screens, clickable */}
-            <button
-              onClick={() => setShowCloudDialog(true)}
-              className="hidden lg:flex items-center gap-2 rounded-lg px-3 py-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-              title="Surfpool Cloud"
-            >
-              <CloudIcon className="h-5 w-5" />
-              <span className="text-sm font-medium">Surfpool Cloud</span>
-            </button>
+          <div className="pointer-events-auto flex items-center gap-4">
+            <CompactSlotWidget
+              rpcUrl={rpcUrl}
+              wsUrl={wsUrl}
+              solanaWebSocketService={solanaWebSocketService}
+            />
+            <img src="/assets/txtx.png" alt="Txtx Logo" className="hidden h-4 lg:block" />
           </div>
         </div>
       </header>
@@ -153,14 +110,6 @@ export function StackedLayout({
         </div>
       </main>
 
-      {/* Paywall Dialog */}
-      <PaywallDialog
-        open={showCloudDialog}
-        onClose={() => setShowCloudDialog(false)}
-        plans={plans}
-        loading={loading}
-        stars={stars}
-      />
     </div>
   );
 }

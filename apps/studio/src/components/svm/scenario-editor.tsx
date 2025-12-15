@@ -1,7 +1,7 @@
 'use client';
 
-import { Switch } from '@surfpool/ui';
 import { useAppConfig } from '@/hooks/use-app-config';
+import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -13,6 +13,7 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
+import { Combobox, ComboboxOption, ComboboxLabel, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
 import TransactionInspector from './transaction-inspector';
@@ -123,60 +124,68 @@ export default function ScenarioEditor({
     loadScenarioTags();
   }, [scenarioId, studioUrl]);
 
-  // Load scenario from localStorage on mount
+  // Load scenario from initialSteps (backend data) - always prioritize fresh data
   React.useEffect(() => {
     if (initialized || typeof window === 'undefined') return;
 
     console.log('ScenarioEditor: Loading scenario', scenarioId, 'initialSteps:', initialSteps);
 
-    const savedScenarios = localStorage.getItem('scenarios');
-    let loaded = false;
+    // Always prefer initialSteps from backend over localStorage cache
+    if (initialSteps && initialSteps.length > 0) {
+      console.log('Converting initialSteps to slots:', initialSteps);
+      const convertedSlots: Slot[] = initialSteps.map((step, index) => ({
+        id: step.id,
+        height: index,
+        actions: step.actions || [],
+      }));
 
-    if (savedScenarios) {
-      try {
-        const scenarios = JSON.parse(savedScenarios);
-        const scenario = scenarios[scenarioId];
-        if (scenario?.slots && scenario.slots.length > 0) {
-          console.log('Loading from localStorage:', scenario.slots);
-          setSlots(scenario.slots);
-          setHasAnimated(new Set(scenario.slots.map((s: Slot) => s.id)));
-          setSelectedSlotId(scenario.slots[0]?.id || '');
-          loaded = true;
+      console.log('Converted slots with actions:', convertedSlots.map(s => ({
+        id: s.id,
+        actions: s.actions.map(a => ({
+          actionId: a.actionId,
+          overrides: a.overrides,
+          modifiedFields: a.modifiedFields,
+        }))
+      })));
+
+      setSlots(convertedSlots);
+      setHasAnimated(new Set(convertedSlots.map((s) => s.id)));
+      setSelectedSlotId(convertedSlots[0]?.id || '');
+
+      // Update localStorage with fresh data
+      const savedScenarios = localStorage.getItem('scenarios');
+      const scenarios: Record<string, any> = savedScenarios ? JSON.parse(savedScenarios) : {};
+      scenarios[scenarioId] = {
+        slots: convertedSlots,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('scenarios', JSON.stringify(scenarios));
+    } else {
+      // No initialSteps - try localStorage as fallback
+      const savedScenarios = localStorage.getItem('scenarios');
+      if (savedScenarios) {
+        try {
+          const scenarios = JSON.parse(savedScenarios);
+          const scenario = scenarios[scenarioId];
+          if (scenario?.slots && scenario.slots.length > 0) {
+            console.log('Loading from localStorage (no initialSteps):', scenario.slots);
+            setSlots(scenario.slots);
+            setHasAnimated(new Set(scenario.slots.map((s: Slot) => s.id)));
+            setSelectedSlotId(scenario.slots[0]?.id || '');
+            setInitialized(true);
+            return;
+          }
+        } catch (error) {
+          console.error('Error loading scenario from localStorage:', error);
         }
-      } catch (error) {
-        console.error('Error loading scenario:', error);
       }
-    }
 
-    // If not loaded from localStorage, use initialSteps
-    if (!loaded) {
-      if (initialSteps && initialSteps.length > 0) {
-        console.log('Converting initialSteps to slots:', initialSteps);
-        const convertedSlots: Slot[] = initialSteps.map((step, index) => ({
-          id: step.id,
-          height: index,
-          actions: step.actions || [],
-        }));
-
-        setSlots(convertedSlots);
-        setHasAnimated(new Set(convertedSlots.map((s) => s.id)));
-        setSelectedSlotId(convertedSlots[0]?.id || '');
-
-        // Save to localStorage
-        const scenarios: Record<string, any> = savedScenarios ? JSON.parse(savedScenarios) : {};
-        scenarios[scenarioId] = {
-          slots: convertedSlots,
-          updatedAt: new Date().toISOString(),
-        };
-        localStorage.setItem('scenarios', JSON.stringify(scenarios));
-      } else {
-        // No data at all, create empty slot
-        console.log('No data found, creating empty slot');
-        const emptySlot = { id: '1', height: 0, actions: [] };
-        setSlots([emptySlot]);
-        setHasAnimated(new Set(['1']));
-        setSelectedSlotId('1');
-      }
+      // No data at all, create empty slot
+      console.log('No data found, creating empty slot');
+      const emptySlot = { id: '1', height: 0, actions: [] };
+      setSlots([emptySlot]);
+      setHasAnimated(new Set(['1']));
+      setSelectedSlotId('1');
     }
 
     setInitialized(true);
@@ -214,28 +223,22 @@ export default function ScenarioEditor({
           // Convert slots to overrides format for backend
           const overrides = slots.flatMap((slot) =>
             slot.actions.map((action) => {
-              const flatValues: Record<string, any> = {};
+              // Start with existing overrides as flat values (they may already be flat from backend)
+              let flatValues: Record<string, any> = {};
 
-              if (action.modifiedFields && action.modifiedFields.length > 0) {
-                const overridesData = action.overrides || {};
-
-                action.modifiedFields.forEach((fieldPath) => {
-                  const keys = fieldPath.split('.');
-                  let value: any = overridesData;
-
-                  for (const key of keys) {
-                    if (value && typeof value === 'object' && key in value) {
-                      value = value[key];
-                    } else {
-                      value = undefined;
-                      break;
-                    }
+              // If action.overrides exists, extract only flat key-value pairs for the backend
+              // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
+              // Filter out any nested objects and only keep flat paths with primitive values
+              if (action.overrides && typeof action.overrides === 'object') {
+                for (const [key, value] of Object.entries(action.overrides)) {
+                  // Only include if the value is a primitive (not a nested object)
+                  // Arrays are allowed as values
+                  const isNestedObject = value !== null && typeof value === 'object' && !Array.isArray(value);
+                  if (!isNestedObject) {
+                    // Only include keys that look like flat paths (contain dots) or are simple keys
+                    flatValues[key] = value;
                   }
-
-                  if (value !== undefined) {
-                    flatValues[fieldPath] = value;
-                  }
-                });
+                }
               }
 
               const override: any = {
@@ -308,27 +311,39 @@ export default function ScenarioEditor({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && mode === 'edit') {
         if (showProtocolPanel) {
-          // If protocol panel is open, just close it
+          // If protocol panel is open, just close it and stop propagation
+          e.stopPropagation();
           setShowProtocolPanel(false);
           setSelectedAction(null);
           setEditingAction(null);
           setModifiedFields(new Set());
           setFetchBeforeUse(false);
         } else {
-          // Otherwise, exit edit mode
-          setMode('read');
-          setSelectedSlotId('');
+          // Check if the selected slot has more than 1 override
+          const selectedSlot = slots.find(s => s.id === selectedSlotId);
+          if (selectedSlot && selectedSlot.actions.length > 1) {
+            // If slot has multiple overrides, just exit edit mode but keep slot expanded
+            setMode('read');
+          } else {
+            // Otherwise, exit edit mode and collapse slot
+            setMode('read');
+            setSelectedSlotId('');
+          }
         }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, showProtocolPanel]);
+    // Use capture phase to handle before generic-bento's handler
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [mode, showProtocolPanel, slots, selectedSlotId]);
 
   // Fetch protocols dynamically from API
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [protocolsLoading, setProtocolsLoading] = useState(true);
+
+  // Protocols to show in the scenario editor (filter the full list)
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -343,6 +358,10 @@ export default function ScenarioEditor({
         const protocolGroups: Record<string, any[]> = {};
         templates.forEach((template: any) => {
           const protocolName = template.protocol || 'Unknown';
+          // Only include enabled protocols
+          if (!ENABLED_PROTOCOLS.includes(protocolName)) {
+            return;
+          }
           if (!protocolGroups[protocolName]) {
             protocolGroups[protocolName] = [];
           }
@@ -495,6 +514,24 @@ export default function ScenarioEditor({
 
     // Unknown/complex type
     return { type: 'object', isNested: false };
+  };
+
+  // Helper to convert flat dot-notation object to nested object
+  // e.g., {"price_message.price": 123} -> {price_message: {price: 123}}
+  const flatToNested = (flat: Record<string, any>): Record<string, any> => {
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(flat)) {
+      const keys = key.split('.');
+      let current = result;
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (!current[keys[i]]) {
+          current[keys[i]] = {};
+        }
+        current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+    }
+    return result;
   };
 
   // Register IDL and fetch account data when an action is selected
@@ -762,41 +799,22 @@ export default function ScenarioEditor({
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
-        // Only include fields that were explicitly modified
-        const flatValues: Record<string, any> = {};
+        // Start with existing overrides as flat values (they may already be flat from backend)
+        let flatValues: Record<string, any> = {};
 
-        if (action.modifiedFields && action.modifiedFields.length > 0) {
-          // Flatten the overrides to dot notation, only for modified fields
-          const overridesData = action.overrides || {};
-
-          action.modifiedFields.forEach((fieldPath) => {
-            // Navigate the nested structure to get the value
-            const keys = fieldPath.split('.');
-            let value: any = overridesData;
-
-            for (const key of keys) {
-              if (value && typeof value === 'object' && key in value) {
-                value = value[key];
-              } else {
-                value = undefined;
-                break;
-              }
+        // If action.overrides exists, extract only flat key-value pairs
+        // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
+        // Filter out any nested objects and only keep flat paths with primitive values
+        if (action.overrides && typeof action.overrides === 'object') {
+          for (const [key, value] of Object.entries(action.overrides)) {
+            // Only include if the value is a primitive (not a nested object)
+            // Arrays are allowed as values
+            const isNestedObject = value !== null && typeof value === 'object' && !Array.isArray(value);
+            if (!isNestedObject) {
+              flatValues[key] = value;
             }
-
-            // Only add if we found a value
-            if (value !== undefined) {
-              flatValues[fieldPath] = value;
-            }
-          });
+          }
         }
-
-        // Log account data for debugging
-        console.log('🔍 Action account data:', {
-          protocolId: action.protocolId,
-          actionId: action.actionId,
-          account: action.account,
-          hasAccount: !!action.account,
-        });
 
         const override: any = {
           // Use existing overrideId if available, otherwise generate one
@@ -826,7 +844,32 @@ export default function ScenarioEditor({
       tags: [],
     };
 
-    // Register scenario with surfnet
+    // IMPORTANT: Pause the clock BEFORE registering the scenario to prevent race conditions
+    // Otherwise, clock ticks between registration and pause can apply overrides prematurely
+    try {
+      const pauseResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_pauseClock',
+        }),
+      });
+
+      if (pauseResponse.ok) {
+        window.dispatchEvent(
+          new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: true },
+          })
+        );
+        console.log('🎬 Clock paused before scenario registration');
+      }
+    } catch (error) {
+      console.error('Error pausing clock:', error);
+    }
+
+    // Register scenario with surfnet (clock is now paused, no race condition)
     try {
       console.log('📤 Registering scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
@@ -848,31 +891,6 @@ export default function ScenarioEditor({
       }
     } catch (error) {
       console.error('❌ Error registering scenario:', error);
-    }
-
-    // Pause the clock when starting scenario playback
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
-
-      if (response.ok) {
-        // Dispatch event so header widget and other components sync
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
-        console.log('🎬 Clock paused for scenario playback');
-      }
-    } catch (error) {
-      console.error('Error pausing clock:', error);
     }
 
     setCurrentPlaybackSlot(0);
@@ -993,285 +1011,431 @@ export default function ScenarioEditor({
         {/* Vertical cursor line - Edit mode only */}
         {mode === 'edit' && mouseX !== null && (
           <div
-            className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-yellow-500/30"
+            className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-yellow-500/30"
             style={{ left: `${mouseX}px` }}
           />
         )}
 
         {/* Timeline */}
-        <div className={`relative flex min-h-full items-start pt-12 pb-64 ${mode === 'play' ? 'justify-center' : 'justify-start pl-12'}`}>
+        <div
+          className={`relative flex min-h-full items-start pb-64 pt-12 ${mode === 'play' ? 'justify-center' : 'justify-start pl-12'}`}
+        >
           <div className={mode === 'play' ? 'relative min-h-[600px]' : 'flex items-start gap-12'}>
             <AnimatePresence mode="popLayout">
-            {slots.map((slot, index) => {
-              // In play mode, determine slot visibility and state
-              const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
-              const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
-              const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
-              const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot;
+              {slots.map((slot, index) => {
+                // In play mode, determine slot visibility and state
+                const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
+                const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
+                const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
+                const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot || (selectedSlotId === slot.id && slot.actions.length > 1);
 
-              // In play mode, only show previous, current, and next slots
-              if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
-                return null;
-              }
+                // In play mode, only show previous, current, and next slots
+                if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
+                  return null;
+                }
 
-              // Calculate position for play mode carousel
-              let playModePosition = 0;
-              if (mode === 'play') {
-                if (isPreviousSlot) playModePosition = -400; // Previous slot offset to the left
-                if (isCurrentSlot) playModePosition = 0; // Current slot centered
-                if (isNextSlot) playModePosition = 400; // Next slot offset to the right
-              }
+                // Calculate position for play mode carousel
+                let playModePosition = 0;
+                if (mode === 'play') {
+                  if (isPreviousSlot) playModePosition = -400; // Previous slot offset to the left
+                  if (isCurrentSlot) playModePosition = 0; // Current slot centered
+                  if (isNextSlot) playModePosition = 400; // Next slot offset to the right
+                }
 
-              return (
-                <motion.div
-                  key={slot.id}
-                  className="group/slot-wrapper flex"
-                  style={mode === 'play' ? { position: 'absolute', left: '50%' } : {}}
-                  initial={
-                    mode === 'play' && !hasAnimated.has(slot.id)
-                      ? { x: 400 - (shouldExpand ? 150 : 40) }
-                      : false
-                  }
-                  animate={mode === 'play' ? { x: playModePosition - (shouldExpand ? 150 : 40) } : { x: 0 }}
-                  transition={{
-                    x: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
-                  }}
-                >
+                return (
                   <motion.div
-                    layout={mode !== 'play'}
+                    key={slot.id}
+                    className="group/slot-wrapper flex"
+                    style={mode === 'play' ? { position: 'absolute', left: '50%' } : {}}
                     initial={
-                      hasAnimated.has(slot.id)
-                        ? false
-                        : mode === 'play' && (isCurrentSlot || isNextSlot)
-                          ? { opacity: 0, scale: 0.85 }
-                          : { opacity: 0, scale: 0.9 }
+                      mode === 'play' && !hasAnimated.has(slot.id) ? { x: 400 - (shouldExpand ? 150 : 40) } : false
                     }
-                    animate={{
-                      opacity: isPreviousSlot || isNextSlot ? 0.3 : 1,
-                      scale: isPreviousSlot || isNextSlot ? 0.85 : 1,
-                      filter: isPreviousSlot || isNextSlot ? 'blur(2px)' : 'blur(0px)',
-                    }}
-                    exit={{ opacity: 0, scale: 0.85 }}
+                    animate={mode === 'play' ? { x: playModePosition - (shouldExpand ? 150 : 40) } : { x: 0 }}
                     transition={{
-                      layout: { type: 'spring', stiffness: 350, damping: 30 },
-                      opacity: { duration: 0.5, ease: 'easeInOut' },
-                      scale: { duration: 0.5, ease: 'easeInOut' },
-                      filter: { duration: 0.5 },
+                      x: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
                     }}
-                    className="flex flex-col gap-3"
                   >
-                    {/* Slot Height Label */}
-                    <div className="flex items-center justify-center">
-                      <span className="font-mono text-sm text-zinc-400">{slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}</span>
-                    </div>
-
-                    {/* Slot Card */}
                     <motion.div
-                      className="group relative flex-shrink-0"
+                      layout={mode !== 'play'}
+                      initial={
+                        hasAnimated.has(slot.id)
+                          ? false
+                          : mode === 'play' && (isCurrentSlot || isNextSlot)
+                            ? { opacity: 0, scale: 0.85 }
+                            : { opacity: 0, scale: 0.9 }
+                      }
                       animate={{
-                        width: shouldExpand ? 300 : 80,
+                        opacity: isPreviousSlot || isNextSlot ? 0.3 : 1,
+                        scale: isPreviousSlot || isNextSlot ? 0.85 : 1,
+                        filter: isPreviousSlot || isNextSlot ? 'blur(2px)' : 'blur(0px)',
                       }}
+                      exit={{ opacity: 0, scale: 0.85 }}
                       transition={{
-                        width: { duration: 0.35, ease: 'easeInOut' },
+                        layout: { type: 'spring', stiffness: 350, damping: 30 },
+                        opacity: { duration: 0.5, ease: 'easeInOut' },
+                        scale: { duration: 0.5, ease: 'easeInOut' },
+                        filter: { duration: 0.5 },
                       }}
+                      className="flex flex-col gap-3"
                     >
-                      <div
-                        className={`cursor-pointer rounded-lg border-2 p-6 transition-all overflow-hidden ${
-                          // Play mode styling - current slot
-                          mode === 'play' && isCurrentSlot
-                            ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
-                            : // Play mode styling - previous/next slots (dimmed)
-                              mode === 'play' && (isPreviousSlot || isNextSlot)
-                              ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
-                              : // Edit mode styling
-                                selectedSlotId === slot.id && mode === 'edit'
-                                ? 'min-h-[450px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
-                                : // Default styling
-                                  'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (mode === 'read') {
-                            setMode('edit');
-                          }
-                          if (mode !== 'play') {
-                            setSelectedSlotId(slot.id);
-                          }
-                        }}
-                      >
-                        <AnimatePresence mode="wait">
-                        <motion.div
-                          key={shouldExpand ? 'expanded' : 'collapsed'}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.2, delay: shouldExpand ? 0.2 : 0 }}
-                        >
-                        {shouldExpand ? (
-                          <>
-                            {/* Actions in this slot - Expanded View */}
-                            {slot.actions.length === 0 ? (
-                              <div className="flex items-center gap-3 rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 p-3">
-                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700"></div>
-                                <div className="flex-1">
-                                  <div className="text-sm text-zinc-500">No overrides yet</div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {slot.actions.map((action, actionIndex) => {
-                                  const localIconMap: Record<string, string> = {
-                                    pyth: '/assets/pyth.svg',
-                                    switchboard: '/assets/switchboard.svg',
-                                    jupiter: '/assets/jupiter.svg',
-                                    raydium: '/assets/raydium.svg',
-                                    whirlpool: '/assets/whirlpool.svg',
-                                    drift: '/assets/drift.svg',
-                                    kamino: '/assets/kamino.svg',
-                                  };
-                                  const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
-
-                                  return (
-                                    <div
-                                      key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
-                                      className="relative flex cursor-pointer items-center gap-3 rounded-md border border-zinc-700 bg-zinc-800 p-3 transition-colors hover:border-yellow-500 hover:bg-zinc-700"
-                                      onClick={async () => {
-                                        if (mode === 'edit' && selectedSlotId === slot.id) {
-                                          setEditingAction({ slotId: slot.id, actionIndex });
-
-                                          // Load the action's protocol and set it as selected
-                                          const protocol = protocols.find((p) => p.id === action.protocolId);
-                                          if (protocol) {
-                                            setSelectedProtocol(protocol);
-
-                                            // Find the specific action within the protocol
-                                            const foundAction = protocol.actions.find((a) => a.id === action.actionId);
-                                            if (foundAction) {
-                                              setSelectedAction(foundAction);
-                                              // Fetch account data for this action
-                                              await handleActionSelect(foundAction);
-
-                                              // Restore the overrides and modified fields after loading default data
-                                              if (action.overrides) {
-                                                setAccountData(action.overrides);
-                                              }
-                                              if (action.modifiedFields) {
-                                                setModifiedFields(new Set(action.modifiedFields));
-                                              }
-                                              if (action.fetchBeforeUse !== undefined) {
-                                                setFetchBeforeUse(action.fetchBeforeUse);
-                                              }
-                                            }
-                                          }
-
-                                          setShowProtocolPanel(true);
-                                        }
-                                      }}
-                                    >
-                                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-zinc-900 p-1">
-                                        <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
-                                      </div>
-                                      <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-100">{action.action}</div>
-                                        <div className="text-xs text-zinc-400">{action.protocol}</div>
-                                      </div>
-                                      {/* Delete button - only in edit mode when slot is selected */}
-                                      {mode === 'edit' && selectedSlotId === slot.id && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            deleteActionFromSlot(slot.id, actionIndex);
-                                          }}
-                                          className="absolute right-2 bottom-2 text-zinc-500 transition-colors hover:text-zinc-300"
-                                          title="Delete action"
-                                        >
-                                          <TrashIcon className="h-4 w-4" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {/* Actions in this slot - Collapsed Icon View */}
-                            {slot.actions.length === 0 ? (
-                              <div className="flex flex-col items-center gap-2 pt-2">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30"></div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2 pt-2">
-                                {slot.actions.map((action, actionIndex) => {
-                                  const localIconMap: Record<string, string> = {
-                                    pyth: '/assets/pyth.svg',
-                                    switchboard: '/assets/switchboard.svg',
-                                    jupiter: '/assets/jupiter.svg',
-                                    raydium: '/assets/raydium.svg',
-                                    whirlpool: '/assets/whirlpool.svg',
-                                    drift: '/assets/drift.svg',
-                                    kamino: '/assets/kamino.svg',
-                                  };
-                                  const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
-
-                                  return (
-                                    <div
-                                      key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
-                                      className="flex h-12 w-12 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 p-1"
-                                      title={`${action.protocol}: ${action.action}`}
-                                    >
-                                      <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        </motion.div>
-                        </AnimatePresence>
+                      {/* Slot Height Label */}
+                      <div className="flex items-center justify-center">
+                        <span className="font-mono text-sm text-zinc-400">
+                          {slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}
+                        </span>
                       </div>
 
-                      {/* Delete Button - only shown when slot is selected and in Edit mode */}
-                      {mode === 'edit' && slots.length > 1 && selectedSlotId === slot.id && (
-                        <button
+                      {/* Slot Card */}
+                      <motion.div
+                        className="group relative flex-shrink-0"
+                        animate={{
+                          width: shouldExpand ? 300 : 80,
+                        }}
+                        transition={{
+                          width: { duration: 0.35, ease: 'easeInOut' },
+                        }}
+                      >
+                        <div
+                          className={`cursor-pointer overflow-hidden rounded-lg border-2 p-6 transition-all ${
+                            // Play mode styling - current slot
+                            mode === 'play' && isCurrentSlot
+                              ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
+                              : // Play mode styling - previous/next slots (dimmed)
+                                mode === 'play' && (isPreviousSlot || isNextSlot)
+                                ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
+                                : // Edit mode styling
+                                  selectedSlotId === slot.id && mode === 'edit'
+                                  ? 'min-h-[450px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
+                                  : // Default styling
+                                    'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
+                          }`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteSlot(slot.id);
+                            if (mode === 'read') {
+                              setMode('edit');
+                            }
+                            if (mode !== 'play') {
+                              setSelectedSlotId(slot.id);
+                            }
                           }}
-                          className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-all hover:scale-110 hover:bg-red-600"
-                          title="Delete slot"
                         >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      )}
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={shouldExpand ? 'expanded' : 'collapsed'}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2, delay: shouldExpand ? 0.2 : 0 }}
+                            >
+                              {shouldExpand ? (
+                                <>
+                                  {/* Actions in this slot - Expanded View */}
+                                  {slot.actions.length === 0 ? (
+                                    <div className="flex items-center gap-3 rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 p-3">
+                                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700"></div>
+                                      <div className="flex-1">
+                                        <div className="text-sm text-zinc-500">No overrides yet</div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {slot.actions.map((action, actionIndex) => {
+                                        const iconSrc = getProtocolIcon(action.protocolId);
+
+                                        return (
+                                          <div
+                                            key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
+                                            className="relative flex cursor-pointer items-center gap-3 rounded-md border border-zinc-700 bg-zinc-800 p-3 transition-colors hover:border-yellow-500 hover:bg-zinc-700"
+                                            onClick={async () => {
+                                              if (mode === 'edit' && selectedSlotId === slot.id) {
+                                                setEditingAction({ slotId: slot.id, actionIndex });
+
+                                                // Load the action's protocol and set it as selected
+                                                const protocol = protocols.find((p) => p.id === action.protocolId);
+                                                if (protocol) {
+                                                  setSelectedProtocol(protocol);
+
+                                                  // Find the specific action within the protocol
+                                                  const foundAction = protocol.actions.find(
+                                                    (a) => a.id === action.actionId
+                                                  );
+                                                  if (foundAction) {
+                                                    setSelectedAction(foundAction);
+                                                    // Fetch account data for this action
+                                                    await handleActionSelect(foundAction);
+
+                                                    // Restore the overrides and modified fields after loading default data
+                                                    // Start with overrides data
+                                                    let restoredData: Record<string, any> = {};
+
+                                                    if (action.overrides && Object.keys(action.overrides).length > 0) {
+                                                      // Check if overrides are in flat dot-notation format
+                                                      const keys = Object.keys(action.overrides);
+                                                      const isFlat = keys.some(k => k.includes('.'));
+
+                                                      if (isFlat) {
+                                                        // Convert flat to nested for the form
+                                                        restoredData = flatToNested(action.overrides);
+                                                        console.log('Converting flat overrides to nested:', action.overrides, '->', restoredData);
+                                                      } else {
+                                                        restoredData = { ...action.overrides };
+                                                      }
+                                                    }
+
+                                                    // Extract constant_ref values from saved PDA seeds
+                                                    // This restores "PDA Configuration" values when editing an existing override
+                                                    if (action.account?.pda?.seeds && foundAction.template?.address?.pda?.seeds) {
+                                                      const savedSeeds = action.account.pda.seeds;
+                                                      const templateSeeds = foundAction.template.address.pda.seeds;
+                                                      // Get properties in new unified format
+                                                      const templateProperties = foundAction.template?.properties || [];
+                                                      const constants = foundAction.template?.constants || {};
+
+                                                      // Helper to find constant_ref property by path
+                                                      // Note: Backend serializes PropertyKind as "type" field
+                                                      const findConstantRefProp = (path: string) => {
+                                                        return templateProperties.find(
+                                                          (prop: any) => typeof prop !== 'string' && prop.path === path && prop.type === 'constant_ref'
+                                                        );
+                                                      };
+
+                                                      console.log('🔍 Restoring constant_ref values from PDA seeds');
+                                                      console.log('  savedSeeds:', JSON.stringify(savedSeeds));
+                                                      console.log('  templateSeeds:', JSON.stringify(templateSeeds));
+
+                                                      // Match template seeds to saved seeds by index position
+                                                      // This preserves the exact positional relationship
+                                                      console.log('  Matching seeds by position:');
+
+                                                      const matchSeedsByPosition = (tSeeds: any[], sSeeds: any[], prefix: string = '') => {
+                                                        tSeeds.forEach((templateSeed: any, index: number) => {
+                                                          const savedSeed = sSeeds[index];
+                                                          if (!savedSeed) return;
+
+                                                          // If template has propertyRef at this position, get the pubkey from saved
+                                                          if (templateSeed.propertyRef) {
+                                                            const propName = templateSeed.propertyRef;
+                                                            let savedPubkey: string | null = null;
+
+                                                            if (savedSeed.pubkey) {
+                                                              savedPubkey = savedSeed.pubkey;
+                                                            }
+
+                                                            if (savedPubkey) {
+                                                              const constantRefProp = findConstantRefProp(propName);
+
+                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                                const constantDef = constants[constantRefProp.constant];
+                                                                const matchingOption = constantDef.options?.find(
+                                                                  (opt: any) => opt.value === savedPubkey
+                                                                );
+
+                                                                if (matchingOption) {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (${matchingOption.label || matchingOption.id})`);
+                                                                } else {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (not in constants)`);
+                                                                }
+                                                              } else {
+                                                                console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (no constant_ref)`);
+                                                              }
+
+                                                              restoredData[propName] = savedPubkey;
+                                                            }
+                                                          }
+
+                                                          // Handle u16BeRef template seeds - match to u16Be saved seeds
+                                                          if (templateSeed.u16BeRef) {
+                                                            const propName = templateSeed.u16BeRef;
+                                                            // u16Be is the saved value (number)
+                                                            if (savedSeed.u16Be !== undefined) {
+                                                              const savedValue = String(savedSeed.u16Be);
+                                                              const constantRefProp = findConstantRefProp(propName);
+
+                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                                const constantDef = constants[constantRefProp.constant];
+                                                                const matchingOption = constantDef.options?.find(
+                                                                  (opt: any) => opt.value === savedValue
+                                                                );
+
+                                                                if (matchingOption) {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (${matchingOption.label || matchingOption.id})`);
+                                                                } else {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (not in constants)`);
+                                                                }
+                                                              } else {
+                                                                console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (no constant_ref)`);
+                                                              }
+
+                                                              restoredData[propName] = savedValue;
+                                                            }
+                                                          }
+
+                                                          // Handle bytes32Ref template seeds - match to bytes saved seeds (Pyth feed IDs)
+                                                          if (templateSeed.bytes32Ref) {
+                                                            const propName = templateSeed.bytes32Ref;
+                                                            let hexValue: string | null = null;
+
+                                                            // Case 1: savedSeed.bytes is an array of numbers (original format)
+                                                            if (savedSeed.bytes && Array.isArray(savedSeed.bytes)) {
+                                                              hexValue = '0x' + savedSeed.bytes.map((b: number) => b.toString(16).padStart(2, '0')).join('');
+                                                            }
+                                                            // Case 2: savedSeed.bytes32Ref contains the hex value directly (LLM format)
+                                                            else if (savedSeed.bytes32Ref && typeof savedSeed.bytes32Ref === 'string' && savedSeed.bytes32Ref.startsWith('0x')) {
+                                                              hexValue = savedSeed.bytes32Ref;
+                                                            }
+
+                                                            if (hexValue) {
+                                                              const constantRefProp = findConstantRefProp(propName);
+
+                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                                const constantDef = constants[constantRefProp.constant];
+                                                                const matchingOption = constantDef.options?.find(
+                                                                  (opt: any) => opt.value.toLowerCase() === hexValue!.toLowerCase()
+                                                                );
+
+                                                                if (matchingOption) {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (${matchingOption.label || matchingOption.id})`);
+                                                                } else {
+                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (not in constants)`);
+                                                                }
+                                                              } else {
+                                                                console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (no constant_ref)`);
+                                                              }
+
+                                                              restoredData[propName] = hexValue;
+                                                            }
+                                                          }
+
+                                                          // Recursively handle nested derivedPda
+                                                          if (templateSeed.derivedPda?.seeds && savedSeed.derivedPda?.seeds) {
+                                                            matchSeedsByPosition(
+                                                              templateSeed.derivedPda.seeds,
+                                                              savedSeed.derivedPda.seeds,
+                                                              `${prefix}[${index}].derivedPda`
+                                                            );
+                                                          }
+                                                        });
+                                                      };
+
+                                                      matchSeedsByPosition(templateSeeds, savedSeeds);
+                                                    }
+
+                                                    setAccountData(restoredData);
+
+                                                    // Combine action.modifiedFields with any restored constant_ref fields
+                                                    const allModifiedFields = new Set(action.modifiedFields || []);
+                                                    // Add all keys from restoredData that came from PDA seeds
+                                                    Object.keys(restoredData).forEach(key => {
+                                                      if (restoredData[key] !== undefined && restoredData[key] !== '') {
+                                                        allModifiedFields.add(key);
+                                                      }
+                                                    });
+                                                    setModifiedFields(allModifiedFields);
+                                                    if (action.fetchBeforeUse !== undefined) {
+                                                      setFetchBeforeUse(action.fetchBeforeUse);
+                                                    }
+                                                  }
+                                                }
+
+                                                setShowProtocolPanel(true);
+                                              }
+                                            }}
+                                          >
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-zinc-900 p-1">
+                                              <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
+                                            </div>
+                                            <div className="flex-1">
+                                              <div className="text-sm font-medium text-zinc-100">{action.action}</div>
+                                              <div className="text-xs text-zinc-400">{action.protocol}</div>
+                                            </div>
+                                            {/* Delete button - only in edit mode when slot is selected */}
+                                            {mode === 'edit' && selectedSlotId === slot.id && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  deleteActionFromSlot(slot.id, actionIndex);
+                                                }}
+                                                className="absolute bottom-2 right-2 text-zinc-500 transition-colors hover:text-zinc-300"
+                                                title="Delete action"
+                                              >
+                                                <TrashIcon className="h-4 w-4" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {/* Actions in this slot - Collapsed Icon View */}
+                                  {slot.actions.length === 0 ? (
+                                    <div className="flex flex-col items-center gap-2 pt-2">
+                                      <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30"></div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-2 pt-2">
+                                      {slot.actions.map((action, actionIndex) => {
+                                        const iconSrc = getProtocolIcon(action.protocolId);
+
+                                        return (
+                                          <div
+                                            key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
+                                            className="flex h-12 w-12 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 p-1"
+                                            title={`${action.protocol}: ${action.action}`}
+                                          >
+                                            <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </motion.div>
+                          </AnimatePresence>
+                        </div>
+
+                        {/* Delete Button - only shown when slot is selected and in Edit mode */}
+                        {mode === 'edit' && slots.length > 1 && selectedSlotId === slot.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteSlot(slot.id);
+                            }}
+                            className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-all hover:scale-110 hover:bg-red-600"
+                            title="Delete slot"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                      </motion.div>
                     </motion.div>
+
+                    {/* Gap with insert button - shown when hovering the slot before OR the gap itself, only in Edit mode */}
+                    {mode === 'edit' && (
+                      <div className="group/insert relative" style={{ width: '48px' }}>
+                        {/* Vertical line - shorter and positioned lower */}
+                        <div
+                          className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-pink-500 opacity-0 transition-opacity group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
+                          style={{ top: '120px', height: '140px' }}
+                        />
+
+                        {/* Plus button - centered on the line */}
+                        <button
+                          onClick={() => insertSlotAt(index + 1)}
+                          className="absolute z-10 flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-white opacity-0 shadow-lg transition-all hover:scale-110 hover:bg-pink-600 group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
+                          style={{ top: '170px', left: '50%', transform: 'translateX(-50%)' }}
+                          title="Insert slot here"
+                        >
+                          <PlusIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    )}
                   </motion.div>
-
-                  {/* Gap with insert button - shown when hovering the slot before OR the gap itself, only in Edit mode */}
-                  {mode === 'edit' && (
-                    <div className="group/insert relative" style={{ width: '48px' }}>
-                      {/* Vertical line - shorter and positioned lower */}
-                      <div
-                        className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-pink-500 opacity-0 transition-opacity group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
-                        style={{ top: '120px', height: '140px' }}
-                      />
-
-                      {/* Plus button - centered on the line */}
-                      <button
-                        onClick={() => insertSlotAt(index + 1)}
-                        className="absolute z-10 flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-white opacity-0 shadow-lg transition-all group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100 hover:scale-110 hover:bg-pink-600"
-                        style={{ top: '170px', left: '50%', transform: 'translateX(-50%)' }}
-                        title="Insert slot here"
-                      >
-                        <PlusIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
+                );
+              })}
             </AnimatePresence>
           </div>
         </div>
@@ -1311,7 +1475,7 @@ export default function ScenarioEditor({
                       placeholder="Search protocols..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pr-5 pl-14 text-base text-zinc-100 shadow-lg backdrop-blur-2xl transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 focus:outline-none"
+                      className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pl-14 pr-5 text-base text-zinc-100 shadow-lg backdrop-blur-2xl transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500"
                     />
                   </div>
                 </div>
@@ -1324,18 +1488,7 @@ export default function ScenarioEditor({
                     <div className="text-sm text-zinc-500">No protocols found</div>
                   ) : (
                     filteredProtocols.map((protocol) => {
-                      // Map protocol IDs to local SVG files
-                      const localIconMap: Record<string, string> = {
-                        pyth: '/assets/pyth.svg',
-                        switchboard: '/assets/switchboard.svg',
-                        jupiter: '/assets/jupiter.svg',
-                        raydium: '/assets/raydium.svg',
-                        whirlpool: '/assets/whirlpool.svg',
-                        drift: '/assets/drift.svg',
-                        kamino: '/assets/kamino.svg',
-                      };
-
-                      const iconSrc = localIconMap[protocol.id] || protocol.icon_url;
+                      const iconSrc = getProtocolIcon(protocol.id, protocol.icon_url);
 
                       return (
                         <div
@@ -1392,6 +1545,7 @@ export default function ScenarioEditor({
                                 raydium: '/assets/raydium.svg',
                                 whirlpool: '/assets/whirlpool.svg',
                                 drift: '/assets/drift.svg',
+                                meteora: '/assets/meteora.svg',
                                 kamino: '/assets/kamino.svg',
                               }[selectedProtocol.id] || selectedProtocol.icon_url
                             }
@@ -1431,7 +1585,7 @@ export default function ScenarioEditor({
                               placeholder="Search overrides..."
                               value={actionSearchQuery}
                               onChange={(e) => setActionSearchQuery(e.target.value)}
-                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pr-4 pl-11 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pl-11 pr-4 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                             />
                           </div>
                           <div className="space-y-2">
@@ -1458,7 +1612,7 @@ export default function ScenarioEditor({
                             <>
                               <div className="mb-4">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-sm font-semibold tracking-wide text-zinc-400 uppercase">
+                                  <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
                                     Account Data
                                   </h4>
                                   <div className="flex items-center gap-3">
@@ -1491,15 +1645,109 @@ export default function ScenarioEditor({
                                       return <p className="text-zinc-500">No editable fields available</p>;
                                     }
 
-                                    // Get the list of editable properties from the template
-                                    const editableProperties = selectedAction.template?.properties || [];
+                                    // Get the list of properties from the template (new unified format)
+                                    // Properties are now objects with { path, kind, label, description, constant }
+                                    const rawProperties = selectedAction.template?.properties || [];
+                                    // Extract just the paths for backward compatibility with field filtering
+                                    const editableProperties = rawProperties.map((prop: any) =>
+                                      typeof prop === 'string' ? prop : prop.path
+                                    );
                                     console.log('🔍 Editable properties:', editableProperties);
                                     editableProperties.forEach((prop: string) => {
                                       console.log('  📌', prop);
                                     });
 
+                                    // Get constants from template
+                                    const constants = selectedAction.template?.constants || {};
+                                    console.log('🔍 Properties (raw):', rawProperties);
+                                    console.log('🔍 Constants:', constants);
+
+                                    // Helper to check if a field is a constant_ref
+                                    // Note: Backend serializes PropertyKind as "type" field (not "kind")
+                                    const getConstantRefInfo = (fieldPath: string): { isConstantRef: boolean; constantDef?: any; label?: string; description?: string } => {
+                                      // Find the property by path in the new unified format
+                                      const prop = rawProperties.find(
+                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                      );
+                                      // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
+                                      if (prop && typeof prop !== 'string' && prop.type === 'constant_ref' && prop.constant && constants[prop.constant]) {
+                                        return {
+                                          isConstantRef: true,
+                                          constantDef: constants[prop.constant],
+                                          label: prop.label,
+                                          description: prop.description,
+                                        };
+                                      }
+                                      return { isConstantRef: false };
+                                    };
+
+                                    // Helper to get property metadata (label, description)
+                                    const getPropertyMeta = (fieldPath: string): { label?: string; description?: string } => {
+                                      const prop = rawProperties.find(
+                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                      );
+                                      if (prop && typeof prop !== 'string') {
+                                        return { label: prop.label, description: prop.description };
+                                      }
+                                      return {};
+                                    };
+
+                                    // Get the value from accountData using the path
+                                    const getValue = (path: string) => {
+                                      const keys = path.split('.');
+                                      let value: any = accountData;
+                                      for (const key of keys) {
+                                        value = value?.[key];
+                                      }
+
+                                      // Handle undefined/null
+                                      if (value === undefined || value === null) {
+                                        return '';
+                                      }
+
+                                      // Convert objects/arrays to JSON string for display
+                                      if (typeof value === 'object') {
+                                        return JSON.stringify(value);
+                                      }
+
+                                      return value;
+                                    };
+
+                                    // Set the value in accountData using the path
+                                    const setValue = (path: string, newValue: any) => {
+                                      const keys = path.split('.');
+                                      const newData = { ...accountData };
+                                      let current: any = newData;
+
+                                      for (let i = 0; i < keys.length - 1; i++) {
+                                        if (!current[keys[i]]) {
+                                          current[keys[i]] = {};
+                                        }
+                                        current = current[keys[i]];
+                                      }
+
+                                      current[keys[keys.length - 1]] = newValue;
+                                      setAccountData(newData);
+
+                                      // Mark this field as modified
+                                      setModifiedFields((prev) => new Set(prev).add(path));
+                                    };
+
+                                    // Helper to check if a property is a constant_ref (rendered separately as Combobox)
+                                    const isConstantRefProperty = (fieldPath: string): boolean => {
+                                      const prop = rawProperties.find(
+                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                      );
+                                      return prop && typeof prop !== 'string' && prop.type === 'constant_ref';
+                                    };
+
                                     // Helper to check if a field or any of its children should be rendered
                                     const shouldRenderField = (fieldPath: string): boolean => {
+                                      // Skip constant_ref properties - they're rendered as Comboboxes in PDA Configuration
+                                      if (isConstantRefProperty(fieldPath)) {
+                                        return false;
+                                      }
+
                                       if (editableProperties.length === 0) {
                                         // If no properties specified, show all fields
                                         return true;
@@ -1550,47 +1798,6 @@ export default function ScenarioEditor({
                                         console.log('❌ Skipping field:', fieldPath);
                                         return null;
                                       }
-
-                                      // Get the value from accountData using the path
-                                      const getValue = (path: string) => {
-                                        const keys = path.split('.');
-                                        let value = accountData;
-                                        for (const key of keys) {
-                                          value = value?.[key];
-                                        }
-
-                                        // Handle undefined/null
-                                        if (value === undefined || value === null) {
-                                          return '';
-                                        }
-
-                                        // Convert objects/arrays to JSON string for display
-                                        if (typeof value === 'object') {
-                                          return JSON.stringify(value);
-                                        }
-
-                                        return value;
-                                      };
-
-                                      // Set the value in accountData using the path
-                                      const setValue = (path: string, newValue: any) => {
-                                        const keys = path.split('.');
-                                        const newData = { ...accountData };
-                                        let current = newData;
-
-                                        for (let i = 0; i < keys.length - 1; i++) {
-                                          if (!current[keys[i]]) {
-                                            current[keys[i]] = {};
-                                          }
-                                          current = current[keys[i]];
-                                        }
-
-                                        current[keys[keys.length - 1]] = newValue;
-                                        setAccountData(newData);
-
-                                        // Mark this field as modified
-                                        setModifiedFields((prev) => new Set(prev).add(path));
-                                      };
 
                                       // Nested struct - render recursively
                                       if (typeInfo.isNested && typeInfo.nestedFields) {
@@ -1682,18 +1889,28 @@ export default function ScenarioEditor({
                                         });
                                       };
 
+                                      // Get label and description from property metadata
+                                      const propertyMeta = getPropertyMeta(fieldPath);
+                                      const displayLabel = propertyMeta.label || String(field.name);
+                                      const displayDescription = propertyMeta.description;
+
                                       return (
                                         <div
                                           key={fieldPath}
                                           className="space-y-2"
                                           style={{ marginLeft: `${depth * 12}px` }}
                                         >
-                                          <div className="flex items-center justify-between">
-                                            <label className="block text-sm font-medium text-zinc-300">
-                                              {String(field.name)}
-                                              <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
-                                            </label>
-                                            <div className="flex items-center gap-2">
+                                          <div className="flex items-start justify-between">
+                                            <div className="flex-1">
+                                              <label className="block text-sm font-medium text-zinc-300">
+                                                {displayLabel}
+                                                <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
+                                              </label>
+                                              {displayDescription && (
+                                                <p className="mt-0.5 text-xs text-zinc-500">{displayDescription}</p>
+                                              )}
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-2">
                                               {fieldState === 'override' && (
                                                 <>
                                                   <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
@@ -1757,7 +1974,7 @@ export default function ScenarioEditor({
                                                 setValue(fieldPath, newValue);
                                               }}
                                               placeholder={`Enter ${String(field.name)}...`}
-                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:outline-none ${
+                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 ${
                                                 fieldState === 'override'
                                                   ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
                                                   : fieldState === 'streamed'
@@ -1770,7 +1987,225 @@ export default function ScenarioEditor({
                                       );
                                     };
 
-                                    return fields.map((field: any) => renderField(field, '', 0));
+                                    // Render constant_ref properties as comboboxes or selects
+                                    const renderConstantRefFields = () => {
+                                      // Filter for constant_ref properties from the new unified format
+                                      // Note: Backend serializes PropertyKind as "type" field
+                                      const constantRefProps = rawProperties.filter(
+                                        (prop: any) => typeof prop !== 'string' && prop.type === 'constant_ref' && prop.constant && constants[prop.constant]
+                                      ).map((prop: any) => ({
+                                        // Map to the old format for compatibility with existing rendering logic
+                                        name: prop.path,
+                                        type: 'constant_ref',
+                                        constant: prop.constant,
+                                        label: prop.label,
+                                        description: prop.description,
+                                      }));
+
+                                      if (constantRefProps.length === 0) return null;
+
+                                      // Token selector component using Catalyst Combobox
+                                      const TokenSelector = ({
+                                        constantDef,
+                                        fieldPath,
+                                        currentValue,
+                                        isModified
+                                      }: {
+                                        constantDef: any;
+                                        fieldPath: string;
+                                        currentValue: string | number | undefined;
+                                        isModified: boolean;
+                                      }) => {
+                                        // Convert currentValue to string for comparison (handles numbers like config_index)
+                                        const currentValueStr = currentValue != null ? String(currentValue) : '';
+
+                                        // Find the currently selected option (case-insensitive for hex values)
+                                        const selectedOption = constantDef.options.find(
+                                          (opt: any) => currentValueStr.startsWith('0x')
+                                            ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
+                                            : opt.value === currentValueStr
+                                        ) || null;
+
+                                        return (
+                                          <Combobox
+                                            value={selectedOption}
+                                            onChange={(option: any) => {
+                                              if (option) {
+                                                setValue(fieldPath, option.value);
+                                              }
+                                            }}
+                                            options={constantDef.options}
+                                            displayValue={(option: any) => {
+                                              if (!option) return '';
+                                              // Display symbol from metadata if available
+                                              const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                              return symbol;
+                                            }}
+                                            filter={(option: any, query: string) => {
+                                              const q = query.toLowerCase();
+                                              const symbol = (option.metadata?.symbol || option.id || '').toLowerCase();
+                                              const label = (option.label || '').toLowerCase();
+                                              const description = (option.description || '').toLowerCase();
+                                              return symbol.includes(q) || label.includes(q) || description.includes(q);
+                                            }}
+                                            placeholder={`Search ${constantDef.label.toLowerCase()}...`}
+                                            aria-label={constantDef.label}
+                                            className={isModified ? '[&_[data-slot=control]]:border-yellow-500' : ''}
+                                          >
+                                            {(option: any) => (
+                                              <ComboboxOption key={option.id} value={option}>
+                                                <div className="flex items-center gap-3">
+                                                  {/* Token logo if available */}
+                                                  {option.metadata?.logo_uri && (
+                                                    <img
+                                                      src={option.metadata.logo_uri}
+                                                      alt={option.metadata?.symbol || option.id}
+                                                      className="h-5 w-5 rounded-full"
+                                                      onError={(e) => {
+                                                        // Hide broken images
+                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                      }}
+                                                    />
+                                                  )}
+                                                  <ComboboxLabel>
+                                                    <span className="font-medium">
+                                                      {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                    </span>
+                                                    {option.description && (
+                                                      <span className="ml-2 text-zinc-400">
+                                                        {option.description}
+                                                      </span>
+                                                    )}
+                                                  </ComboboxLabel>
+                                                </div>
+                                              </ComboboxOption>
+                                            )}
+                                          </Combobox>
+                                        );
+                                      };
+
+                                      return (
+                                        <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                          <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                            PDA Configuration
+                                          </h5>
+                                          {constantRefProps.map((prop: any) => {
+                                            const constantDef = constants[prop.constant];
+                                            const fieldPath = prop.name;
+                                            const rawValue = getValue(fieldPath);
+                                            // Convert to string for comparison (handles numbers like config_index)
+                                            const currentValue = rawValue != null ? String(rawValue) : '';
+                                            const isModified = modifiedFields.has(fieldPath);
+
+                                            // Use searchable Combobox for constants with many options (e.g., verified tokens)
+                                            const useCombobox = constantDef.options.length > 20;
+
+                                            return (
+                                              <div key={fieldPath} className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                  <label className="block text-sm font-medium text-zinc-300">
+                                                    {constantDef.label}
+                                                    {isModified && (
+                                                      <span className="ml-2 rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
+                                                        SELECTED
+                                                      </span>
+                                                    )}
+                                                  </label>
+                                                </div>
+                                                {constantDef.description && (
+                                                  <p className="text-xs text-zinc-500">{constantDef.description}</p>
+                                                )}
+
+                                                {useCombobox ? (
+                                                  <TokenSelector
+                                                    constantDef={constantDef}
+                                                    fieldPath={fieldPath}
+                                                    currentValue={currentValue}
+                                                    isModified={isModified}
+                                                  />
+                                                ) : (
+                                                  <Select
+                                                    value={
+                                                      // For hex values (like Pyth feed IDs), find matching option case-insensitively
+                                                      currentValue.startsWith('0x')
+                                                        ? constantDef.options.find(
+                                                            (opt: any) => opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                          )?.value || currentValue || ''
+                                                        : currentValue || ''
+                                                    }
+                                                    onChange={(e) => {
+                                                      setValue(fieldPath, e.target.value);
+                                                    }}
+                                                    className={
+                                                      isModified
+                                                        ? '!border-yellow-500 !bg-yellow-500/5'
+                                                        : ''
+                                                    }
+                                                  >
+                                                    <option value="">
+                                                      Select {constantDef.label.toLowerCase()}...
+                                                    </option>
+                                                    {constantDef.options.map((option: any) => (
+                                                      <option key={option.id} value={option.value}>
+                                                        {option.label}
+                                                      </option>
+                                                    ))}
+                                                  </Select>
+                                                )}
+
+                                                {/* Show selected token details */}
+                                                {currentValue && (() => {
+                                                  // Use case-insensitive comparison for hex values (like Pyth feed IDs)
+                                                  const selectedOption = constantDef.options.find(
+                                                    (opt: any) => currentValue.startsWith('0x')
+                                                      ? opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                      : opt.value === currentValue
+                                                  );
+                                                  if (!selectedOption) return null;
+
+                                                  return (
+                                                    <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-3 py-2">
+                                                      {selectedOption.metadata?.logo_uri && (
+                                                        <img
+                                                          src={selectedOption.metadata.logo_uri}
+                                                          alt={selectedOption.metadata?.symbol || selectedOption.id}
+                                                          className="h-6 w-6 rounded-full"
+                                                          onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                          }}
+                                                        />
+                                                      )}
+                                                      <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                          <span className="font-medium text-zinc-200">
+                                                            {selectedOption.metadata?.symbol || selectedOption.id?.toUpperCase()}
+                                                          </span>
+                                                          {selectedOption.metadata?.decimals !== undefined && (
+                                                            <span className="text-xs text-zinc-500">
+                                                              ({selectedOption.metadata.decimals} decimals)
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <div className="text-xs text-zinc-500 truncate font-mono">
+                                                          {selectedOption.value}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })()}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    };
+
+                                    return (
+                                      <>
+                                        {renderConstantRefFields()}
+                                        {fields.map((field: any) => renderField(field, '', 0))}
+                                      </>
+                                    );
                                   })()}
                                 </div>
                               )}
@@ -1857,7 +2292,7 @@ export default function ScenarioEditor({
                           style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
                         >
                           <span
-                            className={`font-mono text-[10px] tracking-wide whitespace-nowrap uppercase transition-colors ${
+                            className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wide transition-colors ${
                               isExecuted ? 'text-green-500' : 'text-zinc-400'
                             }`}
                           >
@@ -1865,7 +2300,7 @@ export default function ScenarioEditor({
                           </span>
                           {/* Small triangle tick pointing down */}
                           <div
-                            className={`h-0 w-0 border-t-[3px] border-r-[3px] border-l-[3px] border-r-transparent border-l-transparent transition-colors ${
+                            className={`h-0 w-0 border-l-[3px] border-r-[3px] border-t-[3px] border-l-transparent border-r-transparent transition-colors ${
                               isExecuted ? 'border-t-green-500' : 'border-t-zinc-400'
                             }`}
                           />
@@ -1917,7 +2352,7 @@ export default function ScenarioEditor({
                     {/* Pink progress overlay (ready state) - shows when in play mode */}
                     {mode === 'play' && (
                       <div
-                        className="absolute top-0 left-0 h-2 overflow-hidden rounded-full"
+                        className="absolute left-0 top-0 h-2 overflow-hidden rounded-full"
                         style={{ width: '12.5%' }}
                       >
                         <div
@@ -1955,7 +2390,7 @@ export default function ScenarioEditor({
                           <>
                             {/* Green dashed segment - always 12.5% of full bar */}
                             <div
-                              className="absolute top-0 left-0 h-2 transition-all duration-300"
+                              className="absolute left-0 top-0 h-2 transition-all duration-300"
                               style={{
                                 width: '12.5%',
                                 backgroundImage:
