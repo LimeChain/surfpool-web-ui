@@ -1185,6 +1185,7 @@ interface TransactionInspectorProps {
   filterByAccount?: string;
   compact?: boolean;
   fetchHistorical?: boolean;
+  hideTitle?: boolean;
 }
 
 interface AccountDetailsProps {
@@ -1481,6 +1482,7 @@ export default function TransactionInspector({
   filterByAccount,
   compact = false,
   fetchHistorical = true,
+  hideTitle = false,
 }: TransactionInspectorProps) {
   const [isClient, setIsClient] = useState(false);
 
@@ -2411,9 +2413,11 @@ export default function TransactionInspector({
   if (!isClient) {
     return (
       <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
-        <div className="mb-0 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
-        </div>
+        {!hideTitle && (
+          <div className="mb-0 flex items-center justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
+          </div>
+        )}
         <div className="flex h-[280px] items-center justify-center">
           <div className="h-3 w-3 animate-pulse rounded-full bg-pink-500"></div>
         </div>
@@ -2423,9 +2427,11 @@ export default function TransactionInspector({
 
   return (
     <div className="mx-auto flex w-full flex-col gap-4 space-y-6">
-      <div className="mb-0">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
-      </div>
+      {!hideTitle && (
+        <div className="mb-0">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-white">Transaction Inspector</h2>
+        </div>
+      )}
 
       <div className="rounded-lg">
         {/* Transactions List */}
