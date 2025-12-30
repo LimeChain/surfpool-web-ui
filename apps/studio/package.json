@@ -19,8 +19,10 @@
     "@graphiql/toolkit": "0.11.3",
     "@headlessui/react": "2.2.4",
     "@heroicons/react": "2.2.0",
+    "@moneymq/react": "file:/Users/ludovic/Coding/moneymq-js/packages/react",
     "@nhost/nhost-js": "^3.2.6",
     "@nhost/react": "^3.10.2",
+    "@solana/connector": "^0.1.10",
     "@solana/kit": "^2.3.0",
     "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "^1.98.4",
@@ -28,6 +30,7 @@
     "@surfpool/svm": "workspace:*",
     "@surfpool/ui": "workspace:*",
     "ai": "^5.0.108",
+    "buffer": "^6.0.3",
     "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
     "confetti": "^2.0.6",
@@ -38,10 +41,12 @@
     "graphql-ws": "5.5.5",
     "jose": "^6.0.10",
     "json-diff": "^1.0.6",
+    "lottie-react": "^2.4.1",
     "next": "15.4.1",
     "pretty-json-custom-element": "^1.1.19",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.6",

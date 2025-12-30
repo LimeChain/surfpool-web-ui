@@ -3,6 +3,7 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
+import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
 import {
   Dialog,
@@ -14,8 +15,15 @@ import {
   ListboxOption,
   Switch,
 } from '@surfpool/ui';
+import * as jose from 'jose';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
+
+const moneyMQClient = {
+  config: {
+    endpoint: 'http://localhost:8488',
+  },
+};
 
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
 
@@ -44,6 +52,8 @@ const ExplorerHeader = () => {
   const [currentEpoch, setCurrentEpoch] = useState<number>(0);
   const [currentSlot, setCurrentSlot] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [surfnetPayload, setSurfnetPayload] = useState<any>(null);
 
   // Track WebSocket connection status
   useEffect(() => {
@@ -253,8 +263,8 @@ const ExplorerHeader = () => {
     }
   };
 
-  // Export snapshot
-  const exportSnapshot = async () => {
+  // Fetch snapshot data from the surfnet
+  const fetchSnapshot = async (): Promise<any | null> => {
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
@@ -271,24 +281,31 @@ const ExplorerHeader = () => {
       if (response.ok) {
         const data = await response.json();
         console.log('📸 Export snapshot response:', data);
-
-        if (data.result) {
-          const jsonString = JSON.stringify(data.result, null, 2);
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          link.download = `surfnet-snapshot-${timestamp}.json`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-          console.log('✅ Snapshot exported successfully');
-        }
+        return data.result || null;
       }
+      return null;
     } catch (error) {
-      console.error('❌ Error exporting snapshot:', error);
+      console.error('❌ Error fetching snapshot:', error);
+      return null;
+    }
+  };
+
+  // Export snapshot to file
+  const exportSnapshot = async () => {
+    const snapshotData = await fetchSnapshot();
+    if (snapshotData) {
+      const jsonString = JSON.stringify(snapshotData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.download = `surfnet-snapshot-${timestamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      console.log('✅ Snapshot exported successfully');
     }
   };
 
@@ -653,69 +670,11 @@ const ExplorerHeader = () => {
 
       {/* Publish Dialog */}
       <Dialog open={showPublishDialog} onClose={() => setShowPublishDialog(false)} size="md">
-        <DialogTitle className="text-center text-lg font-semibold">New Cloud Surfnet</DialogTitle>
+        <DialogTitle className="text-center text-lg font-semibold">Publish Surfnet</DialogTitle>
         <DialogDescription className="mt-2 text-center text-sm text-zinc-400">
           This network will be publicly accessible to anyone with the link
         </DialogDescription>
         <DialogBody className="mt-6">
-          {/* Subdomain Picker */}
-          <div className="mb-6">
-            <div className="flex items-center justify-center gap-1 text-lg">
-              <span className="text-zinc-500">https://</span>
-              <div className="relative">
-                <input
-                  ref={subdomainInputRef}
-                  type="text"
-                  value={subdomain}
-                  onChange={handleSubdomainChange}
-                  placeholder="my-surfnet"
-                  maxLength={20}
-                  className={`w-36 border-b-2 bg-transparent px-1 pb-1 text-center text-lg font-semibold text-white placeholder-zinc-600 transition-all focus:outline-none ${
-                    subdomainAvailable === true
-                      ? 'border-green-500'
-                      : subdomainAvailable === false
-                        ? 'border-red-500'
-                        : 'border-zinc-600 focus:border-pink-500'
-                  }`}
-                />
-              </div>
-              <span className="text-zinc-500">.surfnet.dev</span>
-              <div className="ml-2 flex h-6 w-6 items-center justify-center">
-                {isCheckingSubdomain && (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
-                )}
-                {!isCheckingSubdomain && subdomainAvailable === true && (
-                  <svg
-                    className="h-6 w-6 text-green-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {!isCheckingSubdomain && subdomainAvailable === false && (
-                  <svg
-                    className="h-6 w-6 text-red-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-              </div>
-            </div>
-            {!isCheckingSubdomain && subdomainAvailable === false && subdomain.length >= 3 && (
-              <p className="mt-2 text-center text-sm text-red-400">This subdomain is already taken</p>
-            )}
-            {subdomain.length > 0 && subdomain.length < 3 && (
-              <p className="mt-2 text-center text-xs text-zinc-500">Min 3 characters</p>
-            )}
-          </div>
-
           {/* Toggle Options */}
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4">
@@ -733,31 +692,6 @@ const ExplorerHeader = () => {
               </div>
               <Switch checked={publishPrograms} onChange={setPublishPrograms} color="pink" />
             </div>
-
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-white">Landing Page</div>
-                <div className="text-sm text-zinc-400">Custom landing page for your surfnet</div>
-                <a
-                  href="http://simd-0296.surfnet.dev/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-pink-400 hover:text-pink-300"
-                >
-                  View example: simd-0296.surfnet.dev
-                </a>
-              </div>
-              <Switch
-                checked={publishLandingPage}
-                onChange={(checked) => {
-                  setPublishLandingPage(checked);
-                  if (checked) {
-                    setSelectedPricingTier('enterprise');
-                  }
-                }}
-                color="pink"
-              />
-            </div>
           </div>
 
           {/* Pricing Tier Segmented Control */}
@@ -768,55 +702,165 @@ const ExplorerHeader = () => {
                   setSelectedPricingTier('starter');
                   setPublishLandingPage(false);
                 }}
-                className={`flex flex-col items-center gap-1 rounded-lg px-3 py-3 transition-colors ${
+                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
                   selectedPricingTier === 'starter' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <span className="font-semibold">$3.99</span>
-                <span className="text-xs opacity-80">50 txns</span>
+                <span className="font-semibold">Lite</span>
+                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
+                  selectedPricingTier === 'starter' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                }`}>$3.99</span>
               </button>
               <button
                 onClick={() => {
                   setSelectedPricingTier('pro');
                   setPublishLandingPage(false);
+                  setTimeout(() => subdomainInputRef.current?.focus(), 0);
                 }}
-                className={`flex flex-col items-center gap-1 rounded-lg px-3 py-3 transition-colors ${
+                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
                   selectedPricingTier === 'pro' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <span className="font-semibold">$9.99</span>
-                <span className="text-xs opacity-80">500 txns</span>
+                <span className="font-semibold">Pro</span>
+                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
+                  selectedPricingTier === 'pro' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                }`}>$9.99</span>
               </button>
               <button
                 onClick={() => {
                   setSelectedPricingTier('enterprise');
+                  setTimeout(() => subdomainInputRef.current?.focus(), 0);
                 }}
-                className={`flex flex-col items-center gap-1 rounded-lg px-3 py-3 transition-colors ${
+                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
                   selectedPricingTier === 'enterprise' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <span className="font-semibold">$99.99</span>
-                <span className="text-xs opacity-80">5,000 txns</span>
+                <span className="font-semibold">Max</span>
+                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
+                  selectedPricingTier === 'enterprise' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                }`}>$99.99</span>
               </button>
             </div>
           </div>
 
+          {/* Transaction Volume */}
+          <div className="mt-6 flex items-center justify-between gap-4">
+            <div className="text-sm font-medium text-white">Transaction volume</div>
+            <div className="rounded bg-white px-1.5 py-0.5 text-sm font-bold text-zinc-900">
+              {selectedPricingTier === 'starter' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'}
+            </div>
+          </div>
+
+          {/* Custom URL - disabled for starter tier */}
+          <div className={`mt-4 flex items-center justify-between gap-4 ${selectedPricingTier === 'starter' ? 'opacity-40' : ''}`}>
+            <div className="text-sm font-medium text-white">Custom URL</div>
+            <div className="flex items-center gap-0.5 rounded-md bg-zinc-800 py-1">
+              <input
+                ref={subdomainInputRef}
+                type="text"
+                value={subdomain}
+                onChange={handleSubdomainChange}
+                placeholder="my-surfnet"
+                maxLength={20}
+                disabled={selectedPricingTier === 'starter'}
+                className={`w-24 bg-transparent text-right text-sm font-medium text-white placeholder-zinc-600 focus:outline-none ${
+                  selectedPricingTier === 'starter' ? 'cursor-not-allowed' : ''
+                }`}
+              />
+              <span className="text-sm text-white">.surfnet.dev</span>
+              <div className="ml-1 flex h-5 w-5 items-center justify-center">
+                {selectedPricingTier !== 'starter' && isCheckingSubdomain && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                )}
+                {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === true && (
+                  <svg
+                    className="h-5 w-5 text-green-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={3}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === false && (
+                  <svg
+                    className="h-5 w-5 text-red-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={3}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </div>
+            </div>
+          </div>
+          {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === false && subdomain.length >= 3 && (
+            <p className="mt-1 text-right text-sm text-red-400">This subdomain is already taken</p>
+          )}
+          {selectedPricingTier !== 'starter' && subdomain.length > 0 && subdomain.length < 3 && (
+            <p className="mt-1 text-right text-xs text-zinc-500">Min 3 characters</p>
+          )}
+
+          {/* Landing Page - disabled for starter and pro tiers */}
+          <div className={`mt-6 ${selectedPricingTier !== 'enterprise' ? 'opacity-40' : ''}`}>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-white">Landing Page</div>
+                <div className="text-sm text-zinc-400">Custom landing page for your surfnet</div>
+              </div>
+              <Switch
+                checked={publishLandingPage}
+                onChange={setPublishLandingPage}
+                disabled={selectedPricingTier !== 'enterprise'}
+                color="pink"
+              />
+            </div>
+            <a
+              href="http://simd-0296.surfnet.dev/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-pink-400 hover:text-pink-300"
+            >
+              View example: simd-0296.surfnet.dev
+            </a>
+          </div>
+
           <div className="mt-6">
             <button
-              onClick={() => {
-                // TODO: Implement publish logic
-                console.log('Publishing network...', {
-                  subdomain,
-                  publishAccounts,
-                  publishPrograms,
-                  publishLandingPage,
-                  selectedPricingTier,
-                });
-                setShowPublishDialog(false);
+              onClick={async () => {
+                // Fetch snapshot if accounts are included
+                let snapshot = null;
+                if (publishAccounts) {
+                  snapshot = await fetchSnapshot();
+                }
+
+                // Create the request payload
+                const payload = {
+                  surfnet: {
+                    subdomain: subdomain,
+                    include_accounts: publishAccounts,
+                    include_programs: publishPrograms,
+                    include_landing_page: publishLandingPage,
+                    pricing_tier: selectedPricingTier,
+                    source_rpc_url: rpcUrl,
+                    datasource_rpc_url: rpcDatasourceUrl,
+                    snapshot: snapshot,
+                  },
+                };
+
+                setSurfnetPayload(payload);
+                setShowCheckout(true);
               }}
-              disabled={!subdomain || subdomain.length < 3 || !subdomainAvailable}
+              disabled={
+                selectedPricingTier === 'starter'
+                  ? false
+                  : !subdomain || subdomain.length < 3 || !subdomainAvailable
+              }
               className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-lg font-semibold transition-colors ${
-                subdomain && subdomain.length >= 3 && subdomainAvailable
+                selectedPricingTier === 'starter' || (subdomain && subdomain.length >= 3 && subdomainAvailable)
                   ? 'bg-pink-600 text-white hover:bg-pink-500'
                   : 'cursor-not-allowed bg-zinc-700 text-zinc-500'
               }`}
@@ -827,6 +871,55 @@ const ExplorerHeader = () => {
           </div>
         </DialogBody>
       </Dialog>
+
+      {/* Checkout Modal */}
+      <MoneyMQProvider client={moneyMQClient}>
+        <CheckoutModal
+          visible={showCheckout}
+          onClose={() => setShowCheckout(false)}
+          amount={selectedPricingTier === 'starter' ? 3.99 : selectedPricingTier === 'pro' ? 9.99 : 99.99}
+          currency="USDC"
+          recipient="9aUn5swQzUTRanaaTwmszxiv89cvFwUCjEBv1vZCoT1u"
+          lineItems={[
+            {
+              product: {
+                id: `surfnet-${selectedPricingTier}`,
+                name: `Surfnet ${selectedPricingTier === 'starter' ? 'Lite' : selectedPricingTier === 'pro' ? 'Pro' : 'Max'}`,
+                description: `${selectedPricingTier === 'starter' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'} transactions`,
+              },
+              price: {
+                id: `price-${selectedPricingTier}`,
+                unit_amount: selectedPricingTier === 'starter' ? 399 : selectedPricingTier === 'pro' ? 999 : 9999,
+                currency: 'USDC',
+              },
+              quantity: 1,
+              subtotal: selectedPricingTier === 'starter' ? 3.99 : selectedPricingTier === 'pro' ? 9.99 : 99.99,
+            },
+          ]}
+          onSuccess={async (event) => {
+            console.log('Payment confirmed:', event);
+
+            // Create JWT token with surfnet payload
+            const secret = new TextEncoder().encode('surfpool-studio-ui-secret-key');
+            const jwt = await new jose.SignJWT({ data: surfnetPayload })
+              .setProtectedHeader({ alg: 'HS256' })
+              .setIssuedAt()
+              .setExpirationTime('1h')
+              .sign(secret);
+
+            // Open cloud dashboard with JWT token
+            const cloudUrl = `https://cloud.surfpool.run/networks?create_surfnet_token=${encodeURIComponent(jwt)}`;
+            window.open(cloudUrl, '_blank', 'noopener,noreferrer');
+
+            setShowCheckout(false);
+            setShowPublishDialog(false);
+          }}
+          onError={(error) => {
+            console.error('Payment failed:', error);
+          }}
+          accentColor="#ec4899"
+        />
+      </MoneyMQProvider>
     </div>
   );
 };
