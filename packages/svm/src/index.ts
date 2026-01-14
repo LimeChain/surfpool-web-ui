@@ -3,6 +3,7 @@ export { default as CompactSlotWidget } from './compact-slot-widget';
 export { default as Faucet } from './faucet';
 export { default as AddressDisplay } from './address-display';
 export { default as TokenAmountDisplay } from './token-amount-display';
+export { default as TransactionInspector } from './transaction-inspector';
 
 // Services
 export { solanaWebSocketService, SolanaWebSocketService } from './lib/solana-websocket-service';
@@ -10,3 +11,14 @@ export { solanaWebSocketService, SolanaWebSocketService } from './lib/solana-web
 // Utilities
 export * from './lib/address-utils';
 export * from './lib/solana-utils';
+
+// Transaction stream utilities (only export non-conflicting items)
+export {
+  useTransactionInspector,
+  getTransactionStatus,
+  formatSignature,
+  type TransactionInfo,
+} from './lib/solana-transaction-stream';
+
+// Hex diff analyzer
+export { analyzeHexDiff } from './lib/hex-diff-analyzer';
