@@ -522,7 +522,7 @@ const ExplorerHeader = () => {
           {/* Controls + URLs - on md shown next to faucet, on sm shown below */}
           <div className="flex w-full flex-col gap-4 md:order-2">
             {/* Control Buttons */}
-            <div className="grid w-full grid-cols-4 gap-2">
+            <div className="grid w-full grid-cols-3 gap-2">
               <button
                 onClick={toggleClock}
                 className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 py-4 transition-colors hover:bg-zinc-700"
@@ -603,7 +603,7 @@ const ExplorerHeader = () => {
         <Faucet rpcUrl={rpcUrl} primaryColor="#27272A" innerOverlay="dark" />
 
         {/* Control Buttons */}
-        <div className="mt-8 grid w-full grid-cols-4 gap-2">
+        <div className="mt-8 grid w-full grid-cols-3 gap-2">
           <button
             onClick={toggleClock}
             className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 py-4 transition-colors hover:bg-zinc-700"
@@ -637,6 +637,7 @@ const ExplorerHeader = () => {
             <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-300">Export State</span>
           </button>
 
+          {/* Publish button temporarily hidden
           <button
             onClick={() => setShowPublishDialog(true)}
             className="flex flex-col items-center gap-2 rounded-lg border border-pink-500 bg-pink-600 py-4 transition-colors hover:bg-pink-500"
@@ -645,6 +646,7 @@ const ExplorerHeader = () => {
             <CloudArrowUpIcon className="h-8 w-8 text-white" />
             <span className="text-[10px] font-medium uppercase tracking-wide text-white">Publish</span>
           </button>
+          */}
         </div>
 
         {/* SURFNET URLs */}
