@@ -2,8 +2,7 @@
 
 import { CheckIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import React from 'react';
-import { useAppConfig } from '@/hooks/use-app-config';
-import { aggressiveTruncateAddress } from '@/lib/address-utils';
+import { aggressiveTruncateAddress } from './lib/address-utils';
 
 interface AddressDisplayProps {
   address: string;
@@ -14,19 +13,20 @@ interface AddressDisplayProps {
   className?: string;
   showCopyButton?: boolean;
   aggressiveTruncate?: boolean;
+  rpcUrl?: string;
 }
 
-const AddressDisplay: React.FC<AddressDisplayProps> = ({ 
-  address, 
-  copiedStates, 
-  copyToClipboard, 
-  truncateAddress, 
+const AddressDisplay: React.FC<AddressDisplayProps> = ({
+  address,
+  copiedStates,
+  copyToClipboard,
+  truncateAddress,
   copyId,
   className = "",
   showCopyButton = true,
-  aggressiveTruncate = false
+  aggressiveTruncate = false,
+  rpcUrl = ""
 }) => {
-  const { rpcUrl } = useAppConfig();
   
   // Handle edge cases
   if (!address || address.trim() === '') {

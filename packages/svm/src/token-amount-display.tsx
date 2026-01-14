@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { convertTokenAmount } from '@/lib/address-utils';
+import { convertTokenAmount } from './lib/address-utils';
 
 interface TokenAmountDisplayProps {
   amount: number;
