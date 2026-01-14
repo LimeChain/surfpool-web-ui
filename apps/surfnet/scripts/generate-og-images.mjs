@@ -108,20 +108,31 @@ async function generateOGImage(networkId, config) {
                       }
                     }
                   },
-                  // Title
+                  // Title (split on " - " for multi-line)
                   {
                     type: 'div',
                     props: {
                       style: {
-                        fontSize: 60,
-                        fontWeight: 700,
-                        fontFamily: 'Montserrat',
-                        color: 'white',
-                        textAlign: 'center',
-                        textShadow: '0 4px 12px rgba(0,0,0,0.8)',
-                        letterSpacing: '-0.02em',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 8,
                       },
-                      children: config.network_name
+                      children: config.network_name.split(' - ').map(line => ({
+                        type: 'div',
+                        props: {
+                          style: {
+                            fontSize: 60,
+                            fontWeight: 700,
+                            fontFamily: 'Montserrat',
+                            color: 'white',
+                            textAlign: 'center',
+                            textShadow: '0 4px 12px rgba(0,0,0,0.8)',
+                            letterSpacing: '-0.02em',
+                          },
+                          children: line
+                        }
+                      }))
                     }
                   },
                   // RPC URL with green status dot
