@@ -1,23 +1,26 @@
 import type { Metadata } from 'next';
 import '@/styles/tailwind.css';
 
+// Default metadata - will be updated client-side based on network config
+// Note: For proper social media previews on each subdomain, consider using
+// a server-rendered deployment instead of static export
 export const metadata: Metadata = {
-  title: 'SIMD-0296 - Ephemeral Network - Surfnet',
-  description: 'SIMD-0296: Larger Transaction Sizes. Test transactions up to 4096 bytes with advanced cryptographic proofs and complex on-chain operations.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://simd-0296.surfnet.dev'),
+  metadataBase: new URL('https://surfnet.dev'),
+  title: 'Surfnet - Ephemeral Solana Networks',
+  description: 'Ephemeral Solana networks for testing and development. Test new features, run experiments, and build with confidence.',
   openGraph: {
     type: 'website',
     siteName: 'Surfnet',
-    title: 'SIMD-0296 - Ephemeral Network',
-    description: 'SIMD-0296: Larger Transaction Sizes. Test transactions up to 4096 bytes with advanced cryptographic proofs and complex on-chain operations.',
-    images: ['/og/simd-0296.png'],
+    title: 'Surfnet - Ephemeral Solana Networks',
+    description: 'Ephemeral Solana networks for testing and development.',
+    images: ['/og/default.png'],
   },
   twitter: {
     card: 'summary_large_image',
     site: '@surfnet',
-    title: 'SIMD-0296 - Ephemeral Network',
-    description: 'SIMD-0296: Larger Transaction Sizes. Test transactions up to 4096 bytes with advanced cryptographic proofs.',
-    images: ['/og/simd-0296.png'],
+    title: 'Surfnet - Ephemeral Solana Networks',
+    description: 'Ephemeral Solana networks for testing and development.',
+    images: ['/og/default.png'],
   },
 };
 

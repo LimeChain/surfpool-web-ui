@@ -156,7 +156,7 @@ export default function Home() {
   // Update page title and meta tags when config loads
   useEffect(() => {
     if (config) {
-      const pageTitle = `${config.network_name} - Surfnet`;
+      const pageTitle = config.network_name.replace(' - ', ' | ');
       const ogImageUrl = `${window.location.origin}/og/${networkId}.png`;
 
       // Update document title
