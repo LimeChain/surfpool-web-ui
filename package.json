@@ -14,5 +14,11 @@
     "prettier": "^3.3.2",
     "typescript": "^5"
   },
+  "pnpm": {
+    "overrides": {
+      "@moneymq/sdk": "file:/Users/ludovic/Coding/moneymq-js/packages/sdk/moneymq-sdk-0.9.4.tgz",
+      "@moneymq/react": "file:/Users/ludovic/Coding/moneymq-js/packages/react/moneymq-react-0.9.4.tgz"
+    }
+  },
   "packageManager": "pnpm@10.14.0"
 }

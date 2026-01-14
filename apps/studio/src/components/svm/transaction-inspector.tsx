@@ -6,6 +6,7 @@ import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
 import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { Badge, Dialog, DialogBody } from '@surfpool/ui';
+import { parse, stringify } from 'lossless-json';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -856,24 +857,40 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   };
 
   // Copy button component
-  const CopyButton = ({ data, label }: { data: any; label: string }) => (
-    <button
-      onClick={() => {
-        const hexData = generateHexData(data);
-        copyToClipboard(hexData, `${label.toLowerCase()}-hex-${address}`);
-      }}
-      className="mr-6 text-gray-400 transition-colors hover:text-white"
-    >
-      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-        />
-      </svg>
-    </button>
-  );
+  const CopyButton = ({ data, label }: { data: any; label: string }) => {
+    const copyId = `${label.toLowerCase()}-hex-${address}`;
+    const isCopied = copiedStates[copyId];
+    return (
+      <button
+        onClick={() => {
+          const hexData = generateHexData(data);
+          copyToClipboard(hexData, copyId);
+        }}
+        className="flex h-6 w-6 items-center justify-center rounded bg-zinc-700/50 text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
+      >
+        {isCopied ? (
+          <svg
+            className="h-3.5 w-3.5 text-green-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+            />
+          </svg>
+        )}
+      </button>
+    );
+  };
 
   const viewMode = getAccountViewMode(address, context);
   const hasChange =
@@ -2519,27 +2536,40 @@ export default function TransactionInspector({
                           {signature}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="-mt-0.5 flex items-center overflow-hidden rounded-md bg-zinc-700/50 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             copyToClipboard(signature, `sig-${signature}`);
                           }}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
+                          className="flex h-7 w-7 items-center justify-center text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
                           title="Copy signature"
                         >
-                          <ClipboardIcon className="h-5 w-5" />
+                          {copiedStates[`sig-${signature}`] ? (
+                            <svg
+                              className="h-3.5 w-3.5 text-green-400"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2.5}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <ClipboardIcon className="h-3.5 w-3.5" />
+                          )}
                         </button>
+                        <div className="h-7 w-px bg-zinc-600"></div>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(configRpcUrl)}`;
                             window.open(explorerUrl, '_blank');
                           }}
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
+                          className="flex h-7 w-7 items-center justify-center text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
                           title="Open in explorer"
                         >
-                          <ArrowTopRightOnSquareIcon className="h-5 w-5" />
+                          <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
@@ -2643,13 +2673,15 @@ export default function TransactionInspector({
                           });
 
                           if (response.ok) {
-                            const data = await response.json();
-                            console.log('📸 Export fixtures response:', data);
+                            // Use lossless-json to preserve large integer precision
+                            const rawText = await response.text();
+                            const data = parse(rawText) as { result?: { value?: unknown } };
+                            console.log('📸 Export fixtures response received');
 
                             if (data.result) {
-                              // Download the snapshot as JSON
-                              const jsonString = JSON.stringify(data.result.value, null, 2);
-                              const blob = new Blob([jsonString], { type: 'application/json' });
+                              // Download the snapshot as JSON, preserving number precision
+                              const jsonString = stringify(data.result.value, null, 2);
+                              const blob = new Blob([jsonString || ''], { type: 'application/json' });
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;

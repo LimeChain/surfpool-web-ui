@@ -48,9 +48,11 @@ interface FaucetProps {
   rpcUrl: string;
   primaryColor?: string;
   explorerClusterQuery?: string;
+  /** Controls inner layer overlay: 'dark' uses black with opacity, 'light' uses white with opacity */
+  innerOverlay?: 'dark' | 'light';
 }
 
-export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClusterQuery }: FaucetProps) {
+export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClusterQuery, innerOverlay = 'dark' }: FaucetProps) {
   const defaultFundingRequest = {
     token: {
       ticker: 'SOL',
@@ -501,7 +503,28 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
     return `rgb(${newR}, ${newG}, ${newB})`;
   };
 
-  const darkerColor = darkenColor(primaryColor);
+  // Helper function to lighten a color (for light overlay mode)
+  const lightenColor = (color: string, amount: number = 0.3) => {
+    // Convert hex to RGB
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Lighten (blend with white)
+    const newR = Math.round(r + (255 - r) * amount);
+    const newG = Math.round(g + (255 - g) * amount);
+    const newB = Math.round(b + (255 - b) * amount);
+
+    return `rgb(${newR}, ${newG}, ${newB})`;
+  };
+
+  // Get overlay color based on mode
+  const getOverlayColor = (amount: number = 0.3) => {
+    return innerOverlay === 'light' ? lightenColor(primaryColor, amount) : darkenColor(primaryColor, amount);
+  };
+
+  const darkerColor = getOverlayColor(0.3);
 
   return (
     <div
@@ -531,7 +554,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                 />
                 <div
                   className="flex cursor-pointer items-center gap-2 rounded-full pl-3 pr-4 py-2 uppercase transition-colors hover:brightness-90 sm:text-xl md:text-xl lg:text-xl"
-                  style={{ backgroundColor: darkenColor(primaryColor, 0.5) }}
+                  style={{ backgroundColor: getOverlayColor(0.5) }}
                   onClick={() => setTokenDialogOpen(index + 1)}
                 >
                   <img
@@ -548,11 +571,11 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
         ))}
 
         <div
-          className="-mt-6 flex h-12 w-12 sm:h-10 sm:w-10 cursor-pointer items-center justify-center rounded-xl border-2 bg-zinc-950 uppercase"
-          style={{ borderColor: primaryColor }}
+          className="-mt-6 flex h-12 w-12 sm:h-10 sm:w-10 cursor-pointer items-center justify-center rounded-xl border-2 uppercase"
+          style={{ borderColor: primaryColor, backgroundColor: innerOverlay === 'light' ? '#ffffff' : '#09090b' }}
           onClick={() => handleAddFundingRequest()}
         >
-          <PlusIcon className="h-6 w-6 sm:h-5 sm:w-5" />
+          <PlusIcon className={`h-6 w-6 sm:h-5 sm:w-5 ${innerOverlay === 'light' ? 'text-zinc-900' : 'text-white'}`} />
         </div>
 
         <Field className="w-full pt-4 pl-4 uppercase">
@@ -578,7 +601,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                           textOverflow: 'clip',
                         }}
                       >
-                        <span style={{ color: darkenColor(primaryColor, 0.7) }}>
+                        <span style={{ color: getOverlayColor(0.7) }}>
                           {displayAddress.slice(0, revealedChars)}
                         </span>
                         <span style={{ color: '#9ca3af', opacity: 0.7 }}>
@@ -609,10 +632,10 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                   <button
                     onClick={() => generateKeypair(index)}
                     className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:brightness-90"
-                    style={{ backgroundColor: darkenColor(primaryColor, 0.5) }}
+                    style={{ backgroundColor: getOverlayColor(0.5) }}
                     title="Generate new keypair"
                   >
-                    <SparklesIcon className="h-4 w-4 text-white" />
+                    <SparklesIcon className={`h-4 w-4 ${innerOverlay === 'light' ? 'text-zinc-900' : 'text-white'}`} />
                   </button>
                 </div>
               </Field>
@@ -620,11 +643,11 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
           ))}
 
           <div
-            className="absolute left-1/2 z-10 -mt-4 flex h-12 w-12 sm:h-10 sm:w-10 -translate-x-1/2 transform cursor-pointer items-center justify-center rounded-xl border-2 bg-zinc-950 uppercase"
-            style={{ borderColor: primaryColor }}
+            className="absolute left-1/2 z-10 -mt-4 flex h-12 w-12 sm:h-10 sm:w-10 -translate-x-1/2 transform cursor-pointer items-center justify-center rounded-xl border-2 uppercase"
+            style={{ borderColor: primaryColor, backgroundColor: innerOverlay === 'light' ? '#ffffff' : '#09090b' }}
             onClick={() => handleAddAddress()}
           >
-            <PlusIcon className="h-6 w-6 sm:h-5 sm:w-5" />
+            <PlusIcon className={`h-6 w-6 sm:h-5 sm:w-5 ${innerOverlay === 'light' ? 'text-zinc-900' : 'text-white'}`} />
           </div>
         </div>
 
@@ -634,8 +657,8 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               canActivateFaucet() ? 'cursor-pointer' : 'cursor-not-allowed'
             }`}
             style={canActivateFaucet() ? {
-              backgroundColor: darkenColor(primaryColor, 0.6),
-              boxShadow: `0 0 20px ${darkenColor(primaryColor, 0.6)}80`
+              backgroundColor: '#E60076',
+              border: '1px solid #F6339A'
             } : {
               backgroundColor: '#52525b'
             }}
@@ -655,7 +678,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               }
             }}
           >
-            <PaperAirplaneIcon className="h-6 w-6" />
+            <PaperAirplaneIcon className="h-6 w-6 text-white" />
           </div>
           {/* <div className="flex h-full w-36 items-center justify-center gap-2 rounded-lg bg-zinc-700 p-2 text-center text-sm uppercase">
               Get Config

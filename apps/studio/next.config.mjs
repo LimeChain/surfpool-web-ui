@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const nextConfig = {
   // Only use static export in production
   ...(process.env.NODE_ENV === 'production' && { output: 'export' }),
-  transpilePackages: ['@surfpool/ui', '@surfpool/svm', '@surfpool/shared', '@moneymq/react', '@solana/connector', 'lottie-react'],
+  transpilePackages: ['@surfpool/ui', '@surfpool/svm', '@surfpool/shared', '@moneymq/react'],
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,

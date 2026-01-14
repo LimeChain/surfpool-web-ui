@@ -1,3 +1,6 @@
 [submodule "apps/surfnet/public/simd-0296"]
 	path = apps/surfnet/public/simd-0296
-	url = https://github.com/txtx/simd-0296
+	url = https://github.com/txtx/surfnet-simd-0296
+[submodule "apps/surfnet/public/zk-edge"]
+	path = apps/surfnet/public/zk-edge
+	url = https://github.com/txtx/surfnet-zk-edge

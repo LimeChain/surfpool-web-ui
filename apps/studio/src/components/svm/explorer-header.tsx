@@ -1,27 +1,20 @@
 import TransactionInspector from '@/components/svm/transaction-inspector';
 import { useAppConfig } from '@/hooks/use-app-config';
+import { S3Credentials, uploadToS3 } from '@/lib/s3-upload';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
-import {
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogDescription,
-  DialogTitle,
-  Listbox,
-  ListboxOption,
-  Switch,
-} from '@surfpool/ui';
-import * as jose from 'jose';
+import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
+import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
 
 const moneyMQClient = {
   config: {
-    endpoint: 'http://localhost:8488',
+    // endpoint: 'http://localhost:8488',
+    endpoint: 'https://surfnet-sandbox.money.mq',
   },
 };
 
@@ -33,10 +26,9 @@ const ExplorerHeader = () => {
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
-  const [publishAccounts, setPublishAccounts] = useState(true);
-  const [publishPrograms, setPublishPrograms] = useState(true);
+  const [transferLocalState, setTransferLocalState] = useState(true);
   const [publishLandingPage, setPublishLandingPage] = useState(false);
-  const [selectedPricingTier, setSelectedPricingTier] = useState<'starter' | 'pro' | 'enterprise'>('pro');
+  const [selectedPricingTier, setSelectedPricingTier] = useState<'lite' | 'pro' | 'max'>('pro');
   const [subdomain, setSubdomain] = useState('');
   const [isCheckingSubdomain, setIsCheckingSubdomain] = useState(false);
   const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null);
@@ -54,6 +46,80 @@ const ExplorerHeader = () => {
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
   const [showCheckout, setShowCheckout] = useState(false);
   const [surfnetPayload, setSurfnetPayload] = useState<any>(null);
+
+  // Landing page editor state
+  const [landingPageOrg, setLandingPageOrg] = useState('');
+  const [landingPageName, setLandingPageName] = useState('');
+  const [landingPageMarkdown, setLandingPageMarkdown] = useState<string | null>(null);
+  const [landingPageMarkdownFileName, setLandingPageMarkdownFileName] = useState<string | null>(null);
+  const [landingPagePrimaryColor, setLandingPagePrimaryColor] = useState('#ec4899');
+  const [landingPageHeaderImage, setLandingPageHeaderImage] = useState<string | null>(null);
+  const [landingPageAvatar, setLandingPageAvatar] = useState<string | null>(null);
+  const headerImageInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const markdownInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingMarkdown, setIsDraggingMarkdown] = useState(false);
+
+  // Publish progress state
+  type PublishPhase = 'config' | 'uploading' | 'importing' | 'completed' | 'error';
+  const [publishPhase, setPublishPhase] = useState<PublishPhase>('config');
+  const [uploadProgress, setUploadProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [importProgress, setImportProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [uploadFileName, setUploadFileName] = useState<string>('surfnet-export.json');
+  const [snapshotId, setSnapshotId] = useState<string | null>(null);
+  const [typewriterText, setTypewriterText] = useState('');
+  const [showVisitButton, setShowVisitButton] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
+  const snapshotWsRef = useRef<WebSocket | null>(null);
+
+  // Typewriter effect for published URL
+  useEffect(() => {
+    if (publishPhase === 'completed' && publishedUrl) {
+      setTypewriterText('');
+      setShowVisitButton(false);
+      let index = 0;
+      const interval = setInterval(() => {
+        if (index < publishedUrl.length) {
+          setTypewriterText(publishedUrl.slice(0, index + 1));
+          index++;
+        } else {
+          clearInterval(interval);
+          setTimeout(() => setShowVisitButton(true), 200);
+        }
+      }, 15);
+      return () => clearInterval(interval);
+    }
+  }, [publishPhase, publishedUrl]);
+
+  // Format bytes to human readable format
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  // Reset publish state when dialog closes
+  const resetPublishState = () => {
+    setPublishPhase('config');
+    setUploadProgress(null);
+    setImportProgress(null);
+    setPublishError(null);
+    setPublishedUrl(null);
+    setUploadFileName('surfnet-export.json');
+    setSnapshotId(null);
+    setTypewriterText('');
+    setShowVisitButton(false);
+    setUrlCopied(false);
+    if (snapshotWsRef.current) {
+      snapshotWsRef.current.close();
+      snapshotWsRef.current = null;
+    }
+  };
 
   // Track WebSocket connection status
   useEffect(() => {
@@ -264,7 +330,7 @@ const ExplorerHeader = () => {
   };
 
   // Fetch snapshot data from the surfnet
-  const fetchSnapshot = async (): Promise<any | null> => {
+  const fetchSnapshot = async (): Promise<unknown | null> => {
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
@@ -279,9 +345,11 @@ const ExplorerHeader = () => {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        console.log('📸 Export snapshot response:', data);
-        return data.result || null;
+        const rawText = await response.text();
+        // Use lossless-json to preserve large integer precision
+        const data = parse(rawText) as { result?: { value?: unknown }; error?: { message: string } };
+        console.log('📸 Export snapshot response received');
+        return data.result?.value || null;
       }
       return null;
     } catch (error) {
@@ -290,12 +358,57 @@ const ExplorerHeader = () => {
     }
   };
 
+  // Export full network data from the surfnet
+  const exportNetwork = async (): Promise<any | null> => {
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_exportSnapshot',
+          params: [{ scope: 'network' }],
+        }),
+      });
+
+      if (response.ok) {
+        const rawText = await response.text();
+        // Use lossless-json to parse without losing precision on large integers
+        // Then extract just the result.value field and stringify it back
+        const rpcResponse = parse(rawText) as { result?: { value?: unknown }; error?: { message: string } };
+
+        if (rpcResponse.error) {
+          console.error('❌ RPC error:', rpcResponse.error.message);
+          return null;
+        }
+
+        if (!rpcResponse.result?.value) {
+          console.error('❌ No result.value in RPC response');
+          return null;
+        }
+
+        // Stringify just the result.value portion, preserving number precision
+        const result = stringify(rpcResponse.result.value);
+        console.log('🌐 Extracted snapshot data, length:', result?.length);
+        return result || null;
+      }
+      return null;
+    } catch (error) {
+      console.error('❌ Error exporting network:', error);
+      return null;
+    }
+  };
+
   // Export snapshot to file
   const exportSnapshot = async () => {
     const snapshotData = await fetchSnapshot();
     if (snapshotData) {
-      const jsonString = JSON.stringify(snapshotData, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
+      // Use lossless-json stringify to preserve large integer precision
+      const jsonString = stringify(snapshotData, null, 2);
+      const blob = new Blob([jsonString || ''], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -403,7 +516,7 @@ const ExplorerHeader = () => {
         <div className="grid grid-cols-1 gap-12 md:grid-cols-[350px_1fr] md:gap-8 lg:hidden">
           {/* Faucet */}
           <div className="w-full md:order-1">
-            <Faucet rpcUrl={rpcUrl} primaryColor="#71717a" />
+            <Faucet rpcUrl={rpcUrl} primaryColor="#27272A" innerOverlay="dark" />
           </div>
 
           {/* Controls + URLs - on md shown next to faucet, on sm shown below */}
@@ -443,6 +556,7 @@ const ExplorerHeader = () => {
                 <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-300">Export State</span>
               </button>
 
+              {/* Publish button temporarily hidden
               <button
                 onClick={() => setShowPublishDialog(true)}
                 className="flex flex-col items-center gap-2 rounded-lg border border-pink-500 bg-pink-600 py-4 transition-colors hover:bg-pink-500"
@@ -451,6 +565,7 @@ const ExplorerHeader = () => {
                 <CloudArrowUpIcon className="h-8 w-8 text-white" />
                 <span className="text-[10px] font-medium uppercase tracking-wide text-white">Publish</span>
               </button>
+              */}
             </div>
 
             {/* SURFNET URLs */}
@@ -485,7 +600,7 @@ const ExplorerHeader = () => {
       {/* Right Column - only on lg */}
       <div className="hidden w-full flex-col gap-4 lg:flex">
         {/* Faucet */}
-        <Faucet rpcUrl={rpcUrl} primaryColor="#71717a" />
+        <Faucet rpcUrl={rpcUrl} primaryColor="#27272A" innerOverlay="dark" />
 
         {/* Control Buttons */}
         <div className="mt-8 grid w-full grid-cols-4 gap-2">
@@ -668,207 +783,816 @@ const ExplorerHeader = () => {
         </div>
       </Dialog>
 
+      {/* Animation keyframes for dialog transitions */}
+      <style>{`
+        @keyframes fadeSlideIn {
+          from {
+            opacity: 0;
+            transform: translateX(16px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
+
       {/* Publish Dialog */}
-      <Dialog open={showPublishDialog} onClose={() => setShowPublishDialog(false)} size="md">
-        <DialogTitle className="text-center text-lg font-semibold">Publish Surfnet</DialogTitle>
-        <DialogDescription className="mt-2 text-center text-sm text-zinc-400">
-          This network will be publicly accessible to anyone with the link
-        </DialogDescription>
-        <DialogBody className="mt-6">
-          {/* Toggle Options */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-white">Accounts</div>
-                <div className="text-sm text-zinc-400">Include account states and balances</div>
-              </div>
-              <Switch checked={publishAccounts} onChange={setPublishAccounts} color="pink" />
-            </div>
+      <Dialog
+        open={showPublishDialog}
+        onClose={() => {
+          setShowPublishDialog(false);
+          resetPublishState();
+        }}
+        size="md"
+        className="transition-all duration-300 ease-in-out"
+      >
+        <DialogBody className="transition-all duration-300 ease-in-out">
+          {/* Progress UI for uploading/importing/completed/error phases */}
+          {publishPhase !== 'config' && (
+            <div className="flex flex-col items-center justify-center py-2">
+              {/* Uploading Phase */}
+              {publishPhase === 'uploading' && (
+                <div className="w-full max-w-sm">
+                  {/* File info card */}
+                  <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-pink-500/20">
+                        <CloudArrowUpIcon className="h-5 w-5 text-pink-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-white">{uploadFileName}</div>
+                        {uploadProgress && (
+                          <div className="mt-1 text-xs text-zinc-400">{formatBytes(uploadProgress.total)}</div>
+                        )}
+                      </div>
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                    </div>
 
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-white">Programs</div>
-                <div className="text-sm text-zinc-400">Include deployed programs and their data</div>
-              </div>
-              <Switch checked={publishPrograms} onChange={setPublishPrograms} color="pink" />
-            </div>
-          </div>
+                    {/* Progress bar */}
+                    {uploadProgress && (
+                      <div className="mt-4">
+                        <div className="mb-2 flex justify-between text-xs">
+                          <span className="text-zinc-400">Uploading to S3...</span>
+                          <span className="font-medium text-pink-400">
+                            {Math.round((uploadProgress.loaded / uploadProgress.total) * 100)}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-700">
+                          <div
+                            className="h-full bg-gradient-to-r from-pink-600 to-pink-400 transition-all duration-300"
+                            style={{ width: `${(uploadProgress.loaded / uploadProgress.total) * 100}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 flex justify-between text-xs text-zinc-500">
+                          <span>{formatBytes(uploadProgress.loaded)}</span>
+                          <span>{formatBytes(uploadProgress.total)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
-          {/* Pricing Tier Segmented Control */}
-          <div className="mt-6">
-            <div className="grid grid-cols-3 gap-2 rounded-xl bg-zinc-800 p-1">
-              <button
-                onClick={() => {
-                  setSelectedPricingTier('starter');
-                  setPublishLandingPage(false);
-                }}
-                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
-                  selectedPricingTier === 'starter' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <span className="font-semibold">Lite</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
-                  selectedPricingTier === 'starter' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
-                }`}>$3.99</span>
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedPricingTier('pro');
-                  setPublishLandingPage(false);
-                  setTimeout(() => subdomainInputRef.current?.focus(), 0);
-                }}
-                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
-                  selectedPricingTier === 'pro' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <span className="font-semibold">Pro</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
-                  selectedPricingTier === 'pro' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
-                }`}>$9.99</span>
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedPricingTier('enterprise');
-                  setTimeout(() => subdomainInputRef.current?.focus(), 0);
-                }}
-                className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-colors ${
-                  selectedPricingTier === 'enterprise' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <span className="font-semibold">Max</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${
-                  selectedPricingTier === 'enterprise' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
-                }`}>$99.99</span>
-              </button>
-            </div>
-          </div>
+                  {/* Status steps */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/20">
+                        <svg
+                          className="h-3.5 w-3.5 text-green-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-zinc-400">Payment confirmed</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/20">
+                        <svg
+                          className="h-3.5 w-3.5 text-green-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-zinc-400">Network snapshot exported</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                      <span className="text-white">Uploading to cloud storage</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-700">
+                        <div className="h-2 w-2 rounded-full bg-zinc-500"></div>
+                      </div>
+                      <span className="text-zinc-500">Import into cloud surfnet</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          {/* Transaction Volume */}
-          <div className="mt-6 flex items-center justify-between gap-4">
-            <div className="text-sm font-medium text-white">Transaction volume</div>
-            <div className="rounded bg-white px-1.5 py-0.5 text-sm font-bold text-zinc-900">
-              {selectedPricingTier === 'starter' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'}
-            </div>
-          </div>
+              {/* Importing Phase */}
+              {publishPhase === 'importing' && (
+                <div className="w-full max-w-sm">
+                  {/* Import progress card */}
+                  <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-purple-500/20">
+                        <ArchiveBoxArrowDownIcon className="h-5 w-5 text-purple-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-white">Importing Snapshot</div>
+                        {snapshotId && (
+                          <div className="mt-1 truncate font-mono text-xs text-zinc-500">{snapshotId}</div>
+                        )}
+                      </div>
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-500"></div>
+                    </div>
 
-          {/* Custom URL - disabled for starter tier */}
-          <div className={`mt-4 flex items-center justify-between gap-4 ${selectedPricingTier === 'starter' ? 'opacity-40' : ''}`}>
-            <div className="text-sm font-medium text-white">Custom URL</div>
-            <div className="flex items-center gap-0.5 rounded-md bg-zinc-800 py-1">
-              <input
-                ref={subdomainInputRef}
-                type="text"
-                value={subdomain}
-                onChange={handleSubdomainChange}
-                placeholder="my-surfnet"
-                maxLength={20}
-                disabled={selectedPricingTier === 'starter'}
-                className={`w-24 bg-transparent text-right text-sm font-medium text-white placeholder-zinc-600 focus:outline-none ${
-                  selectedPricingTier === 'starter' ? 'cursor-not-allowed' : ''
-                }`}
-              />
-              <span className="text-sm text-white">.surfnet.dev</span>
-              <div className="ml-1 flex h-5 w-5 items-center justify-center">
-                {selectedPricingTier !== 'starter' && isCheckingSubdomain && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
-                )}
-                {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === true && (
-                  <svg
-                    className="h-5 w-5 text-green-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === false && (
-                  <svg
-                    className="h-5 w-5 text-red-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-              </div>
+                    {/* Accounts progress */}
+                    {importProgress && (
+                      <div className="mt-4">
+                        <div className="mb-2 flex justify-between text-xs">
+                          <span className="text-zinc-400">Loading accounts...</span>
+                          <span className="font-medium text-purple-400">
+                            {importProgress.total > 0
+                              ? Math.round((importProgress.loaded / importProgress.total) * 100)
+                              : 0}
+                            %
+                          </span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-700">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-600 to-purple-400 transition-all duration-300"
+                            style={{
+                              width: `${importProgress.total > 0 ? (importProgress.loaded / importProgress.total) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-2 flex justify-between text-xs text-zinc-500">
+                          <span>{importProgress.loaded.toLocaleString()} accounts</span>
+                          <span>{importProgress.total.toLocaleString()} total</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Waiting for progress indicator */}
+                    {!importProgress && (
+                      <div className="mt-4">
+                        <div className="mb-2 text-xs text-zinc-400">Connecting to cloud surfnet...</div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-700">
+                          <div className="h-full w-1/3 animate-pulse bg-purple-500/50"></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status steps */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/20">
+                        <svg
+                          className="h-3.5 w-3.5 text-green-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-zinc-400">Payment confirmed</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/20">
+                        <svg
+                          className="h-3.5 w-3.5 text-green-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-zinc-400">Network snapshot exported</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/20">
+                        <svg
+                          className="h-3.5 w-3.5 text-green-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span className="text-zinc-400">Uploaded to cloud storage</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-500"></div>
+                      <span className="text-white">Importing into cloud surfnet</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Completed Phase */}
+              {publishPhase === 'completed' && (
+                <div className="w-full max-w-sm">
+                  {/* Large centered checkmark */}
+                  <div className="mb-6 flex justify-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500">
+                      <svg
+                        className="h-8 w-8 text-white"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Steps completed */}
+                  <div className="mb-6 space-y-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <svg
+                        className="h-3.5 w-3.5 text-green-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-zinc-400">Payment confirmed</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <svg
+                        className="h-3.5 w-3.5 text-green-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-zinc-400">Network snapshot exported</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <svg
+                        className="h-3.5 w-3.5 text-green-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-zinc-400">Uploaded to cloud storage</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <svg
+                        className="h-3.5 w-3.5 text-green-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-zinc-400">Imported into cloud surfnet</span>
+                    </div>
+                  </div>
+
+                  {/* URL + Visit unified component */}
+                  {publishedUrl && (
+                    <div className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800">
+                      <div className="flex items-center">
+                        <div className="flex flex-1 items-center justify-center px-4 py-3">
+                          <span className="font-mono text-xs text-green-400">{typewriterText}</span>
+                          <span className="animate-pulse text-xs text-green-400">|</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(publishedUrl);
+                            setUrlCopied(true);
+                            setTimeout(() => setUrlCopied(false), 2000);
+                          }}
+                          className={`flex items-center rounded-r-lg bg-green-600 px-4 py-3 text-white transition-all duration-300 hover:bg-green-500 ${
+                            showVisitButton ? 'opacity-100' : 'opacity-0'
+                          }`}
+                        >
+                          {urlCopied ? (
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2.5}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Error Phase */}
+              {publishPhase === 'error' && (
+                <div className="w-full max-w-sm">
+                  {/* Error card */}
+                  <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-red-500/20">
+                        <svg
+                          className="h-5 w-5 text-red-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-white">Publication Failed</div>
+                        {publishError && <div className="mt-1 text-xs text-red-300">{publishError}</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowPublishDialog(false);
+                        resetPublishState();
+                      }}
+                      className="flex-1 rounded-lg bg-zinc-700 px-4 py-3 text-sm font-medium text-white hover:bg-zinc-600"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPublishPhase('config');
+                        setPublishError(null);
+                      }}
+                      className="flex-1 rounded-lg bg-pink-600 px-4 py-3 text-sm font-medium text-white hover:bg-pink-500"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          {selectedPricingTier !== 'starter' && !isCheckingSubdomain && subdomainAvailable === false && subdomain.length >= 3 && (
-            <p className="mt-1 text-right text-sm text-red-400">This subdomain is already taken</p>
           )}
-          {selectedPricingTier !== 'starter' && subdomain.length > 0 && subdomain.length < 3 && (
-            <p className="mt-1 text-right text-xs text-zinc-500">Min 3 characters</p>
-          )}
 
-          {/* Landing Page - disabled for starter and pro tiers */}
-          <div className={`mt-6 ${selectedPricingTier !== 'enterprise' ? 'opacity-40' : ''}`}>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-white">Landing Page</div>
-                <div className="text-sm text-zinc-400">Custom landing page for your surfnet</div>
+          {/* Config Phase - Original UI */}
+          {publishPhase === 'config' && (
+            <>
+              {/* Toggle Options */}
+              <div className="flex justify-center">
+                <div className="flex w-[368px] items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-white">Transfer Local State</div>
+                    <div className="text-sm text-zinc-400">Include accounts and deployed programs</div>
+                  </div>
+                  <Switch checked={transferLocalState} onChange={setTransferLocalState} color="pink" />
+                </div>
               </div>
-              <Switch
-                checked={publishLandingPage}
-                onChange={setPublishLandingPage}
-                disabled={selectedPricingTier !== 'enterprise'}
-                color="pink"
-              />
-            </div>
-            <a
-              href="http://simd-0296.surfnet.dev/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-pink-400 hover:text-pink-300"
-            >
-              View example: simd-0296.surfnet.dev
-            </a>
-          </div>
 
-          <div className="mt-6">
-            <button
-              onClick={async () => {
-                // Fetch snapshot if accounts are included
-                let snapshot = null;
-                if (publishAccounts) {
-                  snapshot = await fetchSnapshot();
-                }
+              {/* Pricing Tier Segmented Control */}
+              <div className="mt-6 flex justify-center">
+                <div className="grid w-[368px] grid-cols-3 gap-2 rounded-xl bg-zinc-800 p-1">
+                  <button
+                    onClick={() => {
+                      setSelectedPricingTier('lite');
+                      setPublishLandingPage(false);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
+                      selectedPricingTier === 'lite' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="font-semibold">Lite</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
+                        selectedPricingTier === 'lite' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      $3.99
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedPricingTier('pro');
+                      setPublishLandingPage(false);
+                      setTimeout(() => subdomainInputRef.current?.focus(), 0);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
+                      selectedPricingTier === 'pro' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="font-semibold">Pro</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
+                        selectedPricingTier === 'pro' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      $9.99
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedPricingTier('max');
+                      setPublishLandingPage(true);
+                      setTimeout(() => subdomainInputRef.current?.focus(), 0);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
+                      selectedPricingTier === 'max' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="font-semibold">Max</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
+                        selectedPricingTier === 'max' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      $99.99
+                    </span>
+                  </button>
+                </div>
+              </div>
 
-                // Create the request payload
-                const payload = {
-                  surfnet: {
-                    subdomain: subdomain,
-                    include_accounts: publishAccounts,
-                    include_programs: publishPrograms,
-                    include_landing_page: publishLandingPage,
-                    pricing_tier: selectedPricingTier,
-                    source_rpc_url: rpcUrl,
-                    datasource_rpc_url: rpcDatasourceUrl,
-                    snapshot: snapshot,
-                  },
-                };
+              {/* Transaction Volume */}
+              <div className="mt-6 flex justify-center">
+                <div className="flex w-[368px] items-center justify-between gap-4">
+                  <div className="text-sm font-medium text-white">Transaction volume</div>
+                  <div className="rounded bg-white px-1.5 py-0.5 text-sm font-bold text-zinc-900">
+                    {selectedPricingTier === 'lite' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'}
+                  </div>
+                </div>
+              </div>
 
-                setSurfnetPayload(payload);
-                setShowCheckout(true);
-              }}
-              disabled={
-                selectedPricingTier === 'starter'
-                  ? false
-                  : !subdomain || subdomain.length < 3 || !subdomainAvailable
-              }
-              className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-lg font-semibold transition-colors ${
-                selectedPricingTier === 'starter' || (subdomain && subdomain.length >= 3 && subdomainAvailable)
-                  ? 'bg-pink-600 text-white hover:bg-pink-500'
-                  : 'cursor-not-allowed bg-zinc-700 text-zinc-500'
-              }`}
-            >
-              <CloudArrowUpIcon className="h-6 w-6" />
-              Create Cloud Surfnet
-            </button>
-          </div>
+              {/* Visibility */}
+              <div className="mt-4 flex justify-center">
+                <div className="flex w-[368px] items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-white">Visibility</div>
+                    <div className="text-sm text-zinc-400">Accessible to anyone with the link</div>
+                  </div>
+                  <div className="rounded bg-white px-1.5 py-0.5 text-sm font-bold text-zinc-900">PUBLIC</div>
+                </div>
+              </div>
+
+              {/* Custom URL - hidden for Lite tier */}
+              {selectedPricingTier !== 'lite' && (
+                <div className="mt-4 flex flex-col items-center">
+                  <div className="flex w-[368px] items-center justify-between gap-4">
+                    <div className="text-sm font-medium text-white">Custom URL</div>
+                    <div className="flex items-center gap-0.5 rounded-md bg-zinc-800 py-1">
+                      <input
+                        ref={subdomainInputRef}
+                        type="text"
+                        value={subdomain}
+                        onChange={handleSubdomainChange}
+                        placeholder="my-surfnet"
+                        maxLength={20}
+                        className="w-24 bg-transparent text-right text-sm font-medium text-white placeholder-zinc-600 focus:outline-none"
+                      />
+                      <span className="text-sm text-white">.surfnet.dev</span>
+                      <div className="ml-1 flex h-5 w-5 items-center justify-center">
+                        {isCheckingSubdomain && (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                        )}
+                        {!isCheckingSubdomain && subdomainAvailable === true && (
+                          <svg
+                            className="h-5 w-5 text-green-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                        {!isCheckingSubdomain && subdomainAvailable === false && (
+                          <svg
+                            className="h-5 w-5 text-red-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {!isCheckingSubdomain && subdomainAvailable === false && subdomain.length >= 3 && (
+                    <p className="mt-1 w-[368px] text-right text-sm text-red-400">This subdomain is already taken</p>
+                  )}
+                  {subdomain.length > 0 && subdomain.length < 3 && (
+                    <p className="mt-1 w-[368px] text-right text-xs text-zinc-500">Min 3 characters</p>
+                  )}
+                </div>
+              )}
+
+              {/* Landing Page Preview (Max tier only) */}
+              <div
+                className="grid transition-all duration-300 ease-in-out"
+                style={{
+                  gridTemplateRows: selectedPricingTier === 'max' ? '1fr' : '0fr',
+                }}
+              >
+                <div className="overflow-hidden">
+                  <div
+                    className="mx-auto mt-6 w-[368px] overflow-hidden rounded-xl border border-zinc-700"
+                    style={{ backgroundColor: '#0a0a0a' }}
+                  >
+                    {/* Header Image Placeholder */}
+                    <div
+                      className={`relative h-24 cursor-pointer transition-colors ${
+                        landingPageHeaderImage
+                          ? ''
+                          : 'border-b border-dashed border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800'
+                      }`}
+                      onClick={() => headerImageInputRef.current?.click()}
+                    >
+                      <input
+                        ref={headerImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              setLandingPageHeaderImage(event.target?.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      {landingPageHeaderImage ? (
+                        <img src={landingPageHeaderImage} alt="Header" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center text-zinc-500">
+                          <svg className="mb-1 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.5}
+                              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
+                          </svg>
+                          <span className="text-xs">Header image</span>
+                          <span className="text-[10px] text-zinc-600">1500 × 500</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Avatar, Name, and Content */}
+                    <div className="relative px-4 pb-4">
+                      {/* Avatar */}
+                      <div
+                        className={`-mt-8 mb-3 h-16 w-16 cursor-pointer overflow-hidden rounded-full border-2 transition-colors ${
+                          landingPageAvatar
+                            ? 'border-zinc-900'
+                            : 'border-dashed border-zinc-700 bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        <input
+                          ref={avatarInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                setLandingPageAvatar(event.target?.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        {landingPageAvatar ? (
+                          <img src={landingPageAvatar} alt="Avatar" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full flex-col items-center justify-center text-zinc-500">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.5}
+                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                              />
+                            </svg>
+                            <span className="text-[8px]">400×400</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Org Input */}
+                      <input
+                        type="text"
+                        value={landingPageOrg}
+                        onChange={(e) => setLandingPageOrg(e.target.value)}
+                        placeholder="Org"
+                        className="mb-1 w-full bg-transparent text-xs text-zinc-400 placeholder-zinc-600 focus:outline-none"
+                      />
+
+                      {/* Name Input */}
+                      <input
+                        type="text"
+                        value={landingPageName}
+                        onChange={(e) => setLandingPageName(e.target.value)}
+                        placeholder="Surfnet Name"
+                        className="mb-3 w-full bg-transparent text-lg font-bold text-white placeholder-zinc-600 focus:outline-none"
+                      />
+
+                      {/* Markdown Drop Zone */}
+                      <div
+                        className={`relative cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
+                          isDraggingMarkdown
+                            ? 'border-pink-500 bg-pink-500/10'
+                            : landingPageMarkdown
+                              ? 'border-zinc-600 bg-zinc-800/50'
+                              : 'border-zinc-700 hover:border-zinc-600'
+                        }`}
+                        onClick={() => markdownInputRef.current?.click()}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDraggingMarkdown(true);
+                        }}
+                        onDragLeave={() => setIsDraggingMarkdown(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDraggingMarkdown(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && (file.name.endsWith('.md') || file.type === 'text/markdown')) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              setLandingPageMarkdown(event.target?.result as string);
+                              setLandingPageMarkdownFileName(file.name);
+                            };
+                            reader.readAsText(file);
+                          }
+                        }}
+                      >
+                        <input
+                          ref={markdownInputRef}
+                          type="file"
+                          accept=".md,text/markdown"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                setLandingPageMarkdown(event.target?.result as string);
+                                setLandingPageMarkdownFileName(file.name);
+                              };
+                              reader.readAsText(file);
+                            }
+                          }}
+                        />
+                        {landingPageMarkdown ? (
+                          <div className="flex items-center justify-center gap-2 text-sm text-zinc-300">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                              />
+                            </svg>
+                            <span>{landingPageMarkdownFileName}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLandingPageMarkdown(null);
+                                setLandingPageMarkdownFileName(null);
+                              }}
+                              className="ml-2 text-zinc-500 hover:text-zinc-300"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M6 18L18 6M6 6l12 12"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-zinc-500">
+                            <svg className="mx-auto mb-1 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.5}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                              />
+                            </svg>
+                            <span className="text-xs">Drop markdown file or click to upload</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Primary Color Picker */}
+                      <div className="mt-3 flex items-center gap-3">
+                        <span className="text-xs text-zinc-500">Primary color</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={landingPagePrimaryColor}
+                            onChange={(e) => setLandingPagePrimaryColor(e.target.value)}
+                            className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent"
+                          />
+                          <span className="font-mono text-xs text-zinc-400">{landingPagePrimaryColor}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <button
+                  onClick={() => {
+                    // Create the request payload (network data will be exported after payment)
+                    const payload = {
+                      surfnet: {
+                        subdomain: subdomain,
+                        transfer_local_state: transferLocalState,
+                        include_landing_page: publishLandingPage,
+                        pricing_tier: selectedPricingTier,
+                        source_rpc_url: rpcUrl,
+                        datasource_rpc_url: rpcDatasourceUrl,
+                        // Landing page customization (only for Max tier)
+                        ...(selectedPricingTier === 'max' && {
+                          landing_page: {
+                            org: landingPageOrg,
+                            name: landingPageName,
+                            markdown: landingPageMarkdown,
+                            primary_color: landingPagePrimaryColor,
+                            header_image: landingPageHeaderImage,
+                            avatar: landingPageAvatar,
+                          },
+                        }),
+                      },
+                    };
+
+                    setSurfnetPayload(payload);
+                    setShowCheckout(true);
+                  }}
+                  disabled={
+                    selectedPricingTier === 'lite' ? false : !subdomain || subdomain.length < 3 || !subdomainAvailable
+                  }
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-lg font-semibold transition-colors ${
+                    selectedPricingTier === 'lite' || (subdomain && subdomain.length >= 3 && subdomainAvailable)
+                      ? 'bg-pink-600 text-white hover:bg-pink-500'
+                      : 'cursor-not-allowed bg-zinc-700 text-zinc-500'
+                  }`}
+                >
+                  <CloudArrowUpIcon className="h-6 w-6" />
+                  Create Cloud Surfnet
+                </button>
+              </div>
+            </>
+          )}
         </DialogBody>
       </Dialog>
 
@@ -877,42 +1601,226 @@ const ExplorerHeader = () => {
         <CheckoutModal
           visible={showCheckout}
           onClose={() => setShowCheckout(false)}
-          amount={selectedPricingTier === 'starter' ? 3.99 : selectedPricingTier === 'pro' ? 9.99 : 99.99}
+          amount={selectedPricingTier === 'lite' ? 3.99 : selectedPricingTier === 'pro' ? 9.99 : 99.99}
           currency="USDC"
           recipient="9aUn5swQzUTRanaaTwmszxiv89cvFwUCjEBv1vZCoT1u"
           lineItems={[
             {
               product: {
-                id: `surfnet-${selectedPricingTier}`,
-                name: `Surfnet ${selectedPricingTier === 'starter' ? 'Lite' : selectedPricingTier === 'pro' ? 'Pro' : 'Max'}`,
-                description: `${selectedPricingTier === 'starter' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'} transactions`,
+                id: selectedPricingTier === 'lite' ? 'surfnet-lite' : `surfnet-${selectedPricingTier}`,
+                name: `Surfnet ${selectedPricingTier === 'lite' ? 'Lite' : selectedPricingTier === 'pro' ? 'Pro' : 'Max'}`,
+                description: `${selectedPricingTier === 'lite' ? '50' : selectedPricingTier === 'pro' ? '500' : '5,000'} transactions`,
               },
               price: {
                 id: `price-${selectedPricingTier}`,
-                unit_amount: selectedPricingTier === 'starter' ? 399 : selectedPricingTier === 'pro' ? 999 : 9999,
+                unit_amount: selectedPricingTier === 'lite' ? 399 : selectedPricingTier === 'pro' ? 999 : 9999,
                 currency: 'USDC',
               },
               quantity: 1,
-              subtotal: selectedPricingTier === 'starter' ? 3.99 : selectedPricingTier === 'pro' ? 9.99 : 99.99,
             },
           ]}
-          onSuccess={async (event) => {
-            console.log('Payment confirmed:', event);
+          onSuccess={async (receipt: any) => {
+            console.log('Payment confirmed, full receipt:', receipt);
+            console.log('Receipt keys:', Object.keys(receipt || {}));
+            console.log('Receipt.attachments:', receipt?.attachments);
+            console.log('Receipt.getProcessorData:', receipt?.getProcessorData?.());
+            console.log('Receipt.data:', receipt?.data);
+            console.log('Receipt.metadata:', receipt?.metadata);
 
-            // Create JWT token with surfnet payload
-            const secret = new TextEncoder().encode('surfpool-studio-ui-secret-key');
-            const jwt = await new jose.SignJWT({ data: surfnetPayload })
-              .setProtectedHeader({ alg: 'HS256' })
-              .setIssuedAt()
-              .setExpirationTime('1h')
-              .sign(secret);
-
-            // Open cloud dashboard with JWT token
-            const cloudUrl = `https://cloud.surfpool.run/networks?create_surfnet_token=${encodeURIComponent(jwt)}`;
-            window.open(cloudUrl, '_blank', 'noopener,noreferrer');
-
+            // Close checkout and show uploading phase
             setShowCheckout(false);
-            setShowPublishDialog(false);
+            setPublishPhase('uploading');
+
+            // Extract processor data from receipt.claims.attachments
+            // New structure: attachments[actorId][key] = data
+            // e.g., attachments["cloud-api-svc"]["surfnet"] = { service, status, snapshot, surfnet }
+            const attachments = receipt?.claims?.attachments || {};
+
+            // Find the surfnet data from any actor (usually "cloud-api-svc")
+            let processorData: any = {};
+            for (const actorId of Object.keys(attachments)) {
+              const actorData = attachments[actorId];
+              if (actorData?.surfnet) {
+                processorData = actorData.surfnet;
+                break;
+              }
+            }
+
+            // S3 credentials are under 'snapshot' key
+            const credentials = processorData?.snapshot as S3Credentials | undefined;
+
+            // Surfnet info is under 'surfnet' key
+            const surfnetInfo = processorData?.surfnet as
+              | {
+                  rpcUrl?: string;
+                  subdomain?: string;
+                  domain?: string;
+                  networkId?: string;
+                }
+              | undefined;
+
+            console.log('Extracted processorData:', processorData);
+            console.log('Extracted credentials:', credentials);
+            console.log('Extracted surfnetInfo:', surfnetInfo);
+
+            if (!credentials || !credentials.bucket) {
+              console.error('❌ No S3 credentials received from payment');
+              console.error('Receipt structure:', JSON.stringify(receipt, null, 2));
+              setPublishPhase('error');
+              setPublishError('No upload credentials received from payment. Check console for receipt details.');
+              return;
+            }
+
+            const now = new Date();
+            const expiresAtDate = credentials.expiresAt ? new Date(credentials.expiresAt) : null;
+            const timeUntilExpiry = expiresAtDate ? (expiresAtDate.getTime() - now.getTime()) / 1000 : null;
+
+            console.log('📦 Received S3 credentials:', {
+              bucket: credentials.bucket,
+              keyPrefix: credentials.keyPrefix,
+              expiresAt: credentials.expiresAt,
+              currentTime: now.toISOString(),
+              timeUntilExpirySeconds: timeUntilExpiry,
+              isExpired: timeUntilExpiry !== null && timeUntilExpiry <= 0,
+            });
+
+            if (timeUntilExpiry !== null && timeUntilExpiry <= 0) {
+              console.error('❌ S3 credentials are already expired!');
+              setPublishPhase('error');
+              setPublishError('Upload credentials have expired. Please try again.');
+              return;
+            }
+
+            // Export the network data using the surfnet_exportNetwork cheatcode
+            console.log('🌐 Exporting network data...');
+            const dataString = await exportNetwork();
+
+            if (!dataString || dataString.length === 0) {
+              console.error('❌ Export returned empty data');
+              setPublishPhase('error');
+              setPublishError('Failed to export network data - empty response');
+              return;
+            }
+
+            // Calculate upload size for progress
+            const dataSize = dataString.length;
+            setUploadProgress({ loaded: 0, total: dataSize });
+
+            console.log(
+              '✅ Network data exported, size:',
+              dataSize,
+              'bytes, first 200 chars:',
+              dataString.substring(0, 200)
+            );
+
+            // Upload the network data to S3 using the temporary credentials
+            const uploadResult = await uploadToS3(credentials, dataString, 'surfnet-export.json');
+
+            if (!uploadResult.success) {
+              console.error('❌ Failed to upload to S3:', uploadResult.error);
+              setPublishPhase('error');
+              setPublishError(uploadResult.error || 'Failed to upload to cloud');
+              return;
+            }
+
+            // Update progress to complete
+            setUploadProgress({ loaded: dataSize, total: dataSize });
+            console.log('✅ Network data uploaded to S3:', uploadResult.url);
+
+            // Switch to importing phase and connect to WebSocket
+            setPublishPhase('importing');
+            setImportProgress(null); // Will be set once we receive first progress update
+
+            // Connect to WebSocket for snapshot import updates
+            const snapshotWsUrl = wsUrl || 'ws://localhost:8899';
+            try {
+              const ws = new WebSocket(snapshotWsUrl);
+              snapshotWsRef.current = ws;
+
+              ws.onopen = () => {
+                console.log('🔌 WebSocket connected, subscribing to snapshot import...');
+                // Send snapshotSubscribe request
+                ws.send(
+                  JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'snapshotSubscribe',
+                    params: [uploadResult.url],
+                  })
+                );
+              };
+
+              ws.onmessage = (event) => {
+                try {
+                  const data = JSON.parse(event.data);
+                  console.log('📨 WebSocket message:', data);
+
+                  // Handle subscription confirmation
+                  if (data.id === 1 && data.result !== undefined) {
+                    console.log('✅ Snapshot subscription confirmed, id:', data.result);
+                    return;
+                  }
+
+                  // Handle snapshot notifications
+                  if (data.method === 'snapshotNotification' && data.params?.result) {
+                    const notification = data.params.result;
+                    console.log('📊 Snapshot import progress:', notification);
+
+                    // Capture snapshot ID if present
+                    if (notification.snapshot_id || notification.snapshotId) {
+                      setSnapshotId(notification.snapshot_id || notification.snapshotId);
+                    }
+
+                    setImportProgress({
+                      loaded: notification.accounts_loaded || notification.accountsLoaded || 0,
+                      total: notification.total_accounts || notification.totalAccounts || 0,
+                    });
+
+                    // Check for completion or error
+                    if (notification.status === 'Completed') {
+                      console.log('✅ Snapshot import completed!');
+                      ws.close();
+                      setPublishPhase('completed');
+
+                      // Build the published URL from surfnet info or fallback to subdomain
+                      const surfnetUrl = surfnetInfo?.subdomain
+                        ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                        : selectedPricingTier === 'lite'
+                          ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
+                          : `https://${subdomain}.surfnet.dev`;
+                      setPublishedUrl(surfnetUrl);
+                    } else if (notification.status === 'Failed') {
+                      console.error('❌ Snapshot import failed:', notification.error);
+                      ws.close();
+                      setPublishPhase('error');
+                      setPublishError(notification.error || 'Snapshot import failed');
+                    }
+                  }
+                } catch (e) {
+                  console.error('Failed to parse WebSocket message:', e);
+                }
+              };
+
+              ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                // Don't immediately fail - the import might still work
+              };
+
+              ws.onclose = () => {
+                console.log('🔌 WebSocket closed');
+                snapshotWsRef.current = null;
+              };
+            } catch (error) {
+              console.error('Failed to connect to WebSocket:', error);
+              // If WebSocket fails, still show success since upload worked
+              setPublishPhase('completed');
+              const surfnetUrl = surfnetInfo?.subdomain
+                ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                : selectedPricingTier === 'lite'
+                  ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
+                  : `https://${subdomain}.surfnet.dev`;
+              setPublishedUrl(surfnetUrl);
+            }
           }}
           onError={(error) => {
             console.error('Payment failed:', error);
