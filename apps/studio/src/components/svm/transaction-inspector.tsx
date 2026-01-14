@@ -774,6 +774,7 @@ interface DataComparisonProps {
   renderJsonDiff: (beforeJson: any, afterJson: any, isRed: boolean) => any;
   renderUnifiedJsonDiff: (beforeJson: any, afterJson: any) => any;
   copyToClipboard: (text: string, id: string) => void;
+  copiedStates: Record<string, boolean>;
 }
 
 const DataComparison: React.FC<DataComparisonProps> = ({
@@ -796,6 +797,7 @@ const DataComparison: React.FC<DataComparisonProps> = ({
   renderJsonDiff,
   renderUnifiedJsonDiff,
   copyToClipboard,
+  copiedStates,
 }) => {
   // Use original before/after data
   const tempBeforeData = beforeData;
@@ -1483,6 +1485,7 @@ const UpdateAccountDetails: React.FC<UpdateAccountDetailsProps> = ({
             renderJsonDiff={renderJsonDiff}
             renderUnifiedJsonDiff={renderUnifiedJsonDiff}
             copyToClipboard={copyToClipboard}
+            copiedStates={copiedStates}
           />
         </div>
       )}

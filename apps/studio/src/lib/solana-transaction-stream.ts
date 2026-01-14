@@ -101,25 +101,11 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   const subscriptionIdRef = useRef<string | null>(null);
   const processedSignaturesRef = useRef<Set<string>>(new Set());
 
-  const processTransactionSignature = useCallback(async (signature: string, err?: any) => {
-    // Check if we've already processed this signature
-    if (processedSignaturesRef.current.has(signature)) {
-      console.log('🔄 Signature already processed, skipping:', signature);
-      return;
-    }
-    
-    // Mark signature as processed
-    processedSignaturesRef.current.add(signature);
-    // Fetch full transaction details
-    console.log('🔄 Fetching transaction details for signature:', signature);
-    await fetchTransactionDetails(signature);
-  }, []);
-
   const fetchTransactionDetails = useCallback(async (signature: string) => {
     try {
       console.log('🌐 Fetching transaction details from:', rpcUrl);
       console.log('📋 Signature:', signature);
-      
+
       const requestBody = {
         jsonrpc: '2.0',
         id: 1,
@@ -133,9 +119,9 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           }
         ]
       };
-      
+
       console.log('📤 Request body:', requestBody);
-      
+
       const response = await fetch(rpcUrl, {
         method: 'POST',
         headers: {
@@ -149,7 +135,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
       const data = await response.json();
       console.log('📥 Transaction fetch response:', data);
-      
+
       if (data.result) {
         const txInfo: TransactionInfo = data.result;
         console.log('✅ Transaction details received:', {
@@ -160,7 +146,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           fee: txInfo.meta?.fee,
           computeUnits: txInfo.meta?.computeUnitsConsumed
         });
-        
+
         // Filter by program if specified
         if (filterByProgram) {
           const hasProgram = txInfo.transaction.message.instructions.some(
@@ -171,7 +157,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
             return;
           }
         }
-        
+
         console.log('📊 Adding transaction to state...');
         setTransactions(prev => {
           const newTransactions = [txInfo, ...prev].slice(0, maxTransactions);
@@ -197,6 +183,20 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       console.error('Error fetching transaction details:', err);
     }
   }, [rpcUrl, filterByProgram, maxTransactions]);
+
+  const processTransactionSignature = useCallback(async (signature: string, err?: any) => {
+    // Check if we've already processed this signature
+    if (processedSignaturesRef.current.has(signature)) {
+      console.log('🔄 Signature already processed, skipping:', signature);
+      return;
+    }
+
+    // Mark signature as processed
+    processedSignaturesRef.current.add(signature);
+    // Fetch full transaction details
+    console.log('🔄 Fetching transaction details for signature:', signature);
+    await fetchTransactionDetails(signature);
+  }, [fetchTransactionDetails]);
 
   const startStreaming = useCallback(async () => {
     if (!wsUrl) {
@@ -313,7 +313,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     } catch (err) {
       console.error('Error fetching local signatures:', err);
     }
-  }, [rpcUrl, fetchTransactionDetails]);
+  }, [rpcUrl, processTransactionSignature]);
 
   const clearTransactions = useCallback(() => {
     setTransactions([]);
