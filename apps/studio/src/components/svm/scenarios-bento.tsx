@@ -465,6 +465,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
   useEffect(() => {
     console.log('ScenariosBento: bentoItems ready, count:', bentoItems.length, 'IDs:', bentoItems.map(i => i.id));
     console.log('ScenariosBento: initialSelectedId:', initialSelectedId, 'initialTab:', initialTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bentoItems.length, initialSelectedId, initialTab]);
 
   const renderItem = (item: ScenarioBentoItem, isSelected: boolean) => {

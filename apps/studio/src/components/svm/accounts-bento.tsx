@@ -36,7 +36,7 @@ type Collection = {
   ingestRate?: number | undefined; // items per minute (optional)
 };
 
-export default function AccountsBento(): JSX.Element {
+export default function AccountsBento() {
   const { config } = useAppConfig();
   const graphqlUrl =
     config?.graphql_query_route_url || (config?.studio_url ? `${config.studio_url}/gql/v1/graphql` : '');

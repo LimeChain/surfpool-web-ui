@@ -435,6 +435,7 @@ export const SlotsGrid: React.FC = () => {
       observer.disconnect();
       window.removeEventListener('resize', handleWindowResize);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Remove canvasGridHeight dependency
 
   // Draw effect: only draws, does not set up interval
@@ -598,6 +599,7 @@ export const SlotsGrid: React.FC = () => {
     if (isClient) {
       fetchEpochData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient]);
 
   // Start WebSocket subscription once on mount

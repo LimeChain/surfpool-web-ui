@@ -17,7 +17,9 @@
   "pnpm": {
     "overrides": {
       "@moneymq/sdk": "0.10.0",
-      "@moneymq/react": "0.10.0"
+      "@moneymq/react": "0.10.0",
+      "@types/react": "^19.0.0",
+      "@types/react-dom": "^19.0.0"
     }
   },
   "packageManager": "pnpm@10.14.0"
