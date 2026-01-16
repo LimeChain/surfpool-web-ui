@@ -45,15 +45,24 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: siteUrl,
     siteName,
-    title,
+    title: 'Solana transaction simulation for builders and traders',
     description,
+    images: [
+      {
+        url: '/og.png',
+        width: 1200,
+        height: 675,
+        alt: 'Surfpool - Solana transaction simulation for builders and traders',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title,
+    title: 'Solana transaction simulation for builders and traders',
     description,
     creator: '@surfaboratory',
     site: '@surfaboratory',
+    images: ['/og.png'],
   },
   alternates: {
     canonical: siteUrl,
