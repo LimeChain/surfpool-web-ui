@@ -2,19 +2,19 @@
 
 > Drop-in replacement for solana-test-validator. Simulate programs locally using Mainnet accounts.
 
-Surfpool is purpose-built to offer the best possible experience for developers building on Solana. It provides a local Solana network simulator (Surfnet) that can fork Mainnet state, along with Infrastructure as Code tooling for deployments.
+Surfpool is a local Solana node that fetches accounts just-in-time as transactions are sent to the RPC endpoint.
 
 ## Quick Start
 
 ```bash
 # Install CLI
-curl --proto '=https' --tlsv1.2 -sSf https://sh.surfpool.run | sh
+curl -sL https://run.surfpool.run/ | bash
 
 # Start local network
 surfpool
 ```
 
-Dashboard: http://localhost:8488
+Dashboard: http://localhost:18488
 
 ## Key Features
 
@@ -28,227 +28,10 @@ Dashboard: http://localhost:8488
 
 ```bash
 surfpool                    # Start Surfnet with TUI dashboard
-surfpool --no-tui           # Start without TUI
-surfpool --rpc-port 8899    # Custom RPC port
 surfpool --help             # Show all options
 ```
 
-## Surfnet Configuration (Surfpool.toml)
-
-```toml
-[network]
-rpc_port = 8899
-ws_port = 8900
-
-[accounts]
-# Clone accounts from mainnet
-clone = [
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-]
-
-[programs]
-# Clone programs with their data
-clone = [
-  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-]
-```
-
-## Cheatcodes (Surfnet-specific RPC methods)
-
-Surfpool provides special RPC methods for testing:
-
-### Account Manipulation
-```bash
-# Set account data
-curl -X POST http://localhost:8899 -d '{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "surfnet_setAccount",
-  "params": {
-    "pubkey": "...",
-    "lamports": 1000000000,
-    "data": "...",
-    "owner": "...",
-    "executable": false
-  }
-}'
-
-# Set token account balance
-curl -X POST http://localhost:8899 -d '{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "surfnet_setTokenAccount",
-  "params": {
-    "pubkey": "...",
-    "mint": "...",
-    "owner": "...",
-    "amount": 1000000
-  }
-}'
-
-# Clone program from mainnet
-curl -X POST http://localhost:8899 -d '{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "surfnet_cloneProgramAccount",
-  "params": {
-    "pubkey": "..."
-  }
-}'
-```
-
-### Time Manipulation
-```bash
-# Advance clock
-surfnet_advanceClock
-
-# Time travel to specific slot/timestamp
-surfnet_timeTravel
-
-# Pause/resume clock
-surfnet_pauseClock
-surfnet_resumeClock
-```
-
-### Transaction Profiling
-```bash
-# Profile transaction compute units
-surfnet_profileTransaction
-
-# Get profiling results
-surfnet_getProfileResults
-```
-
-### Network Control
-```bash
-# Reset network state
-surfnet_resetNetwork
-
-# Export snapshot
-surfnet_exportSnapshot
-
-# Get surfnet info
-surfnet_getSurfnetInfo
-```
-
-## Infrastructure as Code (txtx DSL)
-
-Define deployments using the txtx DSL in `.tx` files:
-
-### Basic Runbook Structure
-
-```hcl
-// deployment.tx
-addon "svm" {
-  network = "devnet"
-}
-
-signer "deployer" "svm::secret_key" {
-  secret_key = input.deployer_secret_key
-}
-
-action "deploy_program" "svm::deploy_program" {
-  program_path = "./target/deploy/my_program.so"
-  signer = signer.deployer
-}
-
-output "program_id" {
-  value = action.deploy_program.program_id
-}
-```
-
-### Available SVM Actions
-
-- `svm::deploy_program` - Deploy a program
-- `svm::send_transaction` - Send a transaction
-- `svm::call_program` - Call a program instruction
-- `svm::create_account` - Create a new account
-- `svm::transfer` - Transfer SOL
-
-### Available SVM Functions
-
-- `svm::get_account_info` - Get account information
-- `svm::get_balance` - Get SOL balance
-- `svm::pubkey` - Create a pubkey from string
-- `svm::keypair` - Generate a new keypair
-
-## Standard Library Functions
-
-### Hash Functions
-```hcl
-sha256(value)      # SHA-256 hash
-keccak256(value)   # Keccak-256 hash
-ripemd160(value)   # RIPEMD-160 hash
-```
-
-### Encoding Functions
-```hcl
-encode_hex(value)      # Encode to hex
-base64_decode(value)   # Decode base64
-```
-
-### Utility Functions
-```hcl
-index(list, i)     # Get list element at index
-jq(json, query)    # JQ query on JSON
-```
-
-### Assertions
-```hcl
-assert_eq(left, right)   # Assert equality
-assert_ne(left, right)   # Assert inequality
-assert_gt(left, right)   # Assert greater than
-assert_gte(left, right)  # Assert greater or equal
-assert_lt(left, right)   # Assert less than
-assert_lte(left, right)  # Assert less or equal
-```
-
-## RPC Endpoints
-
-Surfpool supports all standard Solana RPC methods plus Surfnet cheatcodes:
-
-### Standard Methods
-- `getAccountInfo`, `getBalance`, `getMultipleAccounts`
-- `getBlock`, `getBlockHeight`, `getSlot`
-- `getTransaction`, `sendTransaction`, `simulateTransaction`
-- `getLatestBlockhash`, `getSignatureStatuses`
-- Full list at: https://docs.surfpool.run/rpc/overview
-
-### Cheatcode Methods (surfnet_*)
-- `surfnet_setAccount`, `surfnet_setTokenAccount`
-- `surfnet_cloneProgramAccount`, `surfnet_setProgramAuthority`
-- `surfnet_timeTravel`, `surfnet_advanceClock`
-- `surfnet_profileTransaction`, `surfnet_getProfileResults`
-- `surfnet_resetNetwork`, `surfnet_exportSnapshot`
-- Full list at: https://docs.surfpool.run/rpc/cheatcodes
-
-## WebSocket Subscriptions
-
-```javascript
-// Account subscription
-ws.send(JSON.stringify({
-  jsonrpc: "2.0",
-  id: 1,
-  method: "accountSubscribe",
-  params: ["pubkey...", { encoding: "base64" }]
-}));
-
-// Program subscription
-ws.send(JSON.stringify({
-  jsonrpc: "2.0",
-  id: 1,
-  method: "programSubscribe",
-  params: ["programId...", { encoding: "base64" }]
-}));
-
-// Slot subscription
-ws.send(JSON.stringify({
-  jsonrpc: "2.0",
-  id: 1,
-  method: "slotSubscribe"
-}));
-```
+Running `surfpool` from an Anchor or Solana program directory automatically spins up a network and scaffolds infrastructure-as-code to deploy the program(s).
 
 ---
 
