@@ -88,15 +88,24 @@ export async function generateMetadata({ params }: PageProps) {
       canonical: pageUrl,
     },
     openGraph: {
-      title: `${pageTitle} | Surfpool Docs`,
+      title: 'Solana transaction simulation for builders and traders',
       description: pageDescription,
       url: pageUrl,
       type: 'article',
+      images: [
+        {
+          url: '/og.png',
+          width: 1200,
+          height: 675,
+          alt: 'Surfpool - Solana transaction simulation for builders and traders',
+        },
+      ],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${pageTitle} | Surfpool Docs`,
+      title: 'Solana transaction simulation for builders and traders',
       description: pageDescription,
+      images: ['/og.png'],
     },
   };
 }
