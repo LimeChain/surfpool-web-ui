@@ -889,6 +889,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                       copyId={`success-wallet-${recipientIndex}`}
                       showCopyButton={true}
                       aggressiveTruncate={false}
+                      rpcUrl={rpcUrl}
                     />
                   ) : (
                     <div className="text-zinc-500">No address</div>
@@ -920,6 +921,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                                 copyId={`ata-${index}-${recipientIndex}`}
                                 showCopyButton={true}
                                 aggressiveTruncate={false}
+                                rpcUrl={rpcUrl}
                               />
                             </div>
                           )}
@@ -935,6 +937,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                                 copyId={`token-${index}-${recipientIndex}`}
                                 showCopyButton={true}
                                 aggressiveTruncate={false}
+                                rpcUrl={rpcUrl}
                               />
                             </div>
                           )}
