@@ -1,0 +1,145 @@
+---
+title: CLI Commands
+description: Using the surfpool Command Line Interface (CLI)
+---
+
+Use the `surfpool` Command Line Interface (CLI) to start your surfpool simnet (surfnet) and to execute Runbooks.
+
+## Start a Surfnet
+
+The `surfpool start` command can be used to start a surfnet.
+If run in a solana program directory, surfpool will automatically generate Runbooks to deploy your programs to the surfnet.
+
+Here are the available options:
+
+```sh
+> surfpool help start
+Usage: surfpool start [OPTIONS]
+
+Options:
+  -m, --manifest-file-path <MANIFEST_PATH>
+          Path to the manifest [default: ./Surfpool.toml]
+  -p, --port <SIMNET_PORT>
+          Set the Simnet RPC port [default: 8899]
+  -o, --host <NETWORK_HOST>
+          Set the Simnet host address [default: 127.0.0.1]
+  -s, --slot-time <SLOT_TIME>
+          Set the slot time [default: 400]
+  -u, --rpc-url <RPC_URL>
+          Set the ip [default: https://api.mainnet-beta.solana.com]
+      --no-tui
+          Display streams of logs instead of terminal UI dashboard (default: false)
+      --debug
+          Include debug logs (default: false)
+      --no-deploy
+          Disable auto deployments (default: false)
+  -r, --runbook <RUNBOOKS>
+          List of runbooks-id to run [default: deployment]
+  -a, --airdrop <AIRDROP_ADDRESSES>
+          List of pubkeys to airdrop
+  -q, --airdrop-amount <AIRDROP_TOKEN_AMOUNT>
+          Quantity of tokens to airdrop [default: 10000000000000]
+  -k, --airdrop-keypair-path <AIRDROP_KEYPAIR_PATH>
+          List of keypair paths to airdrop [default: ~/.config/solana/id.json]
+      --no-explorer
+          Disable explorer (default: false)
+      --watch
+          Watch programs (default: false)
+  -g, --geyser-plugin-config <PLUGIN_CONFIG_PATH>
+          List of geyser plugins to load
+  -h, --help
+          Print help
+```
+
+## Execute a Runbook
+
+Use the `surfpool run` command to execute a Runbook:
+
+```sh
+surfpool run my-runbook.tx
+```
+
+This example directly executes a Runbook called `my-runbook.tx`.
+Runbooks can also be grouped together, given descriptions, and supplied inputs by creating a txtx manifest.
+To execute a Runbook that is declared in a manifest, navigate to the manifest directory and run:
+
+```sh
+surfpool run my-runbook
+```
+
+Here are the available options:
+
+```sh
+> surfpool help run
+Run, runbook, run!
+
+Usage: surfpool run [OPTIONS] <RUNBOOK>
+
+Arguments:
+  <RUNBOOK>  Name of the runbook as indexed in the txtx.yml, or the path of the .tx file to run
+
+Options:
+  -m, --manifest-file-path <MANIFEST_PATH>
+          Path to the manifest [default: ./txtx.yml]
+  -u, --unsupervised
+          Execute the runbook without supervision
+  -b, --browser
+          Execute the runbook with supervision via the browser UI (this is the default execution mode)
+  -t, --terminal
+          Execute the runbook with supervision via the terminal console (coming soon)
+      --output-json [<OUTPUT_JSON>]
+          When running in unsupervised mode, print outputs in JSON format. If a directory is provided, the output will be written a file at the directory
+      --output <OUTPUT>
+          Pick a specific output to stdout at the end of the execution
+      --explain
+          Explain how the runbook will be executed
+  -p, --port <NETWORK_BINDING_PORT>
+          Set the port for hosting the web UI [default: 8488]
+  -i, --ip <NETWORK_BINDING_IP_ADDRESS>
+          Set the port for hosting the web UI [default: localhost]
+      --env <ENVIRONMENT>
+          Choose the environment variable to set from those configured in the txtx.yml
+      --input <INPUTS>
+          A set of inputs to use for batch processing
+  -f, --force
+          Execute the Runbook even if the cached state suggests this Runbook has already been executed
+  -h, --help
+          Print help
+```
+
+### Supervised Mode
+
+By default, the `surfpool run` command spins up a web server that can be used to manually interact with your Runbook execution steps.
+Each step can be validated, and some runtime data can be input, providing flexibility and confidence during execution.
+We call this _supervised_ execution, because user supervision is required.
+Here is an example output when running in supervised mode.
+
+```sh
+→ Processing manifest './txtx.yaml'
+✓ Runbook 'My Runbook' successfully checked and loaded
+
+→ Running Web console
+http://127.0.0.1:8488
+```
+
+### Unsupervised Mode
+
+A Runbook can also be run in _unsupervised_ mode, meaning that each of the Runbook steps will be executed automatically, in order.
+This can be powerful for quick feedback on your on-chain operations, and is surfpool uses by default when deploying your programs to your surfnet.
+To execute a Runbook in unsupervised mode, use the `--unsupervised` (or `-u`) flag:
+
+```sh
+surfpool run my-runbook -u
+```
+
+Here is an example output:
+
+```sh
+→ Processing manifest './txtx.yml'
+✓ Runbook 'My Runbook' successfully checked and loaded
+
+→ Starting runbook 'My Runbook' execution in unsupervised mode
+┌───────┬───┐
+│ ouput │ 1 │
+└───────┴───┘
+```

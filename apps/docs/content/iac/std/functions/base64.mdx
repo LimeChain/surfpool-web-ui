@@ -1,0 +1,27 @@
+---
+title: Base64 Functions
+description: Standard library functions for Base64 encoding and decoding
+---
+
+## base64_decode
+
+`base64_decode` decodes a base64 encoded string and returns the result as a hex string.
+
+### Inputs
+
+| Name | Type | Description |
+|------|------|-------------|
+| `base64_string` | string | The base64 string to decode |
+
+### Output
+
+| Name | Type | Description |
+|------|------|-------------|
+| `value` | string | The decoded base64 string, as a hex string |
+
+```hcl
+output "decoded" {
+    value = base64_decode("SGVsbG8gd29ybGQh")
+}
+// > decoded: 0x48656c6c6f20776f726c6421
+```

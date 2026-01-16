@@ -9,9 +9,9 @@
     "clean": "rm -rf .turbo node_modules"
   },
   "peerDependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "next": "^15.4.1"
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "next": ">=14"
   },
   "dependencies": {
     "@headlessui/react": "2.2.4",
@@ -19,8 +19,10 @@
     "framer-motion": "^12.23.6"
   },
   "devDependencies": {
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^18.0.0",
-    "typescript": "^5"
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "vite": "^6.0.0",
+    "vite-plugin-svgr": "^4.5.0"
   }
 }

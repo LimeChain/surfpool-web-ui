@@ -1,3 +1,6 @@
+// Logo components
+export * from './logo';
+
 // Catalyst UI components
 export { Dialog, DialogTitle, DialogDescription, DialogBody, DialogActions } from './catalyst/dialog';
 export { Field, Label, Fieldset, Legend, FieldGroup, Description, ErrorMessage } from './catalyst/fieldset';

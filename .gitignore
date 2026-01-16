@@ -56,3 +56,5 @@ apps/studio/out
 apps/surfnet/out
 .turbo
 .surfpool
+apps/docs/.next
+apps/docs/node_modules

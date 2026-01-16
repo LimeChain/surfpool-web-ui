@@ -1,0 +1,27 @@
+---
+title: Hex Functions
+description: Standard library functions for hexadecimal encoding and decoding
+---
+
+## encode_hex
+
+`encode_hex` encodes a string as a hexadecimal string.
+
+### Inputs
+
+| Name | Type | Description |
+|------|------|-------------|
+| `value` | string | Any input string |
+
+### Output
+
+| Name | Type | Description |
+|------|------|-------------|
+| `value` | string | The input string in its hexadecimal representation |
+
+```hcl
+output "encoded_hex" {
+    value = encode_hex("hello, world")
+}
+// > encoded_hex: 68656C6C6F2C20776F726C64
+```

@@ -1,0 +1,8 @@
+{
+  "title": "Toolchain",
+  "pages": [
+    "getting-started",
+    "cli",
+    "tui"
+  ]
+}

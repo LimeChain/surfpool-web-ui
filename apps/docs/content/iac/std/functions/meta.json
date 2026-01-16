@@ -1,0 +1,13 @@
+{
+  "title": "Functions",
+  "pages": [
+    "operators",
+    "hash",
+    "hex",
+    "crypto",
+    "json",
+    "list",
+    "assertions",
+    "base64"
+  ]
+}

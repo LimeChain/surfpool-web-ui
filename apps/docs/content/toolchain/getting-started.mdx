@@ -1,0 +1,50 @@
+---
+title: Getting Started
+description: This guide will get you all set up and ready to install Surfpool.
+---
+
+The surfpool CLI is available for installation via Homebrew, Snapcraft, or through a manual build.
+
+## Homebrew (macOS)
+
+To install surfpool on a macOS system using Homebrew, open a terminal and run:
+
+```bash
+brew tap txtx/taps
+brew install txtx/taps/surfpool
+```
+
+## Snapcraft (Linux)
+
+To install surfpool on a Linux system using Snapcraft, open a terminal and run:
+
+```bash
+sudo snap install surfpool
+```
+
+## Manual Installation
+
+Platform-specific binaries are generated for each release.
+See the [releases](https://github.com/txtx/surfpool/releases) page to download a release.
+
+## Install from Source
+
+To compile the Surfpool binary from source, clone the surfpool repository.
+
+```bash
+git clone https://github.com/txtx/surfpool.git
+```
+
+Navigate to the new directory.
+
+```bash
+cd surfpool
+```
+
+Then, compile the binary. This command will compile the binary and store it in `~/.cargo/bin/surfpool`.
+
+```bash
+cargo surfpool-install
+```
+
+Finally, make sure that the `surfpool` binary is available on your PATH. This process will differ depending on your operating system.
