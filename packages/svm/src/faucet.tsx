@@ -11,6 +11,7 @@ import { Field, Label } from '@surfpool/ui';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { getAccountBalance, getTokenBalance, setAccount } from './lib/solana-utils';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 
 const LAMPORTS_PER_SOL = 1000000000;
 
@@ -30,6 +31,7 @@ interface Token {
   address?: string;
   name: string;
   decimals: number;
+  programId?: string;
 }
 
 interface TokenRequest {
@@ -43,6 +45,17 @@ interface SetAccountRequest {
 }
 
 const DEFAULT_LAMPORTS_TO_FUND = LAMPORTS_PER_SOL; // 1 SOL
+
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+
+const WSOL_TOKEN: Token = {
+  ticker: 'WSOL',
+  name: 'Wrapped SOL',
+  imageUrl: 'https://img-v1.raydium.io/icon/So11111111111111111111111111111111111111112.png',
+  address: WSOL_MINT,
+  decimals: 9,
+  programId: TOKEN_PROGRAM_ID.toBase58(),
+};
 
 interface FaucetProps {
   rpcUrl: string;
@@ -146,16 +159,41 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
           first: true,
         });
         setTokens(data);
-        setTokenShortcuts([usdc[0], usdt[0], ray[0], jup[0]]);
+        setTokenShortcuts([usdc[0], usdt[0], WSOL_TOKEN, jup[0]].filter(Boolean));
       } catch (error) {
         console.error('Error fetching tokens:', error);
       }
     }
   }
 
-  const handleTokenSearch = (value: string) => {
+  const handleTokenSearch = async (value: string) => {
     setTokenSearch(value);
-    setTokenMatches(filterTokensByTicker(value, tokens, false));
+    const trimmedValue = value.trim();
+
+    if (!trimmedValue) {
+      setTokenMatches([]);
+      return;
+    }
+
+    // Check if input is a valid Solana address (direct mint input)
+    if (isValidSolanaAddress(trimmedValue)) {
+      const mintToken = await fetchMintMetadata(trimmedValue);
+      if (mintToken) {
+        setTokenMatches([mintToken]);
+      } else {
+        setTokenMatches([]);
+      }
+    } else {
+      // Ticker search - existing logic
+      let matches = filterTokensByTicker(trimmedValue, tokens, false);
+
+      // Prioritize WSOL if searching for it
+      if (trimmedValue.toLowerCase() === 'wsol') {
+        matches = [WSOL_TOKEN, ...matches.filter((t) => t.address !== WSOL_MINT)];
+      }
+
+      setTokenMatches(matches);
+    }
   };
 
   useEffect(() => {
@@ -183,6 +221,71 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
       }
     }
     return filteredTokens;
+  };
+
+  const isValidSolanaAddress = (input: string): boolean => {
+    if (!input || input.length < 32 || input.length > 44) return false;
+    const base58Regex = /^[1-9A-HJ-NP-Za-km-z]+$/;
+    return base58Regex.test(input);
+  };
+
+  const detectTokenProgram = async (mintAddress: string): Promise<string> => {
+    const rpcRequest = {
+      id: 1,
+      jsonrpc: '2.0',
+      method: 'getAccountInfo',
+      params: [mintAddress, { encoding: 'base64', commitment: 'confirmed' }],
+    };
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rpcRequest),
+      });
+      const data = await response.json();
+      const owner = data?.result?.value?.owner;
+      if (owner === TOKEN_2022_PROGRAM_ID.toBase58()) {
+        return TOKEN_2022_PROGRAM_ID.toBase58();
+      }
+    } catch (error) {
+      console.error('Error detecting token program:', error);
+    }
+    return TOKEN_PROGRAM_ID.toBase58();
+  };
+
+  const fetchMintMetadata = async (mintAddress: string): Promise<Token | null> => {
+    const rpcRequest = {
+      id: 1,
+      jsonrpc: '2.0',
+      method: 'getAccountInfo',
+      params: [mintAddress, { encoding: 'jsonParsed', commitment: 'confirmed' }],
+    };
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rpcRequest),
+      });
+      const data = await response.json();
+      const accountInfo = data?.result?.value;
+      if (!accountInfo) return null;
+
+      const programId = accountInfo.owner;
+      const parsedInfo = accountInfo.data?.parsed?.info;
+      const decimals = parsedInfo?.decimals ?? 9;
+
+      return {
+        ticker: truncateAddress(mintAddress),
+        name: 'Unknown Token',
+        imageUrl: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+        address: mintAddress,
+        decimals,
+        programId,
+      };
+    } catch (error) {
+      console.error('Error fetching mint metadata:', error);
+      return null;
+    }
   };
 
   const resetToInitialState = () => {
@@ -245,7 +348,14 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
         let rpcRequest: any = {};
         // now that the account exists lets see if we need to fund it with spl-tokens or lamports
         if (tokenFundingRequest.token.address && is_spl_token){
-          const tokenAcountInfo = await getTokenBalance(recipient.address || '', tokenFundingRequest.token.address || '', rpcUrl);
+          const spl_token_program = tokenFundingRequest.token.programId || TOKEN_PROGRAM_ID.toBase58();
+          const tokenAcountInfo = await getTokenBalance(
+            recipient.address || '',
+            tokenFundingRequest.token.address || '',
+            rpcUrl,
+            'confirmed',
+            spl_token_program
+          );
           const balanceUiAmount = Number(tokenAcountInfo?.tokenAmount?.uiAmount) || 0;
           const fundingAmount = Number(tokenFundingRequest.amount) || 0;
           const totalUiAmount = balanceUiAmount + fundingAmount;
@@ -258,6 +368,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               recipient.address,
               tokenFundingRequest.token.address,
               { amount: convertToRawAmount(totalUiAmount, tokenFundingRequest.token.decimals) },
+              spl_token_program
             ],
           };
           // Store final balance for this token and recipient
@@ -690,7 +801,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
         <DialogDescription>{''}</DialogDescription>
         <input
           type="text"
-          placeholder="Search for ticker (WSOL, $TRUMP, etc.)"
+          placeholder="Search ticker or paste mint address"
           className="w-full border-none bg-transparent text-left text-xl focus:outline-none"
           onChange={(e) => handleTokenSearch(e.target.value)}
           ref={(input) => {
@@ -704,9 +815,14 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
             <div
               key={index}
               className="flex cursor-pointer flex-col items-center rounded-xl bg-zinc-800 p-4 transition-colors"
-              onClick={() => {
+              onClick={async () => {
+                const selectedToken = { ...tokenShortcut };
+                // Detect program ID if not already set and token has an address
+                if (!selectedToken.programId && selectedToken.address) {
+                  selectedToken.programId = await detectTokenProgram(selectedToken.address);
+                }
                 const newTokenFundingRequests = [...tokenFundingRequests];
-                newTokenFundingRequests[tokenDialogOpen - 1].token = tokenShortcut;
+                newTokenFundingRequests[tokenDialogOpen - 1].token = selectedToken;
                 setTokenFundingRequest(newTokenFundingRequests);
                 setTokenDialogOpen(0); // Close the dialog after selection
               }}
@@ -721,9 +837,14 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
             <div
               key={index}
               className="flex cursor-pointer flex-row items-center gap-6 rounded-xl border-2 border-zinc-700 p-4 transition-colors"
-              onClick={() => {
+              onClick={async () => {
+                const selectedToken = { ...tokenMatch };
+                // Detect program ID if not already set and token has an address
+                if (!selectedToken.programId && selectedToken.address) {
+                  selectedToken.programId = await detectTokenProgram(selectedToken.address);
+                }
                 const newTokenFundingRequests = [...tokenFundingRequests];
-                newTokenFundingRequests[tokenDialogOpen - 1].token = tokenMatch;
+                newTokenFundingRequests[tokenDialogOpen - 1].token = selectedToken;
                 setTokenFundingRequest(newTokenFundingRequests);
                 setTokenMatches([]);
                 setTokenSearch('');
