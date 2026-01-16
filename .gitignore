@@ -58,3 +58,10 @@ apps/surfnet/out
 .surfpool
 apps/docs/.next
 apps/docs/node_modules
+
+# Generated llms.txt (source of truth is /llms.txt)
+apps/www/public/llms.txt
+apps/docs/public/llms.txt
+apps/www/.next
+apps/**/node_modules
+apps/**/out

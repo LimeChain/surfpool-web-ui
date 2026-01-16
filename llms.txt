@@ -213,7 +213,7 @@ Surfpool supports all standard Solana RPC methods plus Surfnet cheatcodes:
 - `getBlock`, `getBlockHeight`, `getSlot`
 - `getTransaction`, `sendTransaction`, `simulateTransaction`
 - `getLatestBlockhash`, `getSignatureStatuses`
-- Full list at: https://docs.surfpool.io/rpc/overview
+- Full list at: https://docs.surfpool.run/rpc/overview
 
 ### Cheatcode Methods (surfnet_*)
 - `surfnet_setAccount`, `surfnet_setTokenAccount`
@@ -221,7 +221,7 @@ Surfpool supports all standard Solana RPC methods plus Surfnet cheatcodes:
 - `surfnet_timeTravel`, `surfnet_advanceClock`
 - `surfnet_profileTransaction`, `surfnet_getProfileResults`
 - `surfnet_resetNetwork`, `surfnet_exportSnapshot`
-- Full list at: https://docs.surfpool.io/rpc/cheatcodes
+- Full list at: https://docs.surfpool.run/rpc/cheatcodes
 
 ## WebSocket Subscriptions
 
@@ -254,7 +254,7 @@ ws.send(JSON.stringify({
 
 # Resources
 
-- Website: https://surfpool.io
-- Docs: https://docs.surfpool.io
+- Website: https://surfpool.run
+- Docs: https://docs.surfpool.run
 - GitHub: https://github.com/txtx/surfpool
 - Discord: https://discord.gg/rqXmWsn2ja

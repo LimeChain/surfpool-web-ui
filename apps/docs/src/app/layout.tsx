@@ -7,7 +7,7 @@ import { source } from '@/lib/source';
 import { SidebarLogo } from '@/components/themed-logo';
 import '@/styles/tailwind.css';
 
-const siteUrl = 'https://docs.surfpool.io';
+const siteUrl = 'https://docs.surfpool.run';
 const siteName = 'Surfpool Documentation';
 const title = 'Surfpool Docs - From Localnet to Mainnet';
 const description =
@@ -87,7 +87,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         url: siteUrl,
         name: siteName,
         description,
-        publisher: { '@id': 'https://surfpool.io/#txtx' },
+        publisher: { '@id': 'https://surfpool.run/#txtx' },
         potentialAction: {
           '@type': 'SearchAction',
           target: {
@@ -99,7 +99,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       },
       {
         '@type': 'Organization',
-        '@id': 'https://surfpool.io/#txtx',
+        '@id': 'https://surfpool.run/#txtx',
         name: 'Txtx',
         url: 'https://txtx.builders',
         sameAs: [
@@ -112,8 +112,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         '@id': `${siteUrl}/#article`,
         headline: title,
         description,
-        author: { '@id': 'https://surfpool.io/#txtx' },
-        publisher: { '@id': 'https://surfpool.io/#txtx' },
+        author: { '@id': 'https://surfpool.run/#txtx' },
+        publisher: { '@id': 'https://surfpool.run/#txtx' },
         mainEntityOfPage: siteUrl,
         about: [
           { '@type': 'Thing', name: 'Solana Development' },

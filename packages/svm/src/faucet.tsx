@@ -6,7 +6,7 @@ import { PaperAirplaneIcon, PlusIcon, SparklesIcon } from '@heroicons/react/24/s
 import { generateKeyPair, lamports } from '@solana/kit';
 import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
-import { Dialog, DialogDescription, DialogTitle } from '@surfpool/ui';
+import { brandBlue, Dialog, DialogDescription, DialogTitle } from '@surfpool/ui';
 import { Field, Label } from '@surfpool/ui';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -768,8 +768,8 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               canActivateFaucet() ? 'cursor-pointer' : 'cursor-not-allowed'
             }`}
             style={canActivateFaucet() ? {
-              backgroundColor: '#E60076',
-              border: '1px solid #F6339A'
+              backgroundColor: brandBlue,
+              border: `1px solid ${brandBlue}`
             } : {
               backgroundColor: '#52525b'
             }}
@@ -789,7 +789,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               }
             }}
           >
-            <PaperAirplaneIcon className="h-6 w-6 text-white" />
+            <PaperAirplaneIcon className={`h-6 w-6 ${canActivateFaucet() ? 'text-black' : 'text-white'}`} />
           </div>
           {/* <div className="flex h-full w-36 items-center justify-center gap-2 rounded-lg bg-zinc-700 p-2 text-center text-sm uppercase">
               Get Config

@@ -12,7 +12,7 @@ interface CompactSlotWidgetProps {
 }
 
 const TOTAL_BARS = 30; // 30 bars on desktop
-const ACTIVE_SLOT_COLOR = '#62D595';
+const ACTIVE_SLOT_COLOR = '#00D4FF';
 const INACTIVE_SLOT_COLOR = '#2F2F32';
 const INACTIVE_SLOT_COLOR_MOBILE_LIGHT = '#18181b'; // zinc-900
 const INACTIVE_SLOT_COLOR_MOBILE_DARK = '#18181b'; // zinc-900

@@ -76,7 +76,7 @@ export async function generateMetadata({ params }: PageProps) {
   const page = source.getPage(slug);
   if (!page) notFound();
 
-  const siteUrl = 'https://docs.surfpool.io';
+  const siteUrl = 'https://docs.surfpool.run';
   const pageUrl = slug ? `${siteUrl}/${slug.join('/')}` : siteUrl;
   const pageTitle = page.data.title;
   const pageDescription = page.data.description || `Learn about ${pageTitle} in the Surfpool documentation.`;

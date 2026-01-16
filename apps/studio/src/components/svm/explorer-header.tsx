@@ -6,21 +6,25 @@ import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
-import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
+import { brandBlue, Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
 
 const moneyMQClient = {
   config: {
-    // endpoint: 'http://localhost:8488',
-    endpoint: 'https://surfnet-sandbox.money.mq',
+    endpoint: 'http://localhost:8488',
+    // endpoint: 'https://surfnet-sandbox.money.mq',
   },
 };
 
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
 
-const ExplorerHeader = () => {
+interface ExplorerHeaderProps {
+  initialTransactionSignature?: string;
+}
+
+const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) => {
   const { rpcUrl, wsUrl, rpcDatasourceUrl, loading: configLoading, error: configError, refetch } = useAppConfig();
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
@@ -510,7 +514,7 @@ const ExplorerHeader = () => {
       {/* Left Column on lg / Full width on sm+md */}
       <div className="flex w-full flex-col gap-8">
         {/* Transactions - always here */}
-        <TransactionInspector autoStart={true} fetchHistorical={true} />
+        <TransactionInspector autoStart={true} fetchHistorical={true} initialTransactionSignature={initialTransactionSignature} />
 
         {/* Faucet + Controls row on md / Faucet alone then Controls on sm */}
         <div className="grid grid-cols-1 gap-12 md:grid-cols-[350px_1fr] md:gap-8 lg:hidden">
@@ -559,7 +563,7 @@ const ExplorerHeader = () => {
               {/* Publish button temporarily hidden
               <button
                 onClick={() => setShowPublishDialog(true)}
-                className="flex flex-col items-center gap-2 rounded-lg border border-pink-500 bg-pink-600 py-4 transition-colors hover:bg-pink-500"
+                className="flex flex-col items-center gap-2 rounded-lg border border-[#00D4FF] bg-[#00D4FF] py-4 transition-colors hover:brightness-110"
                 title="Publish"
               >
                 <CloudArrowUpIcon className="h-8 w-8 text-white" />
@@ -639,11 +643,12 @@ const ExplorerHeader = () => {
 
           <button
             onClick={() => setShowPublishDialog(true)}
-            className="flex flex-col items-center gap-2 rounded-lg border border-pink-500 bg-pink-600 py-4 transition-colors hover:bg-pink-500"
+            className="flex flex-col items-center gap-2 rounded-lg py-4 transition-colors hover:brightness-110"
+            style={{ backgroundColor: brandBlue, border: `1px solid ${brandBlue}` }}
             title="Publish"
           >
-            <CloudArrowUpIcon className="h-8 w-8 text-white" />
-            <span className="text-[10px] font-medium uppercase tracking-wide text-white">Publish</span>
+            <CloudArrowUpIcon className="h-8 w-8 text-black" />
+            <span className="text-[10px] font-medium uppercase tracking-wide text-black">Publish</span>
           </button>
         </div>
 
@@ -684,7 +689,7 @@ const ExplorerHeader = () => {
             <button
               onClick={() => setTimeTravelMode('date')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'date' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'date' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               DATE
@@ -692,7 +697,7 @@ const ExplorerHeader = () => {
             <button
               onClick={() => setTimeTravelMode('epoch')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'epoch' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'epoch' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               EPOCH
@@ -700,7 +705,7 @@ const ExplorerHeader = () => {
             <button
               onClick={() => setTimeTravelMode('slot')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'slot' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'slot' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               SLOT
@@ -817,8 +822,8 @@ const ExplorerHeader = () => {
                   {/* File info card */}
                   <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-800/50 p-4">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-pink-500/20">
-                        <CloudArrowUpIcon className="h-5 w-5 text-pink-400" />
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-[#00D4FF]/20">
+                        <CloudArrowUpIcon className="h-5 w-5 text-[#00D4FF]" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-white">{uploadFileName}</div>
@@ -826,7 +831,7 @@ const ExplorerHeader = () => {
                           <div className="mt-1 text-xs text-zinc-400">{formatBytes(uploadProgress.total)}</div>
                         )}
                       </div>
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00D4FF]"></div>
                     </div>
 
                     {/* Progress bar */}
@@ -834,13 +839,13 @@ const ExplorerHeader = () => {
                       <div className="mt-4">
                         <div className="mb-2 flex justify-between text-xs">
                           <span className="text-zinc-400">Uploading to S3...</span>
-                          <span className="font-medium text-pink-400">
+                          <span className="font-medium text-[#00D4FF]">
                             {Math.round((uploadProgress.loaded / uploadProgress.total) * 100)}%
                           </span>
                         </div>
                         <div className="h-1.5 overflow-hidden rounded-full bg-zinc-700">
                           <div
-                            className="h-full bg-gradient-to-r from-pink-600 to-pink-400 transition-all duration-300"
+                            className="h-full bg-gradient-to-r from-[#00D4FF] to-[#00D4FF]/70 transition-all duration-300"
                             style={{ width: `${(uploadProgress.loaded / uploadProgress.total) * 100}%` }}
                           />
                         </div>
@@ -883,7 +888,7 @@ const ExplorerHeader = () => {
                       <span className="text-zinc-400">Network snapshot exported</span>
                     </div>
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00D4FF]"></div>
                       <span className="text-white">Uploading to cloud storage</span>
                     </div>
                     <div className="flex items-center gap-3 text-sm">
@@ -1163,7 +1168,7 @@ const ExplorerHeader = () => {
                         setPublishPhase('config');
                         setPublishError(null);
                       }}
-                      className="flex-1 rounded-lg bg-pink-600 px-4 py-3 text-sm font-medium text-white hover:bg-pink-500"
+                      className="flex-1 rounded-lg bg-[#00D4FF] px-4 py-3 text-sm font-medium text-black hover:brightness-110"
                     >
                       Try Again
                     </button>
@@ -1183,7 +1188,7 @@ const ExplorerHeader = () => {
                     <div className="text-sm font-medium text-white">Transfer Local State</div>
                     <div className="text-sm text-zinc-400">Include accounts and deployed programs</div>
                   </div>
-                  <Switch checked={transferLocalState} onChange={setTransferLocalState} color="pink" />
+                  <Switch checked={transferLocalState} onChange={setTransferLocalState} color="cyan" />
                 </div>
               </div>
 
@@ -1196,13 +1201,13 @@ const ExplorerHeader = () => {
                       setPublishLandingPage(false);
                     }}
                     className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
-                      selectedPricingTier === 'lite' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                      selectedPricingTier === 'lite' ? 'bg-[#00D4FF] text-black' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
                     <span className="font-semibold">Lite</span>
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
-                        selectedPricingTier === 'lite' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                        selectedPricingTier === 'lite' ? 'bg-white text-[#00D4FF]' : 'bg-zinc-700 text-zinc-300'
                       }`}
                     >
                       $3.99
@@ -1215,13 +1220,13 @@ const ExplorerHeader = () => {
                       setTimeout(() => subdomainInputRef.current?.focus(), 0);
                     }}
                     className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
-                      selectedPricingTier === 'pro' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                      selectedPricingTier === 'pro' ? 'bg-[#00D4FF] text-black' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
                     <span className="font-semibold">Pro</span>
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
-                        selectedPricingTier === 'pro' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                        selectedPricingTier === 'pro' ? 'bg-white text-[#00D4FF]' : 'bg-zinc-700 text-zinc-300'
                       }`}
                     >
                       $9.99
@@ -1234,13 +1239,13 @@ const ExplorerHeader = () => {
                       setTimeout(() => subdomainInputRef.current?.focus(), 0);
                     }}
                     className={`flex flex-col items-center gap-1.5 rounded-lg px-3 py-3 transition-all duration-200 ${
-                      selectedPricingTier === 'max' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                      selectedPricingTier === 'max' ? 'bg-[#00D4FF] text-black' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
                     <span className="font-semibold">Max</span>
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs font-bold transition-all duration-200 ${
-                        selectedPricingTier === 'max' ? 'bg-white text-pink-600' : 'bg-zinc-700 text-zinc-300'
+                        selectedPricingTier === 'max' ? 'bg-white text-[#00D4FF]' : 'bg-zinc-700 text-zinc-300'
                       }`}
                     >
                       $99.99
@@ -1288,7 +1293,7 @@ const ExplorerHeader = () => {
                       <span className="text-sm text-white">.surfnet.dev</span>
                       <div className="ml-1 flex h-5 w-5 items-center justify-center">
                         {isCheckingSubdomain && (
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-pink-500"></div>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00D4FF]"></div>
                         )}
                         {!isCheckingSubdomain && subdomainAvailable === true && (
                           <svg
@@ -1445,7 +1450,7 @@ const ExplorerHeader = () => {
                       <div
                         className={`relative cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
                           isDraggingMarkdown
-                            ? 'border-pink-500 bg-pink-500/10'
+                            ? 'border-[#00D4FF] bg-[#00D4FF]/10'
                             : landingPageMarkdown
                               ? 'border-zinc-600 bg-zinc-800/50'
                               : 'border-zinc-700 hover:border-zinc-600'
@@ -1583,7 +1588,7 @@ const ExplorerHeader = () => {
                   }
                   className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-lg font-semibold transition-colors ${
                     selectedPricingTier === 'lite' || (subdomain && subdomain.length >= 3 && subdomainAvailable)
-                      ? 'bg-pink-600 text-white hover:bg-pink-500'
+                      ? 'bg-[#00D4FF] text-black hover:brightness-110'
                       : 'cursor-not-allowed bg-zinc-700 text-zinc-500'
                   }`}
                 >

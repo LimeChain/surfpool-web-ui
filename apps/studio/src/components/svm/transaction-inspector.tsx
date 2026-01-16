@@ -5,7 +5,7 @@ import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { analyzeHexDiff } from '@/lib/hex-diff-analyzer';
 import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
-import { Badge, Dialog, DialogBody } from '@surfpool/ui';
+import { Badge, brandBlue, Dialog, DialogBody } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AddressDisplay from './address-display';
@@ -163,6 +163,11 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
         const jsonParsedState = mergedStates[address];
         const base58State = base64States[address];
 
+        // Debug: log all accounts with accountChange
+        if (jsonParsedState.accountChange && jsonParsedState.accountChange.type !== 'unchanged') {
+          console.log(`🔍 Account ${address.slice(0,8)}... change type:`, jsonParsedState.accountChange.type, 'jsonParsed data:', jsonParsedState.accountChange.data, 'base64 data:', base58State?.accountChange?.data);
+        }
+
         if (jsonParsedState.accountChange?.data && base58State.accountChange?.data) {
           if (Array.isArray(jsonParsedState.accountChange.data)) {
             // Handle update case where data is an array
@@ -198,6 +203,79 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
           ...instruction,
           accountStates: mergeAccountStates(instruction.accountStates, base64Instruction.accountStates),
         };
+      }
+      return instruction;
+    });
+  }
+
+  // Copy account changes from transactionProfile.accountStates to instructionProfiles
+  // The transaction-level accountStates contains the actual before/after data
+  if (mergedProfile.transactionProfile?.accountStates && mergedProfile.instructionProfiles) {
+    const txAccountStates = mergedProfile.transactionProfile.accountStates;
+    const base64TxAccountStates = base64Profile.transactionProfile?.accountStates || {};
+
+    // Find the last instruction profile (usually the main instruction) to add changed accounts
+    const lastInstructionIndex = mergedProfile.instructionProfiles.length - 1;
+
+    mergedProfile.instructionProfiles = mergedProfile.instructionProfiles.map((instruction: any, instrIndex: number) => {
+      if (!instruction.accountStates) {
+        instruction.accountStates = {};
+      }
+
+      // For the last instruction, add ALL accounts with changes from transaction level
+      if (instrIndex === lastInstructionIndex) {
+        Object.keys(txAccountStates).forEach((address) => {
+          const txState = txAccountStates[address];
+          const base64TxState = base64TxAccountStates[address];
+
+          // If the transaction-level state has actual changes, add/update it
+          if (txState?.accountChange && txState.accountChange.type !== 'unchanged') {
+            // Merge the data from jsonParsed and base64
+            let mergedData = txState.accountChange.data;
+            if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
+              mergedData = txState.accountChange.data.map((item: any, idx: number) => {
+                const base64Item = Array.isArray(base64TxState.accountChange.data)
+                  ? base64TxState.accountChange.data[idx]
+                  : base64TxState.accountChange.data;
+                return mergeAccountData(item, base64Item);
+              });
+            }
+
+            instruction.accountStates[address] = {
+              type: txState.type || 'writable',
+              accountChange: {
+                ...txState.accountChange,
+                data: mergedData,
+              },
+            };
+          }
+        });
+      } else {
+        // For other instructions, only update existing accounts
+        Object.keys(instruction.accountStates).forEach((address) => {
+          const txState = txAccountStates[address];
+          const base64TxState = base64TxAccountStates[address];
+
+          if (txState?.accountChange && txState.accountChange.type !== 'unchanged') {
+            let mergedData = txState.accountChange.data;
+            if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
+              mergedData = txState.accountChange.data.map((item: any, idx: number) => {
+                const base64Item = Array.isArray(base64TxState.accountChange.data)
+                  ? base64TxState.accountChange.data[idx]
+                  : base64TxState.accountChange.data;
+                return mergeAccountData(item, base64Item);
+              });
+            }
+
+            instruction.accountStates[address] = {
+              ...instruction.accountStates[address],
+              accountChange: {
+                ...txState.accountChange,
+                data: mergedData,
+              },
+            };
+          }
+        });
       }
       return instruction;
     });
@@ -1205,6 +1283,7 @@ interface TransactionInspectorProps {
   filterByAccount?: string;
   compact?: boolean;
   fetchHistorical?: boolean;
+  initialTransactionSignature?: string;
 }
 
 interface AccountDetailsProps {
@@ -1502,6 +1581,7 @@ export default function TransactionInspector({
   filterByAccount,
   compact = false,
   fetchHistorical = true,
+  initialTransactionSignature,
 }: TransactionInspectorProps) {
   const [isClient, setIsClient] = useState(false);
 
@@ -1548,6 +1628,49 @@ export default function TransactionInspector({
       filterByAccount,
       fetchHistorical,
     });
+
+  // Handle initial transaction signature from URL parameter
+  const [initialTxProcessed, setInitialTxProcessed] = useState(false);
+  useEffect(() => {
+    if (!initialTransactionSignature || !rpcUrl || initialTxProcessed) return;
+
+    const fetchInitialTransaction = async () => {
+      try {
+        console.log('🔗 Fetching initial transaction from URL:', initialTransactionSignature);
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getTransaction',
+            params: [initialTransactionSignature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result) {
+            const tx = {
+              transaction: data.result.transaction,
+              meta: data.result.meta,
+              slot: data.result.slot,
+              blockTime: data.result.blockTime,
+            };
+            setSelectedTransaction(tx);
+            setTransactionDialogOpen(true);
+            setInitialTxProcessed(true);
+            // Fetch transaction profile for before/after state data
+            fetchTransactionProfile(initialTransactionSignature);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial transaction:', err);
+      }
+    };
+
+    fetchInitialTransaction();
+  }, [initialTransactionSignature, rpcUrl, initialTxProcessed]);
 
   const toggleAccountExpansion = (instructionIndex: number, address: string) => {
     const key = `${instructionIndex}:${address}`;
@@ -2633,18 +2756,22 @@ export default function TransactionInspector({
 
                 {/* Accounts Loaded */}
                 {transactionProfile && (
-                  <div className="col-span-2 flex items-center justify-between rounded-lg bg-zinc-800/50 p-3">
-                    <div className="flex items-baseline gap-3">
-                      <span className="font-mono text-3xl font-bold text-zinc-100">
+                  <div className="col-span-2 flex items-center justify-between rounded-lg bg-zinc-800/50 p-2 sm:p-3">
+                    <div className="flex items-baseline gap-1.5 sm:gap-3">
+                      <span className="font-mono text-xl font-bold text-zinc-100 sm:text-3xl">
                         {(() => {
-                          const readonlyCount = Object.keys(transactionProfile.readonlyAccountStates || {}).length;
-                          const writableCount = Object.keys(
-                            transactionProfile.transactionProfile?.accountStates || {}
-                          ).length;
-                          return readonlyCount + writableCount;
+                          // Deduplicate accounts across readonlyAccountStates and transactionProfile.accountStates
+                          const allAccounts = new Set([
+                            ...Object.keys(transactionProfile.readonlyAccountStates || {}),
+                            ...Object.keys(transactionProfile.transactionProfile?.accountStates || {}),
+                          ]);
+                          return allAccounts.size;
                         })()}
                       </span>
-                      <span className="text-xs text-gray-500">Accounts Loaded</span>
+                      <span className="text-[10px] text-gray-500 sm:text-xs">
+                        <span className="sm:hidden">Accts</span>
+                        <span className="hidden sm:inline">Accounts Loaded</span>
+                      </span>
                     </div>
                     <button
                       onClick={async () => {
@@ -2702,10 +2829,12 @@ export default function TransactionInspector({
                           console.error('❌ Error exporting fixtures:', error);
                         }
                       }}
-                      className="group flex items-center gap-2 rounded-md bg-pink-600 px-3 py-2 text-sm text-white transition-all duration-200 hover:bg-pink-700"
+                      className="group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-black transition-all duration-200 hover:brightness-110 sm:px-3 sm:py-2"
+                      style={{ backgroundColor: brandBlue }}
+                      title="Download Fixtures - Pre-execution Snapshot"
                     >
                       <svg
-                        className="h-6 w-6 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+                        className="h-4 w-4 flex-shrink-0 transition-transform duration-200 group-hover:scale-110 sm:h-5 sm:w-5"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -2717,10 +2846,7 @@ export default function TransactionInspector({
                           d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
                         />
                       </svg>
-                      <div className="flex flex-col items-start">
-                        <span className="text-xs uppercase leading-tight tracking-wide">Download Fixtures</span>
-                        <span className="text-[9px] uppercase leading-tight text-zinc-300">Pre-execution Snapshot</span>
-                      </div>
+                      <span className="text-xs font-medium uppercase leading-tight tracking-wide">Fixtures</span>
                     </button>
                   </div>
                 )}
@@ -2946,6 +3072,11 @@ export default function TransactionInspector({
                                         const isWritable = accountState.type === 'writable';
                                         const hasChanges =
                                           accountState.accountChange && accountState.accountChange.type !== 'unchanged';
+
+                                        // Debug logging
+                                        if (hasChanges) {
+                                          console.log(`🔎 Account ${address.slice(0, 8)}... hasChanges:`, hasChanges, 'type:', accountState.accountChange?.type, 'data:', accountState.accountChange?.data);
+                                        }
                                         const isFirst = accountIndex === 0;
                                         const isLast =
                                           accountIndex === Object.entries(profile.accountStates).length - 1;

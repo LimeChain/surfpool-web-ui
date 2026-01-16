@@ -1,12 +1,19 @@
+// Brand colors
+export { colors, brandBlue } from './colors';
+
 // Logo components
 export * from './logo';
 
-// Catalyst UI components
+// Primary UI components (with variant/size props)
+export { Button, type ButtonProps, type ButtonSize, type ButtonVariant, TouchTarget } from './button';
+export { Link, type LinkProps } from './link';
+
+// Catalyst UI components (aliased to avoid conflicts)
+export { Button as CatalystButton } from './catalyst/button';
+export { Link as CatalystLink } from './catalyst/link';
 export { Dialog, DialogTitle, DialogDescription, DialogBody, DialogActions } from './catalyst/dialog';
 export { Field, Label, Fieldset, Legend, FieldGroup, Description, ErrorMessage } from './catalyst/fieldset';
 export { Text, TextLink, Strong, Code } from './catalyst/text';
-export { Link } from './catalyst/link';
-export { Button } from './catalyst/button';
 export { Input } from './catalyst/input';
 export { Textarea } from './catalyst/textarea';
 export { Select } from './catalyst/select';

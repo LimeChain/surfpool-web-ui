@@ -1,0 +1,15 @@
+# Surfpool
+# https://surfpool.run
+
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://surfpool.run/sitemap.xml
+
+# LLM-friendly documentation
+# For AI assistants and coding copilots
+LLMs-Txt: https://surfpool.run/llms.txt
+
+# Crawl-delay for polite crawling
+Crawl-delay: 1

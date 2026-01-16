@@ -1,0 +1,4 @@
+{
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm run build --filter=@surfpool/www"
+}

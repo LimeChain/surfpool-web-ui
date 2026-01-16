@@ -37,7 +37,7 @@ export const SlotsGrid: React.FC = () => {
   const [animationProgress, setAnimationProgress] = useState<Map<number, number>>(new Map());
   const rowHeight = circleDiameter + verticalSpacing;
   const DEFAULT_SLOTS_IN_EPOCH = 432_000;
-  const ACTIVE_SLOT_COLOR = '#62D595';
+  const ACTIVE_SLOT_COLOR = '#00D4FF';
   const INACTIVE_SLOT_COLOR = '#2F2F32';
 
   const TRANSITION_DURATION = 300; // milliseconds
@@ -843,7 +843,7 @@ export const SlotsGrid: React.FC = () => {
             <button
               onClick={() => setTimeTravelMode('date')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'date' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'date' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               DATE
@@ -851,7 +851,7 @@ export const SlotsGrid: React.FC = () => {
             <button
               onClick={() => setTimeTravelMode('epoch')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'epoch' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'epoch' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               EPOCH
@@ -859,7 +859,7 @@ export const SlotsGrid: React.FC = () => {
             <button
               onClick={() => setTimeTravelMode('slot')}
               className={`rounded px-3 py-1 text-sm transition-colors ${
-                timeTravelMode === 'slot' ? 'bg-[#62D595] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                timeTravelMode === 'slot' ? 'bg-[#00D4FF] text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               SLOT

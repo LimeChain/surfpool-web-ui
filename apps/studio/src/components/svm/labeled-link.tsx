@@ -1,6 +1,6 @@
 'use client'
 
-import { Button } from '@surfpool/ui'
+import { brandBlue, Button } from '@surfpool/ui'
 import { CheckIcon, ClipboardIcon } from '@heroicons/react/24/outline'
 import { useState } from 'react'
 
@@ -40,12 +40,13 @@ export function LabeledLink({ endpoint, className = '', status = 'connected', pu
             <span className="flex h-full w-[52px] flex-shrink-0 items-center justify-start gap-2 border-r border-zinc-600 bg-zinc-900 pl-2 text-zinc-300 uppercase sm:w-[95px]">
               <div
                 className={`h-2 w-2 flex-shrink-0 rounded-full ${
-                  status === 'connected'
-                    ? 'bg-green-400'
-                    : status === 'error'
-                      ? 'bg-red-400'
-                      : 'bg-gray-500'
+                  status === 'error'
+                    ? 'bg-red-400'
+                    : status === 'loading'
+                      ? 'bg-gray-500'
+                      : ''
                 } ${pulsing ? 'animate-subtle-pulse' : ''}`}
+                style={status === 'connected' ? { backgroundColor: brandBlue } : undefined}
               />
               <span className="hidden whitespace-nowrap sm:inline">{endpoint.name}</span>
               <span className="sm:hidden">
@@ -57,13 +58,13 @@ export function LabeledLink({ endpoint, className = '', status = 'connected', pu
             </span>
             <span className="flex-1 truncate px-2 text-xs">{endpoint.url}</span>
             <Button
-              outline
+              variant="secondary"
               onClick={() => copyToClipboard(endpoint.url, `query-${endpoint.name}`)}
               aria-label={`Copy query endpoint for ${endpoint.name}`}
               className={`absolute right-[6px] flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center bg-zinc-800 transition-opacity ${copiedStates[`query-${endpoint.name}`] ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
             >
               {copiedStates[`query-${endpoint.name}`] ? (
-                <CheckIcon className="h-4 w-4 text-green-500" />
+                <CheckIcon className="h-4 w-4" style={{ color: brandBlue }} />
               ) : (
                 <ClipboardIcon className="h-4 w-4" />
               )}
