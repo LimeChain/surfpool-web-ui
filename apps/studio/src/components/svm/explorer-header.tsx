@@ -6,7 +6,7 @@ import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
-import { brandBlue, Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
+import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
@@ -514,7 +514,11 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
       {/* Left Column on lg / Full width on sm+md */}
       <div className="flex w-full flex-col gap-8">
         {/* Transactions - always here */}
-        <TransactionInspector autoStart={true} fetchHistorical={true} initialTransactionSignature={initialTransactionSignature} />
+        <TransactionInspector
+          autoStart={true}
+          fetchHistorical={true}
+          initialTransactionSignature={initialTransactionSignature}
+        />
 
         {/* Faucet + Controls row on md / Faucet alone then Controls on sm */}
         <div className="grid grid-cols-1 gap-12 md:grid-cols-[350px_1fr] md:gap-8 lg:hidden">
@@ -607,7 +611,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
         <Faucet rpcUrl={rpcUrl} primaryColor="#27272A" innerOverlay="dark" />
 
         {/* Control Buttons */}
-        <div className="mt-8 grid w-full grid-cols-4 gap-2">
+        <div className="mt-8 grid w-full grid-cols-3 gap-2">
           <button
             onClick={toggleClock}
             className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 py-4 transition-colors hover:bg-zinc-700"
@@ -641,7 +645,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-300">Export State</span>
           </button>
 
-          <button
+          {/* <button
             onClick={() => setShowPublishDialog(true)}
             className="flex flex-col items-center gap-2 rounded-lg py-4 transition-colors hover:brightness-110"
             style={{ backgroundColor: brandBlue, border: `1px solid ${brandBlue}` }}
@@ -649,7 +653,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
           >
             <CloudArrowUpIcon className="h-8 w-8 text-black" />
             <span className="text-[10px] font-medium uppercase tracking-wide text-black">Publish</span>
-          </button>
+          </button> */}
         </div>
 
         {/* SURFNET URLs */}
