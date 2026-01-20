@@ -386,6 +386,9 @@ importers:
       reading-time:
         specifier: ^1.5.0
         version: 1.5.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
     devDependencies:
       '@svgr/webpack':
         specifier: ^8.1.0

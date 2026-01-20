@@ -6,92 +6,194 @@ author: "Surfpool Team"
 tags: ["launch-week", "surfpool", "solana", "announcement"]
 ---
 
+![Surfpool TUI showing mainnet forking](/hello-surfpool.png)
+
 Today we're putting a 1.0 on Surfpool.
 
-Months of work are converging: mainnet forking, cheatcodes, a redesigned TUI, new documentation, and Studio—our web dashboard for transaction inspection. It's all shipping today.
+For the occasion, we're doing a [**launch week**](https://launchweek.dev) — four days, four features, starting today.
 
-For the occasion, we're doing a launch week. Each day this week, we'll focus on a key feature we'd like you to be familiar with. Why? Because meeting builders at Breakpoint was eye-opening. Conversation after conversation, we realized Surfpool can already help with so many workflows—but that potential is sitting dormant. People don't know what's possible.
+| Day | Feature |
+|-----|---------|
+| **Today** | Mainnet Forking & Cheatcodes |
+| Day 2 | Infrastructure as Code |
+| Day 3 | Studio |
+| Day 4 | 🎁 |
 
-This week, we fix that.
+We met with a lot of builders at Breakpoint this year. Conversation after conversation, it became clear: Surfpool can already help with so many workflows, but that potential is sitting dormant. People don't know what's possible.
+
+This week, we fix that. Each day, we'll focus on one feature in depth.
+
+Today: **Mainnet Forking & Cheatcodes** — the core of what makes Surfpool different.
 
 ---
 
-## What is Surfpool?
+## The Pain
 
-Surfpool is a drop-in replacement for `solana-test-validator` that fetches accounts just-in-time from Mainnet. No manual cloning. No stale state. Your transactions get exactly what they need, when they need it.
+Every Solana developer knows this loop:
+
+1. You're testing locally
+2. Transaction fails — account doesn't exist
+3. You clone the account manually
+4. Another account is missing
+5. Clone that too
+6. Eventually your local state drifts from mainnet
+7. You're debugging phantom issues that don't exist in production
+
+This is the reality of `solana-test-validator`. It works, but it's friction. Every missing account is a context switch. Every stale clone is a potential bug.
+
+## The Fix
+
+Surfpool fetches accounts just-in-time from Mainnet as your transactions need them.
 
 ```bash
 curl -sL https://run.surfpool.run | bash
 surfpool
 ```
 
-That's it. You now have a local Solana environment with access to every account on Mainnet.
+That's it. No manual cloning. No stale state. Your transactions get exactly what they need, when they need it.
 
-## What's in 1.0
-
-### Mainnet Forking
+## How It Works
 
 When you send a transaction to Surfpool, it analyzes which accounts are needed. If an account doesn't exist locally, Surfpool fetches it from Mainnet before executing.
 
-- **Test against real program state** without cloning programs manually
-- **Interact with any token** using actual mint metadata
-- **Simulate swaps** with real liquidity pool data
-- **Debug production issues** by replaying transactions locally
+This means you can:
 
-### Cheatcodes
+- **Test against real program state** — no need to clone programs manually
+- **Interact with any token** — actual mint metadata, actual decimals
+- **Simulate swaps** — real liquidity pool data, real prices
+- **Debug production issues** — replay transactions locally with real state
 
-Real-world testing requires more than mainnet data. You need to manipulate state, control time, and simulate edge cases.
+The accounts are cached locally, so subsequent transactions are fast. But you always start with real, current mainnet data.
 
-**Time travel:**
-```typescript
-await surfpool.warp({ slots: 1000 });
+## Under the Hood
+
+This sounds simple, but getting it right required hundreds of iterations based on feedback from developers in the field. Here are just a few examples among all the nuances we added to the mainnet fetching logic.
+
+### Program Accounts
+
+When you fetch a program, you don't just need the program account — you need its program data account too. Surfpool detects executable accounts and automatically fetches the associated data account in the same request. No extra round-trips, no missing bytecode.
+
+```
+Program account (executable=true)
+    └── Program data account (fetched automatically)
 ```
 
-**Set balances:**
-```typescript
-await surfpool.airdrop({
-  address: wallet.publicKey,
-  lamports: 100 * LAMPORTS_PER_SOL
-});
+### Token Accounts & ATAs
+
+Token accounts reference a mint. If we fetch the token account but not the mint, your transaction fails with a cryptic error. Surfpool unpacks every token account, extracts the mint address, and fetches it alongside.
+
+This works for both SPL Token and Token-2022. We detect the program owner and handle both interfaces transparently.
+
+```
+Token account
+    └── Mint account (fetched automatically)
 ```
 
-**Modify accounts:**
-```typescript
-await surfpool.setAccount({
-  address: configAccount,
-  data: Buffer.from([/* your test data */]),
-  owner: programId,
-});
+### The Closed Account Problem
+
+Here's a subtle one: what happens when you close an account locally, then send another transaction that references it?
+
+Without special handling, Surfpool would see "account missing locally" and fetch it from mainnet — undoing your close. We track closed accounts explicitly. Once closed, an account stays closed, even if it still exists on mainnet.
+
+### Local-First Resolution
+
+The resolution order matters:
+
+1. Check local SVM cache
+2. If missing, fetch from mainnet
+3. Cache the result
+4. Local modifications always win
+
+This means you can fork mainnet state, modify it locally, and your modifications persist — even if the mainnet state changes. Your local environment is deterministic.
+
+### The Compromises
+
+We made deliberate tradeoffs:
+
+- **Mint fetching is sequential, not batched.** When fetching multiple token accounts, we query each mint individually. Batching would be faster, but the complexity wasn't worth it. For most workflows, you're not fetching hundreds of token accounts at once.
+
+- **Program data addresses are derived, not queried.** We compute the program data address deterministically rather than looking it up. This is faster and works for all standard programs.
+
+- **Cache clears every 100 slots.** To prevent unbounded memory growth, we periodically clear the cache. This is a reasonable default — you rarely need accounts from 100+ slots ago.
+
+These compromises came from real-world usage. We iterated with hundreds of developers to find the right balance between correctness, performance, and simplicity.
+
+## Cheatcodes
+
+Mainnet data is the foundation, but real-world testing requires more. You need to manipulate state, control time, and simulate edge cases.
+
+That's where cheatcodes come in — special RPC methods that give you superpowers. Here are the essentials. ([Full documentation](https://docs.surfpool.run/rpc/cheatcodes))
+
+### surfnet_setTokenAccount
+
+Set any token balance for any wallet, instantly.
+
+```bash
+curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "surfnet_setTokenAccount",
+  "params": {
+    "owner": "ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M",
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "amount": 1000000000
+  }
+}'
 ```
 
-**Profile compute units:**
-```typescript
-const profile = await surfpool.cuProfile({ transaction: tx });
-// { total: 45_230, breakdown: [...] }
+This powers the **Universal Faucet** in Studio — get any token you need in one click. More on that when we cover Studio on Day 3.
+
+### surfnet_timeTravel
+
+Advance the clock to test time-dependent logic.
+
+```bash
+curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "surfnet_timeTravel",
+  "params": {
+    "slots": 1000
+  }
+}'
 ```
 
-### New TUI
+Lockup periods, vesting schedules, time-weighted oracles — test them all without waiting.
 
-The terminal interface has been completely redesigned. Clear status, better logs, and a more intuitive layout for monitoring your local network.
+### surfnet_streamAccount
 
-### New Documentation
+Mark an account to always fetch fresh from mainnet.
 
-We rewrote the docs from scratch at [docs.surfpool.run](https://docs.surfpool.run). Quick start guides, API references, and real-world examples.
+```bash
+curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "surfnet_streamAccount",
+  "params": ["ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M"]
+}'
+```
 
-### Studio
+By default, Surfpool caches fetched accounts. But sometimes you need fresh data — price oracles, pool state, anything that changes frequently on mainnet. `streamAccount` adds the account to a "no-cache" list: every time a transaction touches it, Surfpool fetches the latest state from mainnet instead of using the cached version.
 
-A web dashboard for inspecting transactions, viewing account state, and profiling compute units. Open [localhost:18488](http://localhost:18488) after starting Surfpool.
+### surfnet_exportSnapshot
 
-We'll go deep on Studio tomorrow.
+Export your current state as a fixture.
 
----
+```bash
+curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "surfnet_exportSnapshot",
+  "params": {
+    "accounts": [
+      "ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M",
+      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    ]
+  }
+}'
+```
 
-## Launch Week Schedule
-
-- **Today (Day 1):** Surfpool 1.0 — You are here
-- **Day 2:** Studio — X-ray vision into your transactions
-- **Day 3:** Infrastructure as Code — Version-controlled deployments
-- **Day 4:** Something big. Stay tuned.
+Here's the powerful part: these snapshots are **pre-execution state**. They can be loaded directly into [LiteSVM](https://github.com/LiteSVM/litesvm) for deterministic unit tests. Set up complex state in Surfpool, export it, and replay in CI — no network calls, instant execution. We'll show this workflow in detail when we cover Studio on Day 3.
 
 ## Get Started
 
@@ -103,10 +205,21 @@ curl -sL https://run.surfpool.run | bash
 surfpool
 ```
 
-Your existing Solana tooling works out of the box—point your RPC to `http://localhost:8899`.
+Your existing Solana tooling works out of the box — point your RPC to `http://localhost:8899`.
 
-[Read the docs](https://docs.surfpool.run) · [Star on GitHub](https://github.com/txtx/surfpool) · [Join Discord](https://discord.gg/rqXmWsn2ja)
+Open [localhost:18488](http://localhost:18488) to see the Studio dashboard.
 
 ---
 
-*This is just the beginning. See you tomorrow.*
+That's Day 1. Tomorrow, we go deep on **Infrastructure as Code** — version-controlled deployments for Solana.
+
+## Learn More
+
+We've been covering Surfpool in depth on our YouTube channel — tutorials, deep dives, and live coding sessions. Check out the [Surfpool playlist](https://www.youtube.com/playlist?list=PL0FMgRjJMRzO1FdunpMS-aUS4GNkgyr3T).
+
+**Links:**
+
+- [Documentation](https://docs.surfpool.run) — Getting started, API reference, cheatcodes
+- [GitHub](https://github.com/txtx/surfpool) — Star the repo if Surfpool helps your workflow ⭐
+- [Discord](https://discord.gg/rqXmWsn2ja) — Join the community
+- [X / Twitter](https://x.com/surfpool_sol) — Follow for updates

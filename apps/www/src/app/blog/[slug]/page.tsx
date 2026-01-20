@@ -3,6 +3,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { MDXRemote } from 'next-mdx-remote/rsc';
 import Link from 'next/link';
+import remarkGfm from 'remark-gfm';
+import { Console } from '@/components/blog/console';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -152,12 +154,20 @@ const components = {
   },
 
   // Code blocks: More padding, subtle border
-  pre: (props: React.HTMLAttributes<HTMLPreElement>) => (
-    <pre
-      className="my-8 overflow-x-auto rounded-xl border border-zinc-800/80 bg-[#0c0c0c] p-5 font-mono text-[0.875rem] leading-relaxed"
-      {...props}
-    />
-  ),
+  pre: (props: React.HTMLAttributes<HTMLPreElement> & { children?: React.ReactNode }) => {
+    // Check if this is a bash code block
+    const child = props.children as React.ReactElement<{ className?: string; children?: string }>;
+    if (child?.props?.className === 'language-bash') {
+      const code = child.props.children || '';
+      return <Console>{code}</Console>;
+    }
+    return (
+      <pre
+        className="my-8 overflow-x-auto rounded-xl border border-zinc-800/80 bg-[#0c0c0c] p-5 font-mono text-[0.875rem] leading-relaxed"
+        {...props}
+      />
+    );
+  },
 
   // Horizontal rule: Generous spacing
   hr: () => <hr className="my-12 border-zinc-800" />,
@@ -180,6 +190,28 @@ const components = {
   // Em: Inherit color, true italic
   em: (props: React.HTMLAttributes<HTMLElement>) => (
     <em className="italic" {...props} />
+  ),
+
+  // Tables: Clean styling with borders
+  table: (props: React.HTMLAttributes<HTMLTableElement>) => (
+    <div className="my-8 overflow-x-auto">
+      <table className="w-full border-collapse text-[1rem] text-zinc-300" {...props} />
+    </div>
+  ),
+  thead: (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
+    <thead className="border-b border-zinc-700" {...props} />
+  ),
+  tbody: (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
+    <tbody className="divide-y divide-zinc-800" {...props} />
+  ),
+  tr: (props: React.HTMLAttributes<HTMLTableRowElement>) => (
+    <tr className="border-zinc-800" {...props} />
+  ),
+  th: (props: React.HTMLAttributes<HTMLTableCellElement>) => (
+    <th className="px-4 py-3 text-left font-semibold text-zinc-100" {...props} />
+  ),
+  td: (props: React.HTMLAttributes<HTMLTableCellElement>) => (
+    <td className="px-4 py-3" {...props} />
   ),
 };
 
@@ -277,7 +309,7 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         {/* Article content */}
         <div className="prose prose-invert max-w-none">
-          <MDXRemote source={post.content} components={components} />
+          <MDXRemote source={post.content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
         </div>
 
         {/* Footer separator */}
