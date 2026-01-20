@@ -4,6 +4,7 @@ import { Button, SurfpoolIcon, SurfpoolTypo } from '@surfpool/ui';
 import { Star } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { InstallPanelProvider, useInstallPanel } from '@/components/install-panel';
 
 function GitHubStars() {
   const [stars, setStars] = useState<number | null>(null);
@@ -24,6 +25,8 @@ function GitHubStars() {
 }
 
 function Header() {
+  const { open } = useInstallPanel();
+
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-900 bg-black/80 backdrop-blur-sm">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -38,7 +41,7 @@ function Header() {
           <a href="/blog" className="text-sm text-zinc-400 transition-colors hover:text-white">
             Blog
           </a>
-          <Button variant="primary" size="sm" href="https://docs.surfpool.run/getting-started">
+          <Button variant="primary" size="sm" onClick={open}>
             Get Started
           </Button>
           <GitHubStars />
@@ -95,10 +98,10 @@ function Footer() {
 
 export default function BlogLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <InstallPanelProvider>
       <Header />
       <main className="min-h-screen">{children}</main>
       <Footer />
-    </>
+    </InstallPanelProvider>
   );
 }
