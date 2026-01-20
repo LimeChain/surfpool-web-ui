@@ -114,8 +114,6 @@ We made deliberate tradeoffs:
 
 - **Program data addresses are derived, not queried.** We compute the program data address deterministically rather than looking it up. This is faster and works for all standard programs.
 
-- **Cache clears every 100 slots.** To prevent unbounded memory growth, we periodically clear the cache. This is a reasonable default — you rarely need accounts from 100+ slots ago.
-
 These compromises came from real-world usage. We iterated with hundreds of developers to find the right balance between correctness, performance, and simplicity.
 
 ## Cheatcodes
@@ -133,11 +131,11 @@ curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0",
   "id": 1,
   "method": "surfnet_setTokenAccount",
-  "params": {
-    "owner": "ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M",
-    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "amount": 1000000000
-  }
+  "params": [ 
+    "ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M", 
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", 
+    { "amount": 1000000000 }
+  ] 
 }'
 ```
 
@@ -152,9 +150,9 @@ curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0",
   "id": 1,
   "method": "surfnet_timeTravel",
-  "params": {
-    "slots": 1000
-  }
+  "params": [{
+    "absoluteSlot": 1000000000
+  }]
 }'
 ```
 
@@ -184,12 +182,9 @@ curl -X POST http://localhost:8899 -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0",
   "id": 1,
   "method": "surfnet_exportSnapshot",
-  "params": {
-    "accounts": [
-      "ABAq2R9gSpDDGguP9D45rvchVzeRSfkHRJ1zQVMGwE8M",
-      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-    ]
-  }
+  "params": [{
+    "scope": "network" 
+  }]
 }'
 ```
 
@@ -212,6 +207,12 @@ Open [localhost:18488](http://localhost:18488) to see the Studio dashboard.
 ---
 
 That's Day 1. Tomorrow, we go deep on **Infrastructure as Code** — version-controlled deployments for Solana.
+
+## Final Thoughts
+
+It took a village to ship this v1. Huge thanks to all the contributors who helped make Surfpool what it is today:
+
+[0xsouravm](https://github.com/0xsouravm), [ADPtheGreat](https://github.com/adpthegreat), [Allen George](https://github.com/AllenGeorge08), [Anthony Anderson](https://github.com/anthonyra), [armariya](https://x.com/armariya), [Arthur Bretas](https://x.com/0x_arthurbretas), [Aursen](https://x.com/exoaursen), [AvhiMaz](https://github.com/AvhiMaz), [byte](https://x.com/bytetwt), [deepanshu](https://x.com/powerpuff_buck), [dlock](https://x.com/0xdlock), [Dodecahedr0x](https://x.com/Dodecahedr0x), [dvansari65](https://x.com/AnsariDva), [JayaKrishna](https://x.com/jkdotsol), [Nirav Joshi](https://x.com/NiravJ3), [nk_ysg](https://github.com/nkysg), [Ognyan Chikov](https://github.com/ochikov), [Ozodimgba](https://x.com/a_ix_d), [pawan](https://x.com/pawandot), [serejke](https://github.com/serejke), [Shivendra Mishra](https://x.com/shibu0x), [Shradesh Jodawat](https://x.com/Shradhesh71), [shubham](https://x.com/blackbaloon03), [Sonic](https://x.com/sonic_from_ny), [spacemandev](https://github.com/spacemandev-git), [subh](https://x.com/Subhdotsol), [tanmay4l](https://github.com/tanmay4l), [The Wuh](https://x.com/_thewuh), [Valentin Madrid](https://x.com/valentinmadrid_), [Victor Carvalho](https://github.com/vict0rcarvalh0), [wu aoxiang](https://x.com/ospopen), [xiaodao](https://github.com/daog1), and [Zeeshanali](https://x.com/zeeshdev28).
 
 ## Learn More
 
