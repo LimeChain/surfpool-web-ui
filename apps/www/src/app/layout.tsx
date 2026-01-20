@@ -1,5 +1,6 @@
 import '@/styles/globals.css';
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 
 const siteUrl = 'https://surfpool.run';
 const siteName = 'Surfpool';
@@ -108,7 +109,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="help" href="/llms.txt" type="text/plain" title="LLM-friendly documentation" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
-      <body className="min-h-screen bg-black text-white antialiased">{children}</body>
+      <body className="min-h-screen bg-black text-white antialiased">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

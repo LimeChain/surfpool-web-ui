@@ -1,0 +1,112 @@
+---
+title: "Surfpool 1.0"
+description: "Today we're putting a 1.0 on Surfpool. Mainnet forking, cheatcodes, a new TUI, new docs, and Studio. A complete toolkit for Solana development."
+date: "2025-01-21"
+author: "Surfpool Team"
+tags: ["launch-week", "surfpool", "solana", "announcement"]
+---
+
+Today we're putting a 1.0 on Surfpool.
+
+Months of work are converging: mainnet forking, cheatcodes, a redesigned TUI, new documentation, and Studio—our web dashboard for transaction inspection. It's all shipping today.
+
+For the occasion, we're doing a launch week. Each day this week, we'll focus on a key feature we'd like you to be familiar with. Why? Because meeting builders at Breakpoint was eye-opening. Conversation after conversation, we realized Surfpool can already help with so many workflows—but that potential is sitting dormant. People don't know what's possible.
+
+This week, we fix that.
+
+---
+
+## What is Surfpool?
+
+Surfpool is a drop-in replacement for `solana-test-validator` that fetches accounts just-in-time from Mainnet. No manual cloning. No stale state. Your transactions get exactly what they need, when they need it.
+
+```bash
+curl -sL https://run.surfpool.run | bash
+surfpool
+```
+
+That's it. You now have a local Solana environment with access to every account on Mainnet.
+
+## What's in 1.0
+
+### Mainnet Forking
+
+When you send a transaction to Surfpool, it analyzes which accounts are needed. If an account doesn't exist locally, Surfpool fetches it from Mainnet before executing.
+
+- **Test against real program state** without cloning programs manually
+- **Interact with any token** using actual mint metadata
+- **Simulate swaps** with real liquidity pool data
+- **Debug production issues** by replaying transactions locally
+
+### Cheatcodes
+
+Real-world testing requires more than mainnet data. You need to manipulate state, control time, and simulate edge cases.
+
+**Time travel:**
+```typescript
+await surfpool.warp({ slots: 1000 });
+```
+
+**Set balances:**
+```typescript
+await surfpool.airdrop({
+  address: wallet.publicKey,
+  lamports: 100 * LAMPORTS_PER_SOL
+});
+```
+
+**Modify accounts:**
+```typescript
+await surfpool.setAccount({
+  address: configAccount,
+  data: Buffer.from([/* your test data */]),
+  owner: programId,
+});
+```
+
+**Profile compute units:**
+```typescript
+const profile = await surfpool.cuProfile({ transaction: tx });
+// { total: 45_230, breakdown: [...] }
+```
+
+### New TUI
+
+The terminal interface has been completely redesigned. Clear status, better logs, and a more intuitive layout for monitoring your local network.
+
+### New Documentation
+
+We rewrote the docs from scratch at [docs.surfpool.run](https://docs.surfpool.run). Quick start guides, API references, and real-world examples.
+
+### Studio
+
+A web dashboard for inspecting transactions, viewing account state, and profiling compute units. Open [localhost:18488](http://localhost:18488) after starting Surfpool.
+
+We'll go deep on Studio tomorrow.
+
+---
+
+## Launch Week Schedule
+
+- **Today (Day 1):** Surfpool 1.0 — You are here
+- **Day 2:** Studio — X-ray vision into your transactions
+- **Day 3:** Infrastructure as Code — Version-controlled deployments
+- **Day 4:** Something big. Stay tuned.
+
+## Get Started
+
+```bash
+# Install
+curl -sL https://run.surfpool.run | bash
+
+# Start
+surfpool
+```
+
+Your existing Solana tooling works out of the box—point your RPC to `http://localhost:8899`.
+
+[Read the docs](https://docs.surfpool.run) · [Star on GitHub](https://github.com/txtx/surfpool) · [Join Discord](https://discord.gg/rqXmWsn2ja)
+
+---
+
+*This is just the beginning. See you tomorrow.*

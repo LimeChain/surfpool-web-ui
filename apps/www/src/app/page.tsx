@@ -75,6 +75,9 @@ function Header() {
           <a href="https://docs.surfpool.run" className="text-sm text-zinc-400 transition-colors hover:text-white">
             Docs
           </a>
+          <a href="/blog" className="text-sm text-zinc-400 transition-colors hover:text-white">
+            Blog
+          </a>
           <Button variant="primary" size="sm" onClick={open}>
             Get Started
           </Button>
