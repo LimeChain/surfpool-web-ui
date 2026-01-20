@@ -84,8 +84,8 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
   const [tokenFundingRequests, setTokenFundingRequest] = useState<TokenRequest[]>([defaultFundingRequest]);
   const [inputValues, setInputValues] = useState<string[]>(['']);
   const [processedTokens, setProcessedTokens] = useState<TokenRequest[]>([]);
-  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }[]>([]);
-  const [processedTokenBalances, setProcessedTokenBalances] = useState<Map<string, { token: Token; finalBalance: number }[]>>(new Map());
+  const [processedRecipients, setProcessedRecipients] = useState<{ address: string | undefined; isGenerated: boolean; privateKey?: number[] }[]>([]);
+  const [processedTokenBalances, setProcessedTokenBalances] = useState<Map<string, { token: Token; finalBalance: number; ataAddress?: string }[]>>(new Map());
   const [reccipients, setReccipients] = useState<
     {
       address: string | undefined;
@@ -299,9 +299,9 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
     setProcessedTokens([...tokenFundingRequests]);
 
     // Reset processed recipients for this new airdrop
-    const currentAirdropRecipients: { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }[] = [];
-    const recipientMap = new Map<string, { address: string | undefined; ataAddress?: string | undefined; isGenerated: boolean; privateKey?: number[] }>();
-    const tokenBalancesMap = new Map<string, { token: Token; finalBalance: number }[]>();
+    const currentAirdropRecipients: { address: string | undefined; isGenerated: boolean; privateKey?: number[] }[] = [];
+    const recipientMap = new Map<string, { address: string | undefined; isGenerated: boolean; privateKey?: number[] }>();
+    const tokenBalancesMap = new Map<string, { token: Token; finalBalance: number; ataAddress?: string }[]>();
 
     // Simulate claiming tokens
     setClaimedTokens(claimedTokens + 10);
@@ -371,21 +371,16 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
               spl_token_program
             ],
           };
-          // Store final balance for this token and recipient
+          // Store final balance for this token and recipient (including per-token ATA)
           if (recipient.address) {
             const existingBalances = tokenBalancesMap.get(recipient.address) || [];
-            existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount });
+            existingBalances.push({ token: tokenFundingRequest.token, finalBalance: totalUiAmount, ataAddress: ata_address });
             tokenBalancesMap.set(recipient.address, existingBalances);
 
             // Use map to deduplicate recipients by address
             const existing = recipientMap.get(recipient.address);
-            if (existing) {
-              // Update existing entry with ATA address if not already present
-              if (ata_address && !existing.ataAddress) {
-                existing.ataAddress = ata_address;
-              }
-            } else {
-              recipientMap.set(recipient.address, {address: recipient.address, ataAddress: ata_address, isGenerated: recipient.isGenerated, privateKey: recipient.privateKey});
+            if (!existing) {
+              recipientMap.set(recipient.address, {address: recipient.address, isGenerated: recipient.isGenerated, privateKey: recipient.privateKey});
             }
           }
         } else {
@@ -910,11 +905,11 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                         <div className="flex flex-1 flex-col min-w-0">
                           <div className="font-medium text-base sm:text-sm">{tokenBalance.token.ticker}</div>
                           {/* Show ATA address first for SPL tokens if available */}
-                          {tokenBalance.token.ticker !== 'SOL' && recipient.ataAddress && (
+                          {tokenBalance.token.ticker !== 'SOL' && tokenBalance.ataAddress && (
                             <div className="text-sm sm:text-xs text-zinc-400">
                               <span className="text-zinc-500">Associated Token Address (ATA):</span>
                               <AddressDisplay
-                                address={recipient.ataAddress}
+                                address={tokenBalance.ataAddress}
                                 copiedStates={copiedStates}
                                 copyToClipboard={copyToClipboard}
                                 truncateAddress={truncateAddress}
