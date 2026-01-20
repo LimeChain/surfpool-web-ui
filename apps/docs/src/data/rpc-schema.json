@@ -2580,12 +2580,7 @@
       "oneOf": [
         {
           "description": "Specifies an account, as a base-58 encoded string. Use this to set a specific account as the delegate or authority.",
-          "type": "object",
-          "properties": {
-            "account": {
-              "type": "string"
-            }
-          },
+          "type": "string",
           "additionalProperties": false,
           "required": [
             "account"
@@ -4002,16 +3997,8 @@
         {
           "description": "Resets the entire network to its initial state.",
           "type": "object",
-          "properties": {
-            "resetNetwork": {
-              "type": "string",
-              "const": "surfnet_resetNetwork"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "resetNetwork"
-          ]
+          "properties": {},
+          "additionalProperties": false
         },
         {
           "description": "Exports a snapshot of all accounts in the Surfnet SVM.",
@@ -4042,30 +4029,12 @@
         {
           "description": "Retrieves the list of accounts currently registered for streaming.",
           "type": "object",
-          "properties": {
-            "getStreamedAccounts": {
-              "type": "string",
-              "const": "surfnet_getStreamedAccounts"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "getStreamedAccounts"
-          ]
+          "additionalProperties": false
         },
         {
           "description": "Retrieves Surfnet network information including runbook execution status.",
           "type": "object",
-          "properties": {
-            "getSurfnetInfo": {
-              "type": "string",
-              "const": "surfnet_getSurfnetInfo"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "getSurfnetInfo"
-          ]
+          "additionalProperties": false
         },
         {
           "description": "Writes program data at a specified offset, allowing deployment of large programs by sending data in chunks.",

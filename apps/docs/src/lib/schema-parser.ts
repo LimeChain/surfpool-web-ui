@@ -282,7 +282,7 @@ export function generateSampleFromSchema(
     const sample: any = {};
     Object.entries(schemaObj.properties).forEach(
       ([key, value]: [string, any]) => {
-        sample[key] = generateSampleFromSchema(value, schemaSource, key);
+          sample[key] = generateSampleFromSchema(value, schemaSource, key);
       },
     );
     return sample;
@@ -295,12 +295,22 @@ export function generateSampleFromSchema(
         generateSampleFromSchema(item, schemaSource, fieldName),
       );
     }
+    if (fieldName === "accounts" || fieldName === "constants" || fieldName === "instructions" || fieldName === "errors" || fieldName === "events" || fieldName === "types") {
+      return []
+    }
     return [generateSampleFromSchema(schemaObj.items, schemaSource, fieldName)];
   }
-
+  
   // Handle primitive types with realistic examples
   if (schemaObj.type) {
-    switch (schemaObj.type) {
+    const getIsTypeOptionalAndStripType = (typeDef: any): [string, boolean] => {
+      if (Array.isArray(typeDef)) {
+        return [typeDef[0] || "string", typeDef.includes("null")];
+      }
+      return [typeDef, false];
+    }
+    const [typeStr, isOptional] = getIsTypeOptionalAndStripType(schemaObj.type);
+    switch (typeStr) {
       case "string":
         // Use field name to generate contextual examples
         if (fieldName) {
@@ -320,13 +330,29 @@ export function generateSampleFromSchema(
           if (name.includes("commitment")) {
             return "finalized";
           }
+          if (name.includes("data")) {
+            return "0x3b9aca00";
+          }
+          if (name.includes("owner")) {
+            return "11111111111111111111111111111111";
+          }
+          if (name === "destinationprogramid") {
+            return "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+          }
+          if (name.includes("tokenprogram")||name.includes("programid")) {
+            return "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+          }
+          if (name === "depth") {
+            return "instruction"
+          }
+          return `<some-${name}>`;
         }
         return "string";
       case "integer":
         if (fieldName) {
           const name = fieldName.toLowerCase();
           if (name.includes("slot")) return 123456789;
-          if (name.includes("lamport") || name.includes("balance")) return 1000000000;
+          if (name.includes("lamport") || name.includes("balance") || name.includes("amount")) return 1000000000;
           if (name.includes("epoch")) return 100;
         }
         return 0;
