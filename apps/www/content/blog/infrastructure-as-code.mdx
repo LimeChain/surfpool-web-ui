@@ -33,7 +33,7 @@ The gap between where cloud infrastructure is and where Web3 infrastructure is? 
 
 And we're paying for it. **Billions of dollars lost every year** to DevSecOps mistakes and compromised private keys. Not from smart contract bugs — from operational failures. Keys stored insecurely. Deployment scripts that nobody reviewed. Transactions signed without understanding what they do.
 
-We think we have a strong foundation to address this problem: **Infrastructure as Code for Web3**.
+We have built a strong foundation to address this problem: **Infrastructure as Code for Web3**.
 
 ---
 
@@ -51,7 +51,7 @@ All the transactions required to set up your protocol. This isn't just deploying
 - **Permission setup** — configuring access controls, admin keys
 - **Upgrades** — deploying new versions, migrating state
 
-Each of these is a transaction that needs to be signed, broadcast, and confirmed. Each one can fail. Each one needs to be auditable.
+Each of these is a transaction that needs to be signed, broadcasted, and confirmed. Each one can fail. Each one needs to be auditable.
 
 ### 2. Signing Infrastructure
 
@@ -559,13 +559,13 @@ Runbooks support two execution modes:
 **Unsupervised mode** — runs like any CLI script:
 
 ```bash
-surfpool run deployment
+surfpool run deployment --unsupervised
 ```
 
 **Supervised mode** — launches a web UI that walks you through each step:
 
 ```bash
-surfpool run deployment --supervised
+surfpool run deployment
 ```
 
 The supervised interface:
@@ -581,51 +581,18 @@ Supervised mode is the perfect guardrail when introducing secure signers. You se
 
 ---
 
-## Running Runbooks
-
-### List Available Runbooks
-
-```bash
-surfpool ls
-```
-
-Output:
-```
-Name                Description
-deployment          Deploy programs
-operations          Operational tasks
-```
-
-### Execute a Runbook
-
-```bash
-surfpool run deployment
-```
-
-### Watch Mode
-
-Start Surfpool with `--watch` and programs auto-redeploy on recompile:
-
-```bash
-surfpool start --watch
-```
-
-Change your Rust code, save, and Surfpool handles the rest.
-
----
-
 ## From Local to Mainnet
 
 Surfpool starts as a drop-in replacement for `solana-test-validator`. But within a project, it becomes a force multiplier for both velocity and safety.
 
 **Local development:**
 - Ephemeral keypairs in `signers.localnet.tx`
-- `--watch` mode for instant feedback
+- `--watch` mode for instant feedback (automatically redeploying your program on code changes)
 - Embedded indexing for GraphQL queries
 
 **Devnet/Testnet:**
 - Same `main.tx`, different signers
-- Web wallet signing with `--supervised`
+- Web wallet signing in supervised mode
 - Full transaction previews
 
 **Mainnet:**
