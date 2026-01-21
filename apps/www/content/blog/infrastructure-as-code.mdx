@@ -412,7 +412,8 @@ action "fund" "svm::send_sol" {
 
 ### svm::setup_surfnet
 
-Configure your local Surfnet environment:
+Configure your local Surfnet environment. 
+These actions are a shortcut to automatically use some [Surfnet Cheatcodes](https://docs.surfpool.run/rpc/cheatcodes) when executing your runbook.
 
 ```hcl
 action "setup" "svm::setup_surfnet" {
@@ -422,9 +423,17 @@ action "setup" "svm::setup_surfnet" {
         include_owned_accounts = true
     }
 
-    // Reset an account to empty state
-    reset_account {
-        public_key = variable.test_account
+    // Set account balance, data, owner, or rent epoch to any value
+    set_account {
+        public_key = signer.payer.public_key
+        lamports = 10000000000  // 10 SOL
+    }
+
+    // Set token account balances for whatever mint you want
+    set_token_account {
+        public_key = signer.payer.public_key
+        token = "USDC"
+        amount = 1000000  // 1 USDC 
     }
 }
 ```
@@ -574,6 +583,8 @@ The supervised interface:
 - Requests explicit confirmation for signing
 - Verifies sufficient funds
 - Creates a full audit trail
+
+![Surfpool Supervised Execution](/supervisor.png)
 
 The runbook code stays exactly the same. Only the execution mode changes.
 
