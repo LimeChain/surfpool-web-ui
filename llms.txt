@@ -27,7 +27,7 @@ Dashboard: http://localhost:18488
 ## CLI Commands
 
 ```bash
-surfpool                    # Start Surfnet with TUI dashboard
+surfpool start              # Start Surfnet with TUI dashboard
 surfpool --help             # Show all options
 ```
 
