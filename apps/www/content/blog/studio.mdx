@@ -6,7 +6,7 @@ author: "Surfpool Team"
 tags: ["launch-week", "surfpool", "solana", "studio", "debugging"]
 ---
 
-![Surfpool Studio](/studio-hero.png)
+![Surfpool Studio](/hello-surfpool.png)
 
 This is Day 3 of [launch week](/blog/surfpool-1-0). Today: **Studio**.
 
@@ -37,7 +37,7 @@ We built Studio to close that gap.
 
 Studio is a web-based dashboard that runs alongside your Surfnet. It gives you complete visibility into what's happening inside your local Solana environment.
 
-Start Surfpool, open `localhost:8488`, and you're in. No configuration, no separate install — Studio is embedded in Surfpool itself.
+Start Surfpool, open `localhost:18488`, and you're in. No configuration, no subscription, no separate install — Studio is embedded in Surfpool itself.
 
 Today we're covering four features:
 
@@ -51,6 +51,10 @@ Today we're covering four features:
 ## Transaction Inspector
 
 The Transaction Inspector streams every transaction that hits your Surfnet in real-time. Not just success/failure — everything.
+
+<div style={{borderRadius: '12px', overflow: 'hidden', border: '1px solid #27272a', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', margin: '24px 0'}}>
+  <img src="/studio-inspector.png" alt="Transaction Inspector" style={{width: '100%', display: 'block'}} />
+</div>
 
 ### What You See
 
@@ -126,23 +130,17 @@ Studio auto-identifies common programs:
 
 Instead of seeing `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, you see "Token Program."
 
-### Under the Hood
-
-A few implementation details that matter:
-
-**Lossless JSON parsing** — Solana uses 64-bit integers everywhere. JavaScript's `JSON.parse` loses precision above 2^53. Studio uses lossless parsing to preserve exact values, even for large lamport amounts.
-
-**50-transaction buffer** — Studio keeps the last 50 transactions in memory for inspection. Older transactions scroll off, keeping the interface responsive.
-
-**View mode per account** — Toggle between "Pretty" (decoded JSON) and "Hex" (raw bytes) per account. The setting persists, so you can keep your program accounts decoded while viewing token accounts as hex.
-
 ---
 
 ## Time Travel
 
 Testing time-dependent logic is painful. Lockup periods, vesting schedules, epoch-based rewards — all require waiting. Or worse, mocking time in your tests and hoping it matches production behavior.
 
-Studio's Time Travel lets you jump anywhere instantly.
+Studio's Time Travel lets you jump forward instantly.
+
+<div style={{backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 16px', margin: '16px 0'}}>
+  <strong>Note:</strong> Time travel only works forward. Going back would require mass-energy equivalence we haven't figured out yet. Also, reversing transactions gets weird.
+</div>
 
 ### Three Ways to Travel
 
@@ -166,12 +164,6 @@ Hit pause and the network stops. No new slots. No clock advancement. Inspect sta
 
 The slot grid blinks while paused, so you always know the clock is stopped.
 
-### The Slot Grid
-
-Studio displays a visual slot grid — a 5-row dot matrix showing your position in the current epoch. Each dot is a slot. Watch it fill up in real-time, or jump ahead and see it snap to the new position.
-
-The grid shows epoch number and completion percentage. It's a small thing, but it makes the abstract concept of "slots" tangible.
-
 ### Implementation
 
 Time Travel calls the `surfnet_timeTravel` RPC method under the hood:
@@ -187,8 +179,6 @@ Time Travel calls the `surfnet_timeTravel` RPC method under the hood:
 
 You can also pass `absoluteEpoch` or `absoluteSlot`. Studio's UI just makes it accessible.
 
-When you time travel, Studio broadcasts an `epochChanged` event. All components update — the slot grid, the transaction inspector, any account views. The entire UI stays in sync.
-
 ---
 
 ## Universal Faucet
@@ -199,18 +189,19 @@ Devnet SOL? Rate-limited faucet, often down. Devnet USDC? Find someone who has s
 
 Studio's Universal Faucet eliminates this entirely.
 
-### One Click, Any Token
+<div style={{borderRadius: '12px', overflow: 'hidden', border: '1px solid #27272a', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', margin: '24px auto', maxWidth: '400px'}}>
+  <img src="/blog/faucet.png" alt="Universal Faucet" style={{width: '100%', display: 'block'}} />
+</div>
 
-The faucet supports:
+### Any Token. Literally.
 
-- **SOL** — native token
-- **USDC** — Circle's stablecoin
-- **USDT** — Tether
-- **BONK** — because why not
+Not just SOL. Not just a predefined list. **Any SPL token. Any Token-2022 token. Any mint address.**
 
-Pick a wallet, pick a token, pick an amount. Click. Done.
+This is only possible on Solana. The token account format is deterministic — given a wallet and a mint, we know exactly what the account should look like. The PDA derivation is predictable. The wire format is enforced. So Surfpool can materialize any token balance for any wallet without needing the actual mint authority.
 
-This is powered by the `surfnet_setTokenAccount` cheatcode we covered on Day 1. The faucet wraps it in a clean UI.
+Want 10 million USDC? Done. A million JUP? Done. Some obscure Token-2022 with transfer fees? Also done.
+
+Pick a wallet, paste a mint address, enter an amount. Click. The tokens appear.
 
 ### No Limits
 
@@ -242,7 +233,7 @@ One click downloads your network as JSON:
 surfnet-snapshot-2025-01-23T10-30-00-123Z.json
 ```
 
-The file contains every account, every program, every piece of state in your Surfnet. Lossless encoding preserves exact values — no precision loss on large integers.
+The file contains every account, every program, every piece of state in your Surfnet.
 
 Load this snapshot into a fresh Surfpool instance to restore the exact state. Or load it into [LiteSVM](https://github.com/LiteSVM/litesvm) for deterministic unit tests.
 
@@ -259,36 +250,31 @@ By default, export captures accounts touched during your session. Pass `scope: "
 
 This is useful for sharing complete test fixtures — programs, accounts, and all dependencies.
 
-### Cloud Publishing
+### Transaction Scope
 
-Want to share a reproducible environment publicly? Studio can publish to the cloud.
+Here's where it gets interesting for testing.
 
-**Custom subdomain** — publish to `yourproject.surfnet.dev`. Studio checks availability in real-time as you type.
+Every transaction in Studio has a "Fixtures" button. Click it, and you get a snapshot of all accounts **before** the transaction executed — the exact pre-execution state.
 
-**Landing page** — upload a header image, avatar, and markdown description. Your shared environment gets a proper landing page, not just a raw JSON link.
+Why does this matter? Because you can replay that transaction with identical inputs and get identical outputs. Every time. Deterministically.
 
-**Progress tracking** — watch the upload progress in real-time. Account count, percentage complete, current status.
+Load the fixture into [LiteSVM](https://github.com/LiteSVM/litesvm) or [Mollusk](https://github.com/anza-xyz/mollusk), run the same transaction, and verify the same outcome. This is how you turn exploratory debugging into automated regression tests.
 
-The published snapshot is a fully functional Surfnet. Anyone with the link can fork your exact state and start building. Perfect for:
+The workflow:
 
-- Sharing bug reproductions
-- Distributing tutorial starting points
-- Providing test fixtures for open-source projects
+1. Reproduce a bug or interesting behavior in Studio
+2. Click "Fixtures" to capture the pre-transaction state
+3. Write a test that loads the fixture and replays the transaction
+4. Assert on the expected outcome
 
-### Under the Hood
-
-Cloud publishing uses temporary S3 credentials with automatic expiration. Your snapshot uploads directly to cloud storage, then imports into a hosted Surfnet instance.
-
-The import process is tracked via WebSocket — Studio shows accounts loaded, total accounts, and current status. When complete, you get a copyable URL with a typewriter reveal effect (small touch, but satisfying).
-
----
+No more "works on my machine." No more flaky tests that depend on network state. Just deterministic, reproducible transaction execution.
 
 ## Getting Started
 
 If you've been following launch week, you already have Studio.
 
 ```bash
-surfpool
+surfpool start
 open http://localhost:8488
 ```
 
@@ -298,7 +284,7 @@ If you're just joining:
 
 ```bash
 curl -sL https://run.surfpool.run | bash
-surfpool
+surfpool start
 ```
 
 ---
