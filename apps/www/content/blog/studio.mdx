@@ -1,6 +1,6 @@
 ---
 title: "Introducing Surfpool Studio"
-description: "Day 3 of launch week. Transaction inspection, time travel, universal faucet, and snapshot export — the dashboard that makes Solana development visible."
+description: "Day 3 of launch week. Transaction inspection, time travel, universal faucet, and snapshot export — the dashboard that makes Solana development transparent."
 date: "2025-01-23"
 author: "Surfpool Team"
 tags: ["launch-week", "surfpool", "solana", "studio", "debugging"]
@@ -25,7 +25,7 @@ Console.log debugging doesn't scale.
 
 You're building a Solana program. A transaction fails. The error says something about account data. Which account? What changed? You add log statements. Redeploy. Run it again. Still unclear. You add more logs. The output scrolls past faster than you can read.
 
-Eventually you're dumping hex to the terminal, trying to eyeball byte differences between two account states. This is 2025.
+Eventually you're dumping hex to the terminal, trying to eyeball byte differences between two account states. This is 2026.
 
 The tooling gap is real. Ethereum developers have Tenderly, Foundry's trace output, countless block explorers with transaction decoding. Solana developers get... program logs and raw account dumps.
 
@@ -43,7 +43,7 @@ Today we're covering four features:
 
 1. **Transaction Inspector** — see exactly what every transaction does
 2. **Time Travel** — jump to any point in blockchain time
-3. **Universal Faucet** — get any token in one click
+3. **Universal Faucet** — get any token a few clicks
 4. **Snapshot Export** — capture and share your network state
 
 ---
@@ -86,11 +86,12 @@ Changes are color-coded:
 
 This uses a proper diff algorithm, not just "these two buffers are different." When you're debugging a token balance that's off by one decimal place, you'll see exactly which bytes in the amount field changed.
 
-### Drag-and-Drop IDL Support
+### IDL-Decoded Account Data
 
 Raw hex is useful, but decoded data is better.
 
-Drop an Anchor IDL file onto the inspector and Studio immediately decodes account data into readable structs. No configuration, no registration step — just drag and drop.
+Upload an Anchor IDL via the [`surfnet_registerIdl`](https://docs.surfpool.run/rpc/cheatcodes#surfnet_registerIdl) cheatcode, and Studio immediately decodes account data into readable structs. Better still, if you're using [IaC](/blog/infrastructure-as-code) to deploy your program, your IDL will already be registered.
+No configuration, no registration step — just start up your surfnet.
 
 ```
 // Before: raw bytes
@@ -104,7 +105,7 @@ Drop an Anchor IDL file onto the inspector and Studio immediately decodes accoun
 }
 ```
 
-Studio persists IDL mappings for your session. Drop it once, and all accounts owned by that program decode automatically.
+Studio persists IDL mappings for your session. Upload it once, and all accounts owned by that program decode automatically.
 
 ### Account Labels
 
