@@ -71,10 +71,10 @@ action "create_resource" "std::send_http_request" {
     headers = {
         "Content-Type" = "application/json"
     }
-    body = std::encode_json({
+    body = {
         "name" = variable.name,
         "value" = variable.value
-    })
+    }
 }
 ```
 

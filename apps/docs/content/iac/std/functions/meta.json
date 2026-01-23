@@ -4,6 +4,7 @@
     "operators",
     "hash",
     "hex",
+    "base58",
     "crypto",
     "json",
     "list",

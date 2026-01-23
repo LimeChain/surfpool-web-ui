@@ -12,22 +12,27 @@ Basic mathematical and comparison operators:
 ```hcl
 // Addition
 output "sum" {
-    value = 1 + 2  // or add_uint(1, 2)
+    value = 1 + 2  // or std::add(1, 2)
 }
 
 // Subtraction
 output "diff" {
-    value = 5 - 3  // or sub_uint(5, 3)
+    value = 5 - 3  // or std::minus(5, 3)
 }
 
 // Multiplication
 output "product" {
-    value = 4 * 3  // or mul_uint(4, 3)
+    value = 4 * 3  // or std::multiply(4, 3)
 }
 
 // Division
 output "quotient" {
-    value = 10 / 2  // or div_uint(10, 2)
+    value = 10 / 2  // or std::div(10, 2)
+}
+
+// Modulo
+output "remainder" {
+    value = 10 % 3  // or std::modulo(10, 3)
 }
 ```
 
@@ -52,52 +57,41 @@ output "keccak" {
 output "hex" {
     value = std::encode_hex("hello")
 }
+```
 
-// Decode from hex
-output "decoded" {
-    value = std::decode_hex("68656c6c6f")
+## Base58 Functions
+
+```hcl
+// Encode to base58
+output "base58" {
+    value = std::encode_base58(0x68656c6c6f)
 }
 ```
 
 ## Base64 Functions
 
 ```hcl
-// Encode to base64
-output "base64" {
-    value = std::encode_base64("hello world")
-}
-
 // Decode from base64
 output "decoded" {
-    value = std::decode_base64("aGVsbG8gd29ybGQ=")
+    value = std::base64_decode("aGVsbG8gd29ybGQ=")
 }
 ```
 
 ## JSON Functions
 
 ```hcl
-// Encode to JSON
-output "json" {
-    value = std::encode_json({ "key": "value" })
-}
-
-// Decode from JSON
-output "decoded" {
-    value = std::decode_json("{\"key\": \"value\"}")
+// Query JSON with jq syntax
+output "message" {
+    value = std::jq("{ \"message\": \"Hello world!\" }", ".message")
 }
 ```
 
 ## List Functions
 
 ```hcl
-// Get list length
-output "length" {
-    value = std::len([1, 2, 3, 4, 5])
-}
-
 // Get element at index
-output "element" {
-    value = std::element([1, 2, 3], 1)  // Returns 2
+output "entry" {
+    value = std::index(['a', 'b', 'c'], 1)  // Returns 'b'
 }
 ```
 
@@ -105,12 +99,22 @@ output "element" {
 
 ```hcl
 // Assert equality
-variable "check" {
-    value = std::assert_eq(1, 1)  // Returns true
+output "check_eq" {
+    value = std::assert_eq(action.example.result, 1)
 }
 
 // Assert not equal
-variable "check2" {
-    value = std::assert_ne(1, 2)  // Returns true
+output "check_ne" {
+    value = std::assert_ne(action.example.result, 0)
+}
+
+// Assert greater than / greater than or equal
+output "check_gt" {
+    value = std::assert_gt(action.example.result, 0)
+}
+
+// Assert less than / less than or equal
+output "check_lt" {
+    value = std::assert_lt(action.example.result, 100)
 }
 ```

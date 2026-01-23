@@ -707,7 +707,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                           textOverflow: 'clip',
                         }}
                       >
-                        <span style={{ color: getOverlayColor(0.7) }}>
+                        <span style={{ color: brandBlue }}>
                           {displayAddress.slice(0, revealedChars)}
                         </span>
                         <span style={{ color: '#9ca3af', opacity: 0.7 }}>

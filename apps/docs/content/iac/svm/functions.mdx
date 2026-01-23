@@ -52,6 +52,27 @@ output "data" {
 
 ---
 
+## get_instruction_data_from_idl
+
+`svm::get_instruction_data_from_idl` creates encoded instruction data for a program invocation, providing type checking and serialization based on the provided IDL data.
+
+### Inputs
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| `idl` | required | string \| SVM_IDL | The program IDL |
+| `instruction_name` | required | string | The name of the instruction to generate data for, as indexed by the IDL |
+| `arguments` | optional | array[string] | The instruction arguments to generate data for |
+
+```hcl
+output "data" {
+    value = svm::get_instruction_data_from_idl(variable.contract.idl, "my_instruction", ["arg1", "arg2"])
+}
+// > data: 0x95763bdcc47fa1b305000000776f726c64
+```
+
+---
+
 ## get_program_from_anchor_project
 
 `svm::get_program_from_anchor_project` retrieves the program deployment artifacts for a program in an Anchor project.
@@ -197,5 +218,41 @@ action "call" "svm::process_instructions" {
             variable.token_program // token program id
         )
     }
+}
+```
+
+---
+
+## u64
+
+`svm::u64` creates a byte array representation of a u64 integer, suitable for use as a seed in PDA derivation.
+
+### Inputs
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| `value` | required | integer | The u64 integer to convert to a byte array |
+
+```hcl
+variable "pda" {
+    value = svm::find_pda("3bv3j4GvMPjvvBX9QdoX27pVoWhDSXpwKZipFF1QiVr6", [svm::u64(1000000000)])
+}
+```
+
+---
+
+## i64
+
+`svm::i64` creates a byte array representation of an i64 integer, suitable for use as a seed in PDA derivation.
+
+### Inputs
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| `value` | required | integer | The i64 integer to convert to a byte array |
+
+```hcl
+variable "pda" {
+    value = svm::find_pda("3bv3j4GvMPjvvBX9QdoX27pVoWhDSXpwKZipFF1QiVr6", [svm::i64(-1000000000)])
 }
 ```

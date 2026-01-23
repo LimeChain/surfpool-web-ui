@@ -56,10 +56,10 @@ action "create_resource" "std::send_http_request" {
     headers = {
         "Content-Type" = "application/json"
     }
-    body = std::encode_json({
+    body = {
         "name" = variable.name,
         "value" = variable.value
-    })
+    }
 }
 ```
 
@@ -85,7 +85,7 @@ action "config" "std::read_file" {
 }
 
 variable "parsed_config" {
-    value = std::decode_json(action.config.content)
+    value = std::jq(action.config.content, ".")
 }
 ```
 
@@ -103,9 +103,9 @@ The `std::write_file` action writes content to a file.
 ```hcl
 action "save_output" "std::write_file" {
     path = "./output.json"
-    content = std::encode_json({
+    content = {
         "result" = variable.result,
         "timestamp" = variable.timestamp
-    })
+    }
 }
 ```
