@@ -2729,44 +2729,21 @@
       "description": "Surfnet cheatcodes endpoints for testing and development",
       "type": "object",
       "properties": {
-        "advanceClock": {
-          "description": "advanceClock - Advances clock",
-          "type": "null"
-        },
         "cloneProgramAccount": {
           "description": "cloneProgramAccount - Clones a program account",
           "$ref": "#/$defs/RpcResponse16"
         },
-        "getAccount": {
-          "description": "getAccount - Gets account data",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UiAccountSchema"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "getClock": {
-          "description": "getClock - Gets clock information",
-          "$ref": "#/$defs/ClockSchema"
-        },
-        "getIdl": {
-          "description": "getIdl - Returns the active IDL at an optional slot",
+        "getActiveIdl": {
+          "description": "getActiveIdl - Returns the active IDL at an optional slot",
           "$ref": "#/$defs/RpcResponse20"
         },
         "getLocalSignatures": {
           "description": "getLocalSignatures - Returns recent local signatures",
           "$ref": "#/$defs/RpcResponse21"
         },
-        "getProfileResults": {
-          "description": "getProfileResults - Gets profiling results for a tag",
+        "getProfileResultsByTag": {
+          "description": "getProfileResultsByTag - Gets profiling results for a tag",
           "$ref": "#/$defs/RpcResponse18"
-        },
-        "getSurfpoolVersion": {
-          "description": "getSurfpoolVersion - Returns surfpool version",
-          "$ref": "#/$defs/SurfpoolRpcVersionInfo"
         },
         "getTransactionProfile": {
           "description": "getTransactionProfile - Returns a profile by signature or UUID",
@@ -2776,10 +2753,6 @@
           "description": "pauseClock - Freezes the local clock",
           "$ref": "#/$defs/EpochInfoSchema"
         },
-        "processTransaction": {
-          "description": "processTransaction - Processes transaction",
-          "type": "null"
-        },
         "profileTransaction": {
           "description": "profileTransaction - Profiles a transaction for compute unit estimation",
           "$ref": "#/$defs/RpcResponse17"
@@ -2787,10 +2760,6 @@
         "registerIdl": {
           "description": "registerIdl - Registers an IDL at an optional slot",
           "$ref": "#/$defs/RpcResponse16"
-        },
-        "resetSurfnet": {
-          "description": "resetSurfnet - Resets surfnet state",
-          "type": "null"
         },
         "resumeClock": {
           "description": "resumeClock - Resumes the local clock",
@@ -2800,10 +2769,6 @@
           "description": "setAccount - Sets account data",
           "$ref": "#/$defs/RpcResponse16"
         },
-        "setClock": {
-          "description": "setClock - Sets clock",
-          "type": "null"
-        },
         "setSupply": {
           "description": "setSupply - Sets supply information for testing",
           "$ref": "#/$defs/RpcResponse16"
@@ -2811,14 +2776,6 @@
         "setTokenAccount": {
           "description": "setTokenAccount - Sets token account data",
           "$ref": "#/$defs/RpcResponse16"
-        },
-        "startSurfnet": {
-          "description": "startSurfnet - Starts surfnet instance",
-          "type": "null"
-        },
-        "stopSurfnet": {
-          "description": "stopSurfnet - Stops surfnet instance",
-          "type": "null"
         },
         "timeTravel": {
           "description": "timeTravel - Moves the local clock",
@@ -2862,23 +2819,15 @@
         }
       },
       "required": [
-        "startSurfnet",
-        "stopSurfnet",
-        "resetSurfnet",
         "setAccount",
         "setTokenAccount",
         "cloneProgramAccount",
         "profileTransaction",
-        "getProfileResults",
+        "getProfileResultsByTag",
         "setSupply",
-        "advanceClock",
-        "setClock",
-        "getClock",
-        "processTransaction",
-        "getSurfpoolVersion",
         "getTransactionProfile",
         "registerIdl",
-        "getIdl",
+        "getActiveIdl",
         "getLocalSignatures",
         "timeTravel",
         "pauseClock",

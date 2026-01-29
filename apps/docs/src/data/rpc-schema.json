@@ -461,7 +461,7 @@
       "properties": {},
       "required": []
     },
-    "GetIdl": {
+    "GetActiveIdl": {
       "type": "object",
       "properties": {
         "programId": {
@@ -648,7 +648,7 @@
         "pubkeys"
       ]
     },
-    "GetProfileResults": {
+    "GetProfileResultsByTag": {
       "type": "object",
       "properties": {
         "tag": {
@@ -3855,13 +3855,13 @@
           "description": "Retrieves all profiling results for transactions tagged with a specific identifier.",
           "type": "object",
           "properties": {
-            "getProfileResults": {
-              "$ref": "#/$defs/GetProfileResults"
+            "getProfileResultsByTag": {
+              "$ref": "#/$defs/GetProfileResultsByTag"
             }
           },
           "additionalProperties": false,
           "required": [
-            "getProfileResults"
+            "getProfileResultsByTag"
           ]
         },
         {
@@ -3920,13 +3920,13 @@
           "description": "Retrieves the registered IDL for a specific program ID at a given slot.",
           "type": "object",
           "properties": {
-            "getIdl": {
-              "$ref": "#/$defs/GetIdl"
+            "getActiveIdl": {
+              "$ref": "#/$defs/GetActiveIdl"
             }
           },
           "additionalProperties": false,
           "required": [
-            "getIdl"
+            "getActiveIdl"
           ]
         },
         {
