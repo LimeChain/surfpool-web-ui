@@ -3,9 +3,32 @@ title: Base64 Functions
 description: Standard library functions for Base64 encoding and decoding
 ---
 
-## base64_decode
+## encode_base64
 
-`base64_decode` decodes a base64 encoded string and returns the result as a hex string.
+`encode_base64` encodes a buffer or string as a base64 string.
+
+### Inputs
+
+| Name | Type | Description |
+|------|------|-------------|
+| `value` | buffer, string, addon | The buffer or string to encode. Strings starting with '0x' are decoded as hex; otherwise, raw UTF-8 bytes are used. |
+
+### Output
+
+| Name | Type | Description |
+|------|------|-------------|
+| `value` | string | The input, encoded as a base64 string |
+
+```hcl
+output "encoded" {
+    value = encode_base64("0x48656c6c6f20776f726c6421")
+}
+// > encoded: SGVsbG8gd29ybGQh
+```
+
+## decode_base64
+
+`decode_base64` decodes a base64 encoded string and returns the result as a buffer.
 
 ### Inputs
 
@@ -17,11 +40,11 @@ description: Standard library functions for Base64 encoding and decoding
 
 | Name | Type | Description |
 |------|------|-------------|
-| `value` | string | The decoded base64 string, as a hex string |
+| `value` | buffer | The decoded base64 string, as a buffer |
 
 ```hcl
 output "decoded" {
-    value = base64_decode("SGVsbG8gd29ybGQh")
+    value = decode_base64("SGVsbG8gd29ybGQh")
 }
 // > decoded: 0x48656c6c6f20776f726c6421
 ```

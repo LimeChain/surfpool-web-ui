@@ -53,28 +53,49 @@ output "keccak" {
 ## Hex Functions
 
 ```hcl
-// Encode to hex
+// Encode string's raw bytes to hex (returns string with 0x prefix)
 output "hex" {
-    value = std::encode_hex("hello")
+    value = std::encode_hex("hello, world")
 }
+// > hex: 0x68656c6c6f2c20776f726c64
+
+// Decode from hex (returns buffer)
+output "decoded" {
+    value = std::decode_hex("0x68656c6c6f2c20776f726c64")
+}
+// > decoded: 0x68656c6c6f2c20776f726c64
 ```
 
 ## Base58 Functions
 
 ```hcl
-// Encode to base58
+// Encode to base58 (accepts buffer or hex string)
 output "base58" {
-    value = std::encode_base58(0x68656c6c6f)
+    value = std::encode_base58("0x68656c6c6f")
 }
+// > base58: Cn8eVZg
+
+// Decode from base58 (returns buffer)
+output "decoded" {
+    value = std::decode_base58("Cn8eVZg")
+}
+// > decoded: 0x68656c6c6f
 ```
 
 ## Base64 Functions
 
 ```hcl
-// Decode from base64
-output "decoded" {
-    value = std::base64_decode("aGVsbG8gd29ybGQ=")
+// Encode to base64 (accepts buffer or hex string)
+output "encoded" {
+    value = std::encode_base64("0x48656c6c6f20776f726c6421")
 }
+// > encoded: SGVsbG8gd29ybGQh
+
+// Decode from base64 (returns buffer)
+output "decoded" {
+    value = std::decode_base64("SGVsbG8gd29ybGQh")
+}
+// > decoded: 0x48656c6c6f20776f726c6421
 ```
 
 ## JSON Functions
