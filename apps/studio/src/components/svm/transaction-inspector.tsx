@@ -229,51 +229,59 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
           const base64TxState = base64TxAccountStates[address];
 
           // If the transaction-level state has actual changes, add/update it
+          // Only fill in if the instruction doesn't already have specific changes for this account
           if (txState?.accountChange && txState.accountChange.type !== 'unchanged') {
-            // Merge the data from jsonParsed and base64
-            let mergedData = txState.accountChange.data;
-            if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
-              mergedData = txState.accountChange.data.map((item: any, idx: number) => {
-                const base64Item = Array.isArray(base64TxState.accountChange.data)
-                  ? base64TxState.accountChange.data[idx]
-                  : base64TxState.accountChange.data;
-                return mergeAccountData(item, base64Item);
-              });
-            }
+            const existingInstrState = instruction.accountStates[address];
+            const existingChange = existingInstrState?.accountChange;
+            if (!existingInstrState || !existingChange || existingChange.type === 'unchanged') {
+              // Merge the data from jsonParsed and base64
+              let mergedData = txState.accountChange.data;
+              if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
+                mergedData = txState.accountChange.data.map((item: any, idx: number) => {
+                  const base64Item = Array.isArray(base64TxState.accountChange.data)
+                    ? base64TxState.accountChange.data[idx]
+                    : base64TxState.accountChange.data;
+                  return mergeAccountData(item, base64Item);
+                });
+              }
 
-            instruction.accountStates[address] = {
-              type: txState.type || 'writable',
-              accountChange: {
-                ...txState.accountChange,
-                data: mergedData,
-              },
-            };
+              instruction.accountStates[address] = {
+                type: txState.type || 'writable',
+                accountChange: {
+                  ...txState.accountChange,
+                  data: mergedData,
+                },
+              };
+            }
           }
         });
       } else {
-        // For other instructions, only update existing accounts
+        // For other instructions, only update existing accounts that don't have specific changes
         Object.keys(instruction.accountStates).forEach((address) => {
           const txState = txAccountStates[address];
           const base64TxState = base64TxAccountStates[address];
 
           if (txState?.accountChange && txState.accountChange.type !== 'unchanged') {
-            let mergedData = txState.accountChange.data;
-            if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
-              mergedData = txState.accountChange.data.map((item: any, idx: number) => {
-                const base64Item = Array.isArray(base64TxState.accountChange.data)
-                  ? base64TxState.accountChange.data[idx]
-                  : base64TxState.accountChange.data;
-                return mergeAccountData(item, base64Item);
-              });
-            }
+            const existingChange = instruction.accountStates[address]?.accountChange;
+            if (!existingChange || existingChange.type === 'unchanged') {
+              let mergedData = txState.accountChange.data;
+              if (Array.isArray(txState.accountChange.data) && base64TxState?.accountChange?.data) {
+                mergedData = txState.accountChange.data.map((item: any, idx: number) => {
+                  const base64Item = Array.isArray(base64TxState.accountChange.data)
+                    ? base64TxState.accountChange.data[idx]
+                    : base64TxState.accountChange.data;
+                  return mergeAccountData(item, base64Item);
+                });
+              }
 
-            instruction.accountStates[address] = {
-              ...instruction.accountStates[address],
-              accountChange: {
-                ...txState.accountChange,
-                data: mergedData,
-              },
-            };
+              instruction.accountStates[address] = {
+                ...instruction.accountStates[address],
+                accountChange: {
+                  ...txState.accountChange,
+                  data: mergedData,
+                },
+              };
+            }
           }
         });
       }
