@@ -44,7 +44,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
   const [selectedTimeUnit, setSelectedTimeUnit] = useState<
     'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'years'
   >('days');
-  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number | null>(null);
+  const [selectedTimeAmount, setSelectedTimeAmount] = useState<number>(7);
   const [currentEpoch, setCurrentEpoch] = useState<number>(0);
   const [currentSlot, setCurrentSlot] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
@@ -725,7 +725,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                       <input
                         type="number"
                         value={selectedTimeAmount || ''}
-                        onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value) || null)}
+                        onChange={(e) => setSelectedTimeAmount(parseInt(e.target.value))}
                         className="w-24 border-none bg-transparent text-right text-2xl font-bold text-zinc-300 [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         placeholder="7"
                         autoFocus
