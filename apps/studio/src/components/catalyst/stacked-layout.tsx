@@ -90,7 +90,7 @@ export function StackedLayout({
           </Navbar>
         </div>
 
-        {/* Compact Slot Widget + Txtx Logo - Centered on small, right-aligned on large */}
+        {/* Compact Slot Widget - Centered on small, right-aligned on large */}
         <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:left-auto lg:right-4 lg:translate-x-0">
           <div className="pointer-events-auto flex items-center gap-4">
             <CompactSlotWidget
@@ -98,7 +98,6 @@ export function StackedLayout({
               wsUrl={wsUrl}
               solanaWebSocketService={solanaWebSocketService}
             />
-            <img src="/assets/txtx.png" alt="Txtx Logo" className="hidden h-4 lg:block" />
           </div>
         </div>
       </header>

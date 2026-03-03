@@ -57,14 +57,14 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     requiresKey: true,
     models: [
       {
-        id: 'openai-gpt4o-mini',
+        id: 'openai-gpt4.1-mini',
         provider: 'openai',
-        model: 'gpt-4o-mini',
-        name: 'GPT-4o Mini',
+        model: 'gpt-4.1-mini',
+        name: 'GPT-4.1 Mini',
         description: 'Cheapest',
       },
-      { id: 'openai-gpt4o', provider: 'openai', model: 'gpt-4o', name: 'GPT-4o', description: 'Balanced' },
-      { id: 'openai-o1', provider: 'openai', model: 'o1', name: 'o1', description: 'Best' },
+      { id: 'openai-gpt4.1', provider: 'openai', model: 'gpt-4.1', name: 'GPT-4.1', description: 'Balanced' },
+      { id: 'openai-o3-mini', provider: 'openai', model: 'o3-mini', name: 'o3 Mini', description: 'Best' },
     ],
   },
   {
@@ -76,7 +76,7 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
       {
         id: 'claude-haiku',
         provider: 'claude',
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         name: 'Haiku',
         description: 'Cheapest',
       },
@@ -96,9 +96,8 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     icon: '/assets/gemini.svg',
     requiresKey: true,
     models: [
-      { id: 'gemini-flash', provider: 'gemini', model: 'gemini-2.0-flash', name: 'Flash', description: 'Cheapest' },
-      { id: 'gemini-pro', provider: 'gemini', model: 'gemini-1.5-pro', name: 'Pro', description: 'Balanced' },
-      { id: 'gemini-ultra', provider: 'gemini', model: 'gemini-2.0-pro-exp', name: '2.0 Pro', description: 'Best' },
+      { id: 'gemini-flash', provider: 'gemini', model: 'gemini-2.5-flash', name: 'Flash', description: 'Cheapest' },
+      { id: 'gemini-pro', provider: 'gemini', model: 'gemini-2.5-pro', name: 'Pro', description: 'Balanced' },
     ],
   },
 ];
