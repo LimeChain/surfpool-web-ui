@@ -284,8 +284,11 @@ function createEndpointFromSchema(
     ? (rpcSchema.$defs as any)[schemaRef]
     : methodDef;
   const params = extractParametersFromSchema(actualMethodDef, methodKey, "", 0);
-  const exampleParams =
-    generateSampleFromSchema(actualMethodDef, rpcSchema, methodName) || [];
+  const exampleParams = actualMethodDef?.properties
+    ? Object.keys(actualMethodDef.properties).map((key) =>
+        generateSampleFromSchema(actualMethodDef.properties[key], rpcSchema, key),
+      )
+    : [];
   const responseSchemaForMethod = getResponseSchema(methodName);
 
   return {
