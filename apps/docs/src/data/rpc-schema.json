@@ -2286,6 +2286,10 @@
         "skipPreflight": {
           "description": "Whether to skip the preflight check.",
           "type": "boolean"
+        },
+        "skipSigVerify": {
+          "description": "Whether to skip signature verification for the transaction.",
+          "type": "boolean"
         }
       },
       "required": [
