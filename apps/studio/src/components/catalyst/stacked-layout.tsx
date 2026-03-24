@@ -1,7 +1,6 @@
 'use client';
 
 import * as Headless from '@headlessui/react';
-import { CircleStackIcon } from '@heroicons/react/16/solid';
 import { BeakerIcon, CommandLineIcon } from '@heroicons/react/24/solid';
 import React, { useState } from 'react';
 import { Navbar, NavbarItem, NavbarSpacer } from '@surfpool/ui';
@@ -77,10 +76,6 @@ export function StackedLayout({
             <NavbarItem href="/" current={path.endsWith('/')} className="max-lg:hidden">
               <CommandLineIcon />
               Console
-            </NavbarItem>
-            <NavbarItem href="/accounts" current={path.endsWith('/accounts')} className="max-lg:hidden">
-              <CircleStackIcon />
-              Accounts
             </NavbarItem>
             <NavbarItem href="/scenarios" current={path.endsWith('/scenarios')} className="max-lg:hidden">
               <BeakerIcon />

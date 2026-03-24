@@ -11,7 +11,6 @@ export const useAppConfig = () => {
     wsUrl: config?.ws_url || 'ws://127.0.0.1:8900',
     rpcDatasourceUrl: config?.rpc_datasource_url || 'https://api.mainnet-beta.solana.com/',
     studioUrl,
-    graphqlUrl: config?.graphql_query_route_url || 'http://127.0.0.1:18488/gql/v1/graphql',
     mcpUrl: config?.mcp_url || studioUrl, // MCP defaults to studio URL
 
     // State

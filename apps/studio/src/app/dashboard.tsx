@@ -9,7 +9,7 @@ import { Sidebar, SidebarBody, SidebarHeader, SidebarItem, SidebarSection } from
 import { StackedLayout } from '@/components/catalyst/stacked-layout';
 import { useWorkspaceContext } from '@/contexts/workspace-context';
 import { ArrowRightStartOnRectangleIcon, PlayIcon } from '@heroicons/react/16/solid';
-import { CircleStackIcon, CommandLineIcon } from '@heroicons/react/24/solid';
+import { CommandLineIcon } from '@heroicons/react/24/solid';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -72,10 +72,6 @@ export function Dashboard({ children }: { children: React.ReactNode }) {
               <SidebarItem href="/" current={pathname === '/'} className="!w-full">
                 <CommandLineIcon className="h-5 w-5" data-slot="icon" />
                 Console
-              </SidebarItem>
-              <SidebarItem href="/accounts" current={pathname === '/accounts'} className="!w-full">
-                <CircleStackIcon className="h-5 w-5" data-slot="icon" />
-                Accounts
               </SidebarItem>
             </SidebarSection>
           </SidebarBody>
