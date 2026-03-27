@@ -2,6 +2,7 @@
 
 import { Dialog, DialogBody } from '@surfpool/ui';
 import { Button } from '@surfpool/ui';
+import { CLOUD_URL } from '@surfpool/shared';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import React, { useState, useEffect } from 'react';
 
@@ -20,8 +21,6 @@ interface FeatureSection {
 interface PlanMetadata {
   description?: string;
   feature_overview?: string;
-  feature_subgraph_deployment?: string;
-  feature_subgraph_limits?: string;
   feature_surfnets?: string;
   features?: string;
 }
@@ -220,7 +219,7 @@ export function PaywallContent({ plans, loading, stars }: PaywallContentProps) {
                                     disabled={!plan.available}
                                     onClick={() => {
                                       if (plan.available) {
-                                        window.open(`https://cloud.txtx.run/?price_id=${plan.price_id}&origin=studio`, '_blank');
+                                        window.open(`${CLOUD_URL}/?price_id=${plan.price_id}&origin=studio`, '_blank');
                                       }
                                     }}
                                   >
@@ -337,7 +336,7 @@ export function PaywallContent({ plans, loading, stars }: PaywallContentProps) {
         </div>
         <div className="flex items-center justify-between">
           <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            For advanced setups with simulations, subgraphs, or Crypto Infrastructure as Code workflows, please reach out!
+            For advanced setups with simulations or Crypto Infrastructure as Code workflows, please reach out!
           </p>
           <Button 
             color="pink" 

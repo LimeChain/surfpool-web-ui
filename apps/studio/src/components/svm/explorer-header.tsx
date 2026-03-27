@@ -7,13 +7,14 @@ import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/s
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
 import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
+import { getTimeUnitInMs, logger, MONEYMQ_ENDPOINT, SURFNET_DOMAIN } from '@surfpool/shared';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
 
 const moneyMQClient = {
   config: {
-    endpoint: 'http://localhost:8488',
+    endpoint: MONEYMQ_ENDPOINT,
     // endpoint: 'https://surfnet-sandbox.money.mq',
   },
 };
@@ -128,7 +129,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
   // Track WebSocket connection status
   useEffect(() => {
     const handleConnected = () => {
-      console.log('ExplorerHeader: WebSocket connected, refreshing config...');
+      logger.log('ExplorerHeader: WebSocket connected, refreshing config...');
       setWsConnected(true);
       // Refresh config when WebSocket connects
       if (refetch) {
@@ -137,7 +138,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
     };
 
     const handleDisconnected = () => {
-      console.log('ExplorerHeader: WebSocket disconnected, refreshing config...');
+      logger.log('ExplorerHeader: WebSocket disconnected, refreshing config...');
       setWsConnected(false);
       // Refresh config when WebSocket disconnects
       if (refetch) {
@@ -352,7 +353,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
         const rawText = await response.text();
         // Use lossless-json to preserve large integer precision
         const data = parse(rawText) as { result?: { value?: unknown }; error?: { message: string } };
-        console.log('📸 Export snapshot response received');
+        logger.log('📸 Export snapshot response received');
         return data.result?.value || null;
       }
       return null;
@@ -396,7 +397,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
         // Stringify just the result.value portion, preserving number precision
         const result = stringify(rpcResponse.result.value);
-        console.log('🌐 Extracted snapshot data, length:', result?.length);
+        logger.log('🌐 Extracted snapshot data, length:', result?.length);
         return result || null;
       }
       return null;
@@ -422,31 +423,10 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      console.log('✅ Snapshot exported successfully');
+      logger.log('✅ Snapshot exported successfully');
     }
   };
 
-  // Helper function to convert time units to milliseconds
-  const getTimeUnitInMs = (unit: string): number => {
-    switch (unit) {
-      case 'seconds':
-        return 1000;
-      case 'minutes':
-        return 60 * 1000;
-      case 'hours':
-        return 60 * 60 * 1000;
-      case 'days':
-        return 24 * 60 * 60 * 1000;
-      case 'weeks':
-        return 7 * 24 * 60 * 60 * 1000;
-      case 'months':
-        return 30 * 24 * 60 * 60 * 1000;
-      case 'years':
-        return 365 * 24 * 60 * 60 * 1000;
-      default:
-        return 1000;
-    }
-  };
 
   // Handle time travel
   const handleTimeTravel = async () => {
@@ -491,7 +471,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
       if (response.ok) {
         const data = await response.json();
         if (data.result) {
-          console.log('✅ Time travel successful:', data.result);
+          logger.log('✅ Time travel successful:', data.result);
           // Dispatch event so other components can update
           window.dispatchEvent(
             new CustomEvent('epochChanged', {
@@ -1294,7 +1274,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                         maxLength={20}
                         className="w-24 bg-transparent text-right text-sm font-medium text-white placeholder-zinc-600 focus:outline-none"
                       />
-                      <span className="text-sm text-white">.surfnet.dev</span>
+                      <span className="text-sm text-white">.{SURFNET_DOMAIN}</span>
                       <div className="ml-1 flex h-5 w-5 items-center justify-center">
                         {isCheckingSubdomain && (
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00D4FF]"></div>
@@ -1629,12 +1609,12 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             },
           ]}
           onSuccess={async (receipt: any) => {
-            console.log('Payment confirmed, full receipt:', receipt);
-            console.log('Receipt keys:', Object.keys(receipt || {}));
-            console.log('Receipt.attachments:', receipt?.attachments);
-            console.log('Receipt.getProcessorData:', receipt?.getProcessorData?.());
-            console.log('Receipt.data:', receipt?.data);
-            console.log('Receipt.metadata:', receipt?.metadata);
+            logger.log('Payment confirmed, full receipt:', receipt);
+            logger.log('Receipt keys:', Object.keys(receipt || {}));
+            logger.log('Receipt.attachments:', receipt?.attachments);
+            logger.log('Receipt.getProcessorData:', receipt?.getProcessorData?.());
+            logger.log('Receipt.data:', receipt?.data);
+            logger.log('Receipt.metadata:', receipt?.metadata);
 
             // Close checkout and show uploading phase
             setShowCheckout(false);
@@ -1668,9 +1648,9 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                 }
               | undefined;
 
-            console.log('Extracted processorData:', processorData);
-            console.log('Extracted credentials:', credentials);
-            console.log('Extracted surfnetInfo:', surfnetInfo);
+            logger.log('Extracted processorData:', processorData);
+            logger.log('Extracted credentials:', credentials);
+            logger.log('Extracted surfnetInfo:', surfnetInfo);
 
             if (!credentials || !credentials.bucket) {
               console.error('❌ No S3 credentials received from payment');
@@ -1684,7 +1664,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             const expiresAtDate = credentials.expiresAt ? new Date(credentials.expiresAt) : null;
             const timeUntilExpiry = expiresAtDate ? (expiresAtDate.getTime() - now.getTime()) / 1000 : null;
 
-            console.log('📦 Received S3 credentials:', {
+            logger.log('📦 Received S3 credentials:', {
               bucket: credentials.bucket,
               keyPrefix: credentials.keyPrefix,
               expiresAt: credentials.expiresAt,
@@ -1701,7 +1681,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             }
 
             // Export the network data using the surfnet_exportNetwork cheatcode
-            console.log('🌐 Exporting network data...');
+            logger.log('🌐 Exporting network data...');
             const dataString = await exportNetwork();
 
             if (!dataString || dataString.length === 0) {
@@ -1715,7 +1695,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             const dataSize = dataString.length;
             setUploadProgress({ loaded: 0, total: dataSize });
 
-            console.log(
+            logger.log(
               '✅ Network data exported, size:',
               dataSize,
               'bytes, first 200 chars:',
@@ -1734,7 +1714,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
             // Update progress to complete
             setUploadProgress({ loaded: dataSize, total: dataSize });
-            console.log('✅ Network data uploaded to S3:', uploadResult.url);
+            logger.log('✅ Network data uploaded to S3:', uploadResult.url);
 
             // Switch to importing phase and connect to WebSocket
             setPublishPhase('importing');
@@ -1747,7 +1727,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               snapshotWsRef.current = ws;
 
               ws.onopen = () => {
-                console.log('🔌 WebSocket connected, subscribing to snapshot import...');
+                logger.log('🔌 WebSocket connected, subscribing to snapshot import...');
                 // Send snapshotSubscribe request
                 ws.send(
                   JSON.stringify({
@@ -1762,18 +1742,18 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               ws.onmessage = (event) => {
                 try {
                   const data = JSON.parse(event.data);
-                  console.log('📨 WebSocket message:', data);
+                  logger.log('📨 WebSocket message:', data);
 
                   // Handle subscription confirmation
                   if (data.id === 1 && data.result !== undefined) {
-                    console.log('✅ Snapshot subscription confirmed, id:', data.result);
+                    logger.log('✅ Snapshot subscription confirmed, id:', data.result);
                     return;
                   }
 
                   // Handle snapshot notifications
                   if (data.method === 'snapshotNotification' && data.params?.result) {
                     const notification = data.params.result;
-                    console.log('📊 Snapshot import progress:', notification);
+                    logger.log('📊 Snapshot import progress:', notification);
 
                     // Capture snapshot ID if present
                     if (notification.snapshot_id || notification.snapshotId) {
@@ -1787,16 +1767,16 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
                     // Check for completion or error
                     if (notification.status === 'Completed') {
-                      console.log('✅ Snapshot import completed!');
+                      logger.log('✅ Snapshot import completed!');
                       ws.close();
                       setPublishPhase('completed');
 
                       // Build the published URL from surfnet info or fallback to subdomain
                       const surfnetUrl = surfnetInfo?.subdomain
-                        ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                        ? `https://${surfnetInfo.subdomain}.${SURFNET_DOMAIN}`
                         : selectedPricingTier === 'lite'
-                          ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
-                          : `https://${subdomain}.surfnet.dev`;
+                          ? `https://${credentials.keyPrefix.split('/')[1]}.${SURFNET_DOMAIN}`
+                          : `https://${subdomain}.${SURFNET_DOMAIN}`;
                       setPublishedUrl(surfnetUrl);
                     } else if (notification.status === 'Failed') {
                       console.error('❌ Snapshot import failed:', notification.error);
@@ -1816,7 +1796,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               };
 
               ws.onclose = () => {
-                console.log('🔌 WebSocket closed');
+                logger.log('🔌 WebSocket closed');
                 snapshotWsRef.current = null;
               };
             } catch (error) {
@@ -1824,10 +1804,10 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               // If WebSocket fails, still show success since upload worked
               setPublishPhase('completed');
               const surfnetUrl = surfnetInfo?.subdomain
-                ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                ? `https://${surfnetInfo.subdomain}.${SURFNET_DOMAIN}`
                 : selectedPricingTier === 'lite'
-                  ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
-                  : `https://${subdomain}.surfnet.dev`;
+                  ? `https://${credentials.keyPrefix.split('/')[1]}.${SURFNET_DOMAIN}`
+                  : `https://${subdomain}.${SURFNET_DOMAIN}`;
               setPublishedUrl(surfnetUrl);
             }
           }}
