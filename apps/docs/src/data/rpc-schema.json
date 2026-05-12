@@ -1588,6 +1588,139 @@
         }
       }
     },
+    "StreamAccountsEntry": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "description": "The base-58 encoded public key of the account to stream.",
+          "type": "string"
+        },
+        "includeOwnedAccounts": {
+          "description": "If true, also streams accounts owned by the specified account.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pubkey"
+      ]
+    },
+    "StreamAccounts": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "description": "List of accounts to register for streaming. Each entry specifies a pubkey and an optional flag to also stream accounts it owns.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StreamAccountsEntry"
+          }
+        }
+      },
+      "required": [
+        "accounts"
+      ]
+    },
+    "OfflineAccount": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "description": "The base-58 encoded public key of the account or program to mark offline.",
+          "type": "string"
+        },
+        "config": {
+          "description": "Configuration for the offline operation.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OfflineAccountConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pubkey"
+      ]
+    },
+    "OfflineAccountConfig": {
+      "type": "object",
+      "properties": {
+        "includeOwnedAccounts": {
+          "description": "If true, also marks accounts owned by the specified account as offline.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "CheatcodeFilter": {
+      "description": "Either the string literal \"all\" to target every cheatcode, or an explicit list of cheatcode method names (e.g. [\"surfnet_setAccount\", \"surfnet_timeTravel\"]).",
+      "oneOf": [
+        {
+          "description": "Target every registered cheatcode.",
+          "type": "string",
+          "const": "all"
+        },
+        {
+          "description": "Explicit list of cheatcode method names (full `surfnet_*` form).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "CheatcodeControlConfig": {
+      "type": "object",
+      "properties": {
+        "lockout": {
+          "description": "If true, the disable operation is permitted to disable `surfnet_enableCheatcode` and `surfnet_disableCheatcode` themselves, locking the cheatcode surface for the rest of the session.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "EnableCheatcode": {
+      "type": "object",
+      "properties": {
+        "cheatcodesFilter": {
+          "description": "Which cheatcodes to enable: either the string \"all\" or an explicit list of method names.",
+          "$ref": "#/$defs/CheatcodeFilter"
+        }
+      },
+      "required": [
+        "cheatcodesFilter"
+      ]
+    },
+    "DisableCheatcode": {
+      "type": "object",
+      "properties": {
+        "cheatcodesFilter": {
+          "description": "Which cheatcodes to disable: either the string \"all\" or an explicit list of method names.",
+          "$ref": "#/$defs/CheatcodeFilter"
+        },
+        "config": {
+          "description": "Optional control config. When `lockout` is true, `surfnet_enableCheatcode` and `surfnet_disableCheatcode` may themselves be disabled.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CheatcodeControlConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cheatcodesFilter"
+      ]
+    },
     "WriteProgram": {
       "type": "object",
       "properties": {
@@ -4031,6 +4164,32 @@
           ]
         },
         {
+          "description": "Registers multiple accounts for streaming from the datasource in a single batch call. See also `surfnet_streamAccount`.",
+          "type": "object",
+          "properties": {
+            "streamAccounts": {
+              "$ref": "#/$defs/StreamAccounts"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "streamAccounts"
+          ]
+        },
+        {
+          "description": "Prevents an account (and optionally accounts it owns) from being downloaded from the remote RPC. See also `surfnet_streamAccount`.",
+          "type": "object",
+          "properties": {
+            "offlineAccount": {
+              "$ref": "#/$defs/OfflineAccount"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "offlineAccount"
+          ]
+        },
+        {
           "description": "Retrieves the list of accounts currently registered for streaming.",
           "type": "object",
           "additionalProperties": false
@@ -4064,6 +4223,32 @@
           "additionalProperties": false,
           "required": [
             "registerScenario"
+          ]
+        },
+        {
+          "description": "Re-enables one or more previously disabled Surfpool cheatcode RPC methods for the current session. See also `surfnet_disableCheatcode`.",
+          "type": "object",
+          "properties": {
+            "enableCheatcode": {
+              "$ref": "#/$defs/EnableCheatcode"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "enableCheatcode"
+          ]
+        },
+        {
+          "description": "Disables one or more Surfpool cheatcode RPC methods for the current session. Without `lockout=true`, `surfnet_enableCheatcode` and `surfnet_disableCheatcode` themselves cannot be disabled. See also `surfnet_enableCheatcode`.",
+          "type": "object",
+          "properties": {
+            "disableCheatcode": {
+              "$ref": "#/$defs/DisableCheatcode"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "disableCheatcode"
           ]
         }
       ]

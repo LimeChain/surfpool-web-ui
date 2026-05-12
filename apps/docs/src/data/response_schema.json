@@ -2816,6 +2816,22 @@
         "setProgramAuthority": {
           "description": "setProgramAuthority - Sets or removes the upgrade authority for a program",
           "$ref": "#/$defs/RpcResponse16"
+        },
+        "enableCheatcode": {
+          "description": "enableCheatcode - Re-enables one or more previously disabled cheatcode RPC methods",
+          "$ref": "#/$defs/RpcResponse16"
+        },
+        "disableCheatcode": {
+          "description": "disableCheatcode - Disables one or more cheatcode RPC methods, optionally with lockout",
+          "$ref": "#/$defs/RpcResponse16"
+        },
+        "offlineAccount": {
+          "description": "offlineAccount - Marks an account as offline so it is not downloaded from the remote RPC",
+          "$ref": "#/$defs/RpcResponse16"
+        },
+        "streamAccounts": {
+          "description": "streamAccounts - Registers multiple accounts for streaming from the datasource in one batch",
+          "$ref": "#/$defs/RpcResponse16"
         }
       },
       "required": [
@@ -2840,7 +2856,11 @@
         "getSurfnetInfo",
         "writeProgram",
         "registerScenario",
-        "setProgramAuthority"
+        "setProgramAuthority",
+        "enableCheatcode",
+        "disableCheatcode",
+        "offlineAccount",
+        "streamAccounts"
       ]
     },
     "ExportSnapshotResponse": {
