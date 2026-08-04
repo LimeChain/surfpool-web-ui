@@ -59,14 +59,14 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     requiresKey: true,
     models: [
       {
-        id: 'openai-gpt4.1-mini',
+        id: 'openai-gpt5.6-luna',
         provider: 'openai',
-        model: 'gpt-4.1-mini',
-        name: 'GPT-4.1 Mini',
+        model: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
         description: 'Cheapest',
       },
-      { id: 'openai-gpt4.1', provider: 'openai', model: 'gpt-4.1', name: 'GPT-4.1', description: 'Balanced' },
-      { id: 'openai-o3-mini', provider: 'openai', model: 'o3-mini', name: 'o3 Mini', description: 'Best' },
+      { id: 'openai-gpt5.6-terra', provider: 'openai', model: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', description: 'Balanced' },
+      { id: 'openai-gpt5.6-sol', provider: 'openai', model: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', description: 'Best' },
     ],
   },
   {
@@ -78,18 +78,18 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
       {
         id: 'claude-haiku',
         provider: 'claude',
-        model: 'claude-haiku-4-5-20251001',
-        name: 'Haiku',
+        model: 'claude-haiku-4-5',
+        name: 'Haiku 4.5',
         description: 'Cheapest',
       },
       {
         id: 'claude-sonnet',
         provider: 'claude',
-        model: 'claude-sonnet-4-20250514',
-        name: 'Sonnet',
+        model: 'claude-sonnet-5',
+        name: 'Sonnet 5',
         description: 'Balanced',
       },
-      { id: 'claude-opus', provider: 'claude', model: 'claude-opus-4-20250514', name: 'Opus', description: 'Best' },
+      { id: 'claude-opus', provider: 'claude', model: 'claude-opus-5', name: 'Opus 5', description: 'Best' },
     ],
   },
   {
@@ -418,7 +418,8 @@ IMPORTANT: A surfnet (simulation network) is ALREADY RUNNING. You do NOT need to
 - Ask clarifying questions if the scenario is ambiguous (e.g., specific token addresses, price ranges, timing)
 
 ## Tools You Should Use
-- get_override_templates: Get available override templates for protocols (Pyth, Raydium, etc.)
+- get_override_templates: Get available override templates for protocols (Pyth, Raydium, etc.). Constants are summarized with an optionsCount only
+- search_constant_options: Resolve a constant_ref value (price feed, market, token mint) by searching a template's constant options, e.g. query "SOL/USD"
 - create_scenario: Create a new scenario with account overrides
 
 ## Tools You Should NOT Use
@@ -465,7 +466,9 @@ export async function* streamClaudeResponse(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4096,
+        // Claude 5 models think by default and max_tokens caps thinking plus
+        // response text together, so 4096 could truncate mid-answer
+        max_tokens: 16000,
         system: SYSTEM_PROMPT,
         tools: anthropicTools,
         messages,
@@ -626,6 +629,10 @@ export async function* streamOpenAIResponse(
         messages,
         tools: openaiTools,
         stream: true,
+        // gpt-5.6 models reject or degrade function tools with reasoning enabled on
+        // /v1/chat/completions, so reasoning stays off uniformly. To re-enable it,
+        // raise the value per model or migrate this client to /v1/responses
+        reasoning_effort: 'none',
       }),
       signal,
     });
