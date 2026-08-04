@@ -34,6 +34,11 @@ describe('fetchSurfnetClockSeconds', () => {
     await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
   });
 
+  it('returns null when the request itself fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
+  });
+
   it('returns null when the account is missing', async () => {
     mockFetchResponse({ json: async () => ({ result: { value: null } }) });
     await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
