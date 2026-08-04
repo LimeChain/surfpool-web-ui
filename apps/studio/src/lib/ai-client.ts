@@ -10,6 +10,8 @@ export interface AIModel {
   model: string;
   name: string;
   description: string;
+  // gpt-5.6 rejects function tools with reasoning enabled on /v1/chat/completions
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | (string & {});
 }
 
 export interface AIProviderConfig {
@@ -64,9 +66,24 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
         model: 'gpt-5.6-luna',
         name: 'GPT-5.6 Luna',
         description: 'Cheapest',
+        reasoningEffort: 'none',
       },
-      { id: 'openai-gpt5.6-terra', provider: 'openai', model: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', description: 'Balanced' },
-      { id: 'openai-gpt5.6-sol', provider: 'openai', model: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', description: 'Best' },
+      {
+        id: 'openai-gpt5.6-terra',
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        description: 'Balanced',
+        reasoningEffort: 'none',
+      },
+      {
+        id: 'openai-gpt5.6-sol',
+        provider: 'openai',
+        model: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        description: 'Best',
+        reasoningEffort: 'none',
+      },
     ],
   },
   {
@@ -607,6 +624,9 @@ export async function* streamOpenAIResponse(
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const openaiTools = mcpToolsToOpenAIFunctions(tools);
+  const reasoningEffort =
+    AI_PROVIDERS.find((p) => p.id === 'openai')
+      ?.models.find((m) => m.model === model)?.reasoningEffort ?? 'none';
 
   let messages: any[] = [
     { role: 'system', content: SYSTEM_PROMPT },
@@ -629,10 +649,7 @@ export async function* streamOpenAIResponse(
         messages,
         tools: openaiTools,
         stream: true,
-        // gpt-5.6 models reject or degrade function tools with reasoning enabled on
-        // /v1/chat/completions, so reasoning stays off uniformly. To re-enable it,
-        // raise the value per model or migrate this client to /v1/responses
-        reasoning_effort: 'none',
+        reasoning_effort: reasoningEffort,
       }),
       signal,
     });
