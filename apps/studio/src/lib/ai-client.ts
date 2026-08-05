@@ -469,6 +469,7 @@ export async function* streamClaudeResponse(
   let messages: any[] = [{ role: 'user', content: prompt }];
   const MAX_ITERATIONS = 5;
   let iterations = 0;
+  let finished = false;
 
   while (iterations < MAX_ITERATIONS) {
     iterations++;
@@ -484,8 +485,8 @@ export async function* streamClaudeResponse(
       body: JSON.stringify({
         model,
         // Claude 5 models think by default and max_tokens caps thinking plus
-        // response text together, so 4096 could truncate mid-answer
-        max_tokens: 16000,
+        // response text together.
+        max_tokens: 32000,
         system: SYSTEM_PROMPT,
         tools: anthropicTools,
         messages,
@@ -605,9 +606,24 @@ export async function* streamClaudeResponse(
       messages.push({ role: 'assistant', content: assistantContent });
       messages.push({ role: 'user', content: toolResults });
     } else {
-      // No more tool calls or Claude is done - exit loop
+      if (stopReason === 'max_tokens') {
+        yield {
+          type: 'error',
+          content: 'The model ran out of output budget before finishing. Try again, or narrow the request.',
+        };
+      } else if (stopReason === 'refusal') {
+        yield { type: 'error', content: 'The model declined to answer this request.' };
+      }
+      finished = true;
       break;
     }
+  }
+
+  if (!finished) {
+    yield {
+      type: 'error',
+      content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
+    };
   }
 
   yield { type: 'done', content: null };
@@ -625,8 +641,7 @@ export async function* streamOpenAIResponse(
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const openaiTools = mcpToolsToOpenAIFunctions(tools);
   const reasoningEffort =
-    AI_PROVIDERS.find((p) => p.id === 'openai')
-      ?.models.find((m) => m.model === model)?.reasoningEffort ?? 'none';
+    AI_PROVIDERS.find((p) => p.id === 'openai')?.models.find((m) => m.model === model)?.reasoningEffort ?? 'none';
 
   let messages: any[] = [
     { role: 'system', content: SYSTEM_PROMPT },
