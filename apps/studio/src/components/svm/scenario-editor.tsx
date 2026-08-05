@@ -2,7 +2,7 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
-import { flattenOverrideValues, type OverridePayload } from '@/lib/scenarios-api';
+import { flattenOverrideValues, scenarioDownloadFile, type OverridePayload } from '@/lib/scenarios-api';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -101,6 +101,7 @@ export default function ScenarioEditor({
   const initializedRef = useRef(false);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
 
@@ -970,6 +971,37 @@ export default function ScenarioEditor({
       }
     } catch (error) {
       console.error('❌ Error exporting snapshot:', error);
+    }
+  };
+
+  const downloadScenario = async () => {
+    setDownloadError(null);
+    try {
+      const response = await fetch(`${studioUrl}/v1/scenarios`);
+      if (!response.ok) {
+        logger.log('Scenario download failed with HTTP', response.status);
+        setDownloadError('Download failed');
+        return;
+      }
+
+      const file = scenarioDownloadFile(await response.text(), scenarioId);
+      if (!file) {
+        setDownloadError('Download failed — scenario not found on the surfnet');
+        return;
+      }
+
+      const url = URL.createObjectURL(new Blob([file.contents], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      logger.log('✅ Scenario downloaded:', file.filename);
+    } catch (error) {
+      logger.log('Scenario download failed:', error);
+      setDownloadError('Download failed');
     }
   };
 
@@ -2345,7 +2377,10 @@ export default function ScenarioEditor({
             className="pointer-events-none fixed left-1/2 z-50 w-[800px] -translate-x-1/2"
             style={{ bottom: '116px' }}
           >
-            <div className="pointer-events-auto rounded-full border border-zinc-700/50 bg-zinc-900/40 shadow-2xl backdrop-blur-2xl">
+            <div className="pointer-events-auto relative rounded-full border border-zinc-700/50 bg-zinc-900/40 shadow-2xl backdrop-blur-2xl">
+              {!!downloadError && (
+                <div className="absolute inset-x-0 bottom-1 text-center text-xs text-red-400">{downloadError}</div>
+              )}
               <div className="flex items-center justify-between px-8 py-6">
                 {/* Timeline/Progress */}
                 <div className="flex flex-1 flex-col gap-1">
@@ -2533,6 +2568,7 @@ export default function ScenarioEditor({
                         <PlayIcon className="h-6 w-6" />
                       </button>
                       <button
+                        onClick={downloadScenario}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
                         title="Download scenario"
                       >
@@ -2579,6 +2615,7 @@ export default function ScenarioEditor({
                 </div>
               </div>
             </div>
+
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,6 +1,41 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { parse, stringify } from 'lossless-json';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
+
+/**
+ * Pick one scenario out of a raw GET /v1/scenarios response and prepare it for
+ * download. lossless-json keeps i64 fields exact, which JSON.parse would round;
+ * the contents are a valid POST /v1/scenarios body.
+ */
+export function scenarioDownloadFile(
+  scenariosJson: string,
+  scenarioId: string
+): { filename: string; contents: string } | null {
+  let scenarios: unknown;
+  try {
+    scenarios = parse(scenariosJson);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(scenarios)) return null;
+
+  const scenario = scenarios.find((entry) => (entry as { id?: unknown })?.id === scenarioId) as
+    | Record<string, unknown>
+    | undefined;
+  if (!scenario) return null;
+
+  const name = typeof scenario.name === 'string' ? scenario.name : '';
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return {
+    filename: `scenario-${slug || scenarioId}.json`,
+    contents: stringify(scenario, null, 2) ?? '',
+  };
+}
 
 /**
  * Build the POST body for creating a new scenario.

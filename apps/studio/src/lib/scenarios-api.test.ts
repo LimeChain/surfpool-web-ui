@@ -4,6 +4,7 @@ import {
   buildUpdatePayload,
   createScenarioPayload,
   flattenOverrideValues,
+  scenarioDownloadFile,
   scenarioToBentoItem,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
@@ -237,6 +238,48 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('scenarioDownloadFile', () => {
+  const response = JSON.stringify([
+    { id: 'other', name: 'Other', overrides: [], tags: [] },
+    {
+      id: 'wanted',
+      name: 'SOL Price Crash $85',
+      description: 'a scenario',
+      tags: ['pyth'],
+      overrides: [{ id: 'ov', values: { 'price_message.price': 8500000000 } }],
+    },
+  ]);
+
+  it('returns the requested scenario as a POST-shaped body', () => {
+    const file = scenarioDownloadFile(response, 'wanted');
+    expect(file).not.toBeNull();
+    const parsed = JSON.parse(file!.contents);
+    expect(parsed.id).toBe('wanted');
+    expect(parsed.tags).toEqual(['pyth']);
+    expect(parsed.overrides[0].values['price_message.price']).toBe(8500000000);
+  });
+
+  it('derives a filename from the scenario name', () => {
+    expect(scenarioDownloadFile(response, 'wanted')!.filename).toBe('scenario-sol-price-crash-85.json');
+  });
+
+  it('falls back to the id when the name has no usable characters', () => {
+    const unnamed = JSON.stringify([{ id: 'abc123', name: '///', overrides: [] }]);
+    expect(scenarioDownloadFile(unnamed, 'abc123')!.filename).toBe('scenario-abc123.json');
+  });
+
+  it('keeps integers beyond double precision exact', () => {
+    const huge = '[{"id":"big","name":"big","overrides":[{"values":{"price_message.price":9223372036854775807}}]}]';
+    expect(scenarioDownloadFile(huge, 'big')!.contents).toContain('9223372036854775807');
+  });
+
+  it('returns null for an unknown id, a non-array body, or invalid JSON', () => {
+    expect(scenarioDownloadFile(response, 'missing')).toBeNull();
+    expect(scenarioDownloadFile('{"id":"wanted"}', 'wanted')).toBeNull();
+    expect(scenarioDownloadFile('not json', 'wanted')).toBeNull();
   });
 });
 
