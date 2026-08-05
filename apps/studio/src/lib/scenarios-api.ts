@@ -4,6 +4,46 @@ import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 
 /**
+ * Turn the contents of a downloaded scenario file into a POST /v1/scenarios body.
+ * The id is replaced so importing never collides with the scenario it came from,
+ * and lossless-json keeps i64 values exact on the way back in.
+ */
+export function scenarioImportPayload(
+  fileContents: string,
+  newId: string
+): { payload: string; name: string } | { error: string } {
+  let parsed: unknown;
+  try {
+    parsed = parse(fileContents);
+  } catch {
+    return { error: 'That file is not valid JSON' };
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { error: 'That file does not contain a scenario' };
+  }
+
+  const scenario = parsed as Record<string, unknown>;
+  if (!Array.isArray(scenario.overrides)) {
+    return { error: 'That file does not contain a scenario' };
+  }
+
+  const name = typeof scenario.name === 'string' && scenario.name ? scenario.name : 'Imported scenario';
+
+  return {
+    payload:
+      stringify({
+        ...scenario,
+        id: newId,
+        name,
+        description: typeof scenario.description === 'string' ? scenario.description : '',
+        tags: Array.isArray(scenario.tags) ? scenario.tags : [],
+      }) ?? '',
+    name,
+  };
+}
+
+/**
  * Pick one scenario out of a raw GET /v1/scenarios response and prepare it for
  * download. lossless-json keeps i64 fields exact, which JSON.parse would round;
  * the contents are a valid POST /v1/scenarios body.

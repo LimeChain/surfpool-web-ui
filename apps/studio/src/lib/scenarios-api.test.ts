@@ -5,6 +5,7 @@ import {
   createScenarioPayload,
   flattenOverrideValues,
   scenarioDownloadFile,
+  scenarioImportPayload,
   scenarioToBentoItem,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
@@ -238,6 +239,48 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('scenarioImportPayload', () => {
+  const downloaded = JSON.stringify({
+    id: 'original',
+    name: 'SOL Crash',
+    description: 'a scenario',
+    tags: ['pyth'],
+    overrides: [{ id: 'ov', values: { 'price_message.price': 8500000000 } }],
+  });
+
+  it('replaces the id so an import cannot collide with its source', () => {
+    const result = scenarioImportPayload(downloaded, 'fresh-id');
+    expect('error' in result).toBe(false);
+    const payload = JSON.parse((result as { payload: string }).payload);
+    expect(payload.id).toBe('fresh-id');
+    expect(payload.name).toBe('SOL Crash');
+    expect(payload.overrides[0].values['price_message.price']).toBe(8500000000);
+    expect(payload.tags).toEqual(['pyth']);
+  });
+
+  it('keeps integers beyond double precision exact', () => {
+    const huge = '{"id":"x","name":"x","overrides":[{"values":{"price_message.price":9223372036854775807}}]}';
+    const result = scenarioImportPayload(huge, 'fresh-id') as { payload: string };
+    expect(result.payload).toContain('9223372036854775807');
+  });
+
+  it('defaults a missing name, description and tags', () => {
+    const bare = '{"id":"x","overrides":[]}';
+    const payload = JSON.parse((scenarioImportPayload(bare, 'fresh-id') as { payload: string }).payload);
+    expect(payload.name).toBe('Imported scenario');
+    expect(payload.description).toBe('');
+    expect(payload.tags).toEqual([]);
+  });
+
+  it('rejects invalid JSON and anything that is not a scenario', () => {
+    expect(scenarioImportPayload('not json', 'id')).toEqual({ error: 'That file is not valid JSON' });
+    expect(scenarioImportPayload('[]', 'id')).toEqual({ error: 'That file does not contain a scenario' });
+    expect(scenarioImportPayload('{"id":"x"}', 'id')).toEqual({
+      error: 'That file does not contain a scenario',
+    });
   });
 });
 
