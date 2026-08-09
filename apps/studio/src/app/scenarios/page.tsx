@@ -38,6 +38,24 @@ function ScenariosContent() {
         const data = await response.json();
         logger.log('Loaded scenarios from API:', data);
 
+        // The templateId prefix heuristic below misfires on multi-dash protocols
+        // (pump-amm-* belongs to PumpSwap, not "pump"), so resolve the protocol
+        // from the templates list whenever it is reachable.
+        const templateProtocols = new Map<string, string>();
+        try {
+          const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
+          if (templatesResponse.ok) {
+            const templates: Array<{ id: string; protocol?: string }> = await templatesResponse.json();
+            for (const template of templates) {
+              templateProtocols.set(template.id, template.protocol || '');
+            }
+          } else {
+            logger.warn('Templates request failed, protocol names fall back to templateId prefix:', templatesResponse.status);
+          }
+        } catch (error) {
+          logger.warn('Templates request failed, protocol names fall back to templateId prefix:', error);
+        }
+
         // Convert API response to scenarios array
         // Handle both array response and object response
         let loadedScenarios: Scenario[];
@@ -66,17 +84,20 @@ function ScenariosContent() {
                   slotMap.set(slotNumber, []);
                 }
 
-                // Extract protocol from templateId (everything before first dash is usually the protocol)
                 const templateId = override.templateId || '';
+                const protocolName = templateProtocols.get(templateId) || '';
+                // Extract protocol from templateId (everything before first dash is usually the protocol)
                 const firstDashIndex = templateId.indexOf('-');
-                const protocolId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
+                const heuristicId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
+                const protocolId = protocolName ? protocolName.toLowerCase().replace(/\s+/g, '-') : heuristicId;
+                const displayProtocolName = protocolName || protocolId;
 
                 slotMap.get(slotNumber)!.push({
                   original: override,
                   overrideId: override.id, // Preserve the override ID from backend
                   protocolId: protocolId || 'unknown',
                   actionId: templateId || 'unknown', // Use full templateId as actionId
-                  protocol: protocolId.charAt(0).toUpperCase() + protocolId.slice(1), // Capitalize protocol name
+                  protocol: displayProtocolName.charAt(0).toUpperCase() + displayProtocolName.slice(1),
                   action: override.label || 'Unknown Action',
                   account: override.account, // Preserve account data
                   fetchBeforeUse: override.fetchBeforeUse || false,
@@ -124,17 +145,20 @@ function ScenariosContent() {
                   slotMap.set(slotNumber, []);
                 }
 
-                // Extract protocol from templateId (everything before first dash is usually the protocol)
                 const templateId = override.templateId || '';
+                const protocolName = templateProtocols.get(templateId) || '';
+                // Extract protocol from templateId (everything before first dash is usually the protocol)
                 const firstDashIndex = templateId.indexOf('-');
-                const protocolId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
+                const heuristicId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
+                const protocolId = protocolName ? protocolName.toLowerCase().replace(/\s+/g, '-') : heuristicId;
+                const displayProtocolName = protocolName || protocolId;
 
                 slotMap.get(slotNumber)!.push({
                   original: override,
                   overrideId: override.id, // Preserve the override ID from backend
                   protocolId: protocolId || 'unknown',
                   actionId: templateId || 'unknown', // Use full templateId as actionId
-                  protocol: protocolId.charAt(0).toUpperCase() + protocolId.slice(1), // Capitalize protocol name
+                  protocol: displayProtocolName.charAt(0).toUpperCase() + displayProtocolName.slice(1),
                   action: override.label || 'Unknown Action',
                   account: override.account, // Preserve account data
                   fetchBeforeUse: override.fetchBeforeUse || false,
