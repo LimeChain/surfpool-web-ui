@@ -59,7 +59,7 @@ vi.mock('@headlessui/react', () => ({
   CloseButton: ({ children, as: _as, ...props }: any) => <button {...props}>{children}</button>,
 }));
 
-// Mock @surfpool/ui Dialog to avoid headless UI internals
+// Mock @surfpool/ui Dialog and Switch to avoid headless UI internals (and its own React copy).
 vi.mock('@surfpool/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@surfpool/ui')>();
   return {
@@ -68,6 +68,7 @@ vi.mock('@surfpool/ui', async (importOriginal) => {
     DialogTitle: ({ children }: any) => <div>{children}</div>,
     DialogBody: ({ children }: any) => <div>{children}</div>,
     DialogActions: ({ children }: any) => <div>{children}</div>,
+    Switch: ({ checked, disabled }: any) => <button role="switch" aria-checked={!!checked} disabled={disabled} />,
   };
 });
 

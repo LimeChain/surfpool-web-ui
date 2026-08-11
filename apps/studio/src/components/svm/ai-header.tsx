@@ -17,7 +17,7 @@ import { PROTOCOLS } from '@/lib/protocol-icons';
 import { buildAiPrompt } from '@/lib/scenarios-api';
 import * as Headless from '@headlessui/react';
 import { ArrowRightIcon, DocumentTextIcon, StopIcon } from '@heroicons/react/24/solid';
-import { Button, Dialog, DialogActions, DialogBody, DialogTitle } from '@surfpool/ui';
+import { Button, Dialog, DialogActions, DialogBody, DialogTitle, Switch } from '@surfpool/ui';
 import React, { useState } from 'react';
 import { exampleScenarios, type GenerationLog } from './scenarios-bento.types';
 
@@ -40,6 +40,10 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
       return lastModel;
     }
     return DEFAULT_MODEL_ID;
+  });
+  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('surfpool:thinking-enabled') !== 'false';
   });
   const [selectedProtocols, setSelectedProtocols] = useState<Set<string>>(new Set());
   const [streamedResponse, setStreamedResponse] = useState<string>('');
@@ -80,6 +84,23 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
     ollamaStatus.models.find((m) => m.id === selectedModelId) ||
     AI_PROVIDERS[0].models[0];
   const selectedProvider = getProviderById(selectedModel.provider) || AI_PROVIDERS[0];
+  const thinkingToggleable =
+    selectedModel.provider === 'openai' || selectedModelId === 'claude-sonnet' || selectedModelId === 'claude-opus';
+  const thinkingChecked = thinkingToggleable ? thinkingEnabled : selectedModelId === 'claude-fable';
+  const handleThinkingChange = (value: boolean) => {
+    setThinkingEnabled(value);
+    if (typeof window !== 'undefined') localStorage.setItem('surfpool:thinking-enabled', String(value));
+  };
+
+  // Protocol chips on the bar: selected first, capped at 5, with a "+N" overflow count.
+  const PROTOCOL_ICON_LIMIT = 5;
+  const orderedProtocols = [
+    ...PROTOCOLS.filter((p) => selectedProtocols.has(p.id)),
+    ...PROTOCOLS.filter((p) => !selectedProtocols.has(p.id)),
+  ];
+  const visibleProtocols = orderedProtocols.slice(0, PROTOCOL_ICON_LIMIT);
+  const hiddenProtocolCount = orderedProtocols.length - visibleProtocols.length;
+
   const hasApiKey = (provider: AIProvider) => {
     const providerConfig = getProviderById(provider);
     if (!providerConfig?.requiresKey) return true;
@@ -110,7 +131,13 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
     let generationError: string | null = null;
 
     try {
-      const stream = streamAIResponse(selectedModelId, finalPrompt, mcpUrl, abortControllerRef.current.signal);
+      const stream = streamAIResponse(
+        selectedModelId,
+        finalPrompt,
+        mcpUrl,
+        abortControllerRef.current.signal,
+        thinkingEnabled
+      );
 
       for await (const event of stream) {
         if (responseRef.current) {
@@ -238,8 +265,8 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
                   >
                     <img src={selectedProvider.icon} alt="" className="size-6" style={{ filter: 'invert(1)' }} />
                     <span className="block text-left">
-                      <span className="block text-sm font-medium">{selectedProvider.name}</span>
-                      <span className="block text-xs text-zinc-500">{selectedModel.name}</span>
+                      <span className="block whitespace-nowrap text-sm font-medium">{selectedProvider.name}</span>
+                      <span className="block whitespace-nowrap text-xs text-zinc-500">{selectedModel.name}</span>
                     </span>
                     {selectedProvider.requiresKey && !hasApiKey(selectedModel.provider) && (
                       <span className="text-[10px] text-amber-400">(no key)</span>
@@ -484,29 +511,32 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
                     )}
                   </Headless.PopoverPanel>
                 </Headless.Popover>
+                <div className="flex h-[42px] items-center gap-2 rounded-lg border border-transparent px-3">
+                  <span className={`text-xs ${thinkingToggleable ? 'text-zinc-400' : 'text-zinc-600'}`}>Thinking</span>
+                  <Switch
+                    checked={thinkingChecked}
+                    onChange={handleThinkingChange}
+                    disabled={!thinkingToggleable}
+                    color="violet"
+                  />
+                </div>
 
                 {/* Protocol selector */}
                 <Headless.Popover className="relative">
                   <Headless.PopoverButton className="flex h-[42px] items-center gap-1 rounded-lg border border-transparent px-3 transition-all data-[hover]:border-zinc-700 data-[hover]:bg-zinc-800/50">
                     <div className="flex items-center gap-1">
-                      {PROTOCOLS.filter((p) => selectedProtocols.has(p.id)).map((protocol) => (
+                      {visibleProtocols.map((protocol) => (
                         <img
                           key={protocol.id}
                           src={protocol.icon}
                           alt={protocol.name}
                           title={protocol.name}
-                          className="size-6"
+                          className={`size-6 ${selectedProtocols.has(protocol.id) ? '' : 'opacity-30 grayscale'}`}
                         />
                       ))}
-                      {PROTOCOLS.filter((p) => !selectedProtocols.has(p.id)).map((protocol) => (
-                        <img
-                          key={protocol.id}
-                          src={protocol.icon}
-                          alt={protocol.name}
-                          title={protocol.name}
-                          className="size-6 opacity-30 grayscale"
-                        />
-                      ))}
+                      {hiddenProtocolCount > 0 && (
+                        <span className="ml-0.5 text-xs text-zinc-500">+{hiddenProtocolCount}</span>
+                      )}
                     </div>
                     <svg
                       className="ml-1 size-4 shrink-0 text-zinc-500"
