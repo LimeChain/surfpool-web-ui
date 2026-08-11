@@ -26,6 +26,16 @@ interface Protocol {
   description: string;
   icon_url: string;
   actions: Action[];
+  // Set when one brand ships several programs, so the panel asks which one first.
+  // `actions` stays flattened across all of them.
+  products?: Product[];
+}
+
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  actions: Action[];
 }
 
 interface Action {
@@ -77,6 +87,34 @@ interface ScenarioEditorProps {
   }>;
 }
 
+// Protocols to show in the scenario editor (filter the full list).
+// Must match the `protocol` field of each template exactly, including case.
+const ENABLED_PROTOCOLS = [
+  'Pyth',
+  'Raydium',
+  'Drift',
+  // Kamino: one entry per program, since each has its own IDL and program id
+  'kamino',
+  'kamino-scope',
+  'kamino-farms',
+  'kamino-swap',
+  'kamino-vault',
+  'kamino-liquidity',
+  // Whirlpool: the Kamino liquidation-arbitrage scenario overrides its pools
+  'Whirlpool',
+];
+
+// Kamino ships six programs. Collapse them behind one icon and let the panel
+// ask which product first. Order is the order they appear in the picker.
+const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[] = [
+  { protocol: 'kamino', title: 'Lend & Borrow', description: 'Reserves, obligations and markets' },
+  { protocol: 'kamino-vault', title: 'Earn', description: 'Yield vaults and their allocations' },
+  { protocol: 'kamino-liquidity', title: 'Liquidity', description: 'Concentrated liquidity strategies' },
+  { protocol: 'kamino-swap', title: 'Swap', description: 'Limit orders' },
+  { protocol: 'kamino-scope', title: 'Scope Oracle', description: 'Prices every other product reads' },
+  { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
+];
+
 export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
@@ -89,6 +127,7 @@ export default function ScenarioEditor({
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSearchQuery, setActionSearchQuery] = useState('');
   const [selectedProtocol, setSelectedProtocol] = useState<Protocol | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
@@ -288,6 +327,7 @@ export default function ScenarioEditor({
           // If protocol panel is open, just close it and stop propagation
           e.stopPropagation();
           setShowProtocolPanel(false);
+          setSelectedProduct(null);
           setSelectedAction(null);
           setEditingAction(null);
           setModifiedFields(new Set());
@@ -316,9 +356,6 @@ export default function ScenarioEditor({
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
-  // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift'];
-
   useEffect(() => {
     const fetchProtocols = async () => {
       try {
@@ -342,23 +379,50 @@ export default function ScenarioEditor({
           protocolGroups[protocolName].push(template);
         });
 
-        // Transform into Protocol objects
-        const transformedProtocols: Protocol[] = Object.entries(protocolGroups).map(([protocolName, templates]) => {
-          const protocolId = protocolName.toLowerCase().replace(/\s+/g, '-');
+        const toActions = (templates: any[]): Action[] =>
+          templates.map((template: any) => ({
+            id: template.id,
+            title: template.name,
+            description: template.description,
+            template: template, // Store full template data including IDL
+          }));
 
-          return {
-            id: protocolId,
-            title: protocolName,
-            description: `${protocolName} protocol actions`,
-            icon_url: '', // No icon URL in API response
-            actions: templates.map((template: any) => ({
-              id: template.id,
-              title: template.name,
-              description: template.description,
-              template: template, // Store full template data including IDL
-            })),
-          };
-        });
+        // Transform into Protocol objects, skipping the Kamino programs so they
+        // can be merged into a single entry below.
+        const transformedProtocols: Protocol[] = Object.entries(protocolGroups)
+          .filter(([protocolName]) => !KAMINO_PRODUCTS.some((p) => p.protocol === protocolName))
+          .map(([protocolName, templates]) => {
+            const protocolId = protocolName.toLowerCase().replace(/\s+/g, '-');
+
+            return {
+              id: protocolId,
+              title: protocolName,
+              description: `${protocolName} protocol actions`,
+              icon_url: '', // No icon URL in API response
+              actions: toActions(templates),
+            };
+          });
+
+        const kaminoProducts: Product[] = KAMINO_PRODUCTS.filter(
+          (p) => (protocolGroups[p.protocol]?.length ?? 0) > 0
+        ).map((p) => ({
+          id: p.protocol,
+          title: p.title,
+          description: p.description,
+          actions: toActions(protocolGroups[p.protocol]),
+        }));
+
+        if (kaminoProducts.length > 0) {
+          transformedProtocols.push({
+            id: 'kamino',
+            title: 'Kamino',
+            description: 'Lending, yield, liquidity and prices',
+            icon_url: '',
+            // Flattened so lookups by actionId keep working regardless of product.
+            actions: kaminoProducts.flatMap((p) => p.actions),
+            products: kaminoProducts,
+          });
+        }
 
         setProtocols(transformedProtocols);
         setProtocolsLoading(false);
@@ -377,6 +441,7 @@ export default function ScenarioEditor({
     return (
       protocol.title.toLowerCase().includes(query) ||
       protocol.description.toLowerCase().includes(query) ||
+      protocol.products?.some((product) => product.title.toLowerCase().includes(query)) ||
       protocol.actions.some(
         (action) => action.title.toLowerCase().includes(query) || action.description.toLowerCase().includes(query)
       )
@@ -576,9 +641,9 @@ export default function ScenarioEditor({
     }
   };
 
-  // Filter actions in protocol panel
+  // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
-    selectedProtocol?.actions.filter((action) => {
+    (selectedProduct ?? selectedProtocol)?.actions.filter((action) => {
       const query = actionSearchQuery.toLowerCase();
       return action.title.toLowerCase().includes(query) || action.description.toLowerCase().includes(query);
     }) || [];
@@ -968,6 +1033,7 @@ export default function ScenarioEditor({
             setMode('read');
             setSelectedSlotId('');
             setShowProtocolPanel(false);
+            setSelectedProduct(null);
             setEditingAction(null);
             setFetchBeforeUse(false);
           }
@@ -1122,6 +1188,12 @@ export default function ScenarioEditor({
                                                 const protocol = protocols.find((p) => p.id === action.protocolId);
                                                 if (protocol) {
                                                   setSelectedProtocol(protocol);
+                                                  // Reopen straight into the product owning this override
+                                                  setSelectedProduct(
+                                                    protocol.products?.find((prod) =>
+                                                      prod.actions.some((a) => a.id === action.actionId)
+                                                    ) ?? null
+                                                  );
 
                                                   // Find the specific action within the protocol
                                                   const foundAction = protocol.actions.find(
@@ -1521,7 +1593,11 @@ export default function ScenarioEditor({
                           className="group cursor-pointer"
                           onClick={() => {
                             setSelectedProtocol(protocol);
-                            if (protocol.actions.length > 0) {
+                            setSelectedProduct(null);
+                            // With products, the panel asks which one before showing overrides
+                            if (protocol.products?.length) {
+                              setSelectedAction(null);
+                            } else if (protocol.actions.length > 0) {
                               handleActionSelect(protocol.actions[0]);
                             } else {
                               setSelectedAction(null);
@@ -1561,30 +1637,42 @@ export default function ScenarioEditor({
                       {/* Header */}
                       <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
                         <div className="flex items-center gap-4">
+                          {selectedProduct && (
+                            <button
+                              onClick={() => {
+                                setSelectedProduct(null);
+                                setSelectedAction(null);
+                                setActionSearchQuery('');
+                                setModifiedFields(new Set());
+                                setFetchBeforeUse(false);
+                              }}
+                              title="Back to Kamino products"
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                            >
+                              <ArrowUturnLeftIcon className="h-4 w-4" />
+                            </button>
+                          )}
                           <img
-                            src={
-                              {
-                                pyth: '/assets/pyth.svg',
-                                switchboard: '/assets/switchboard.svg',
-                                jupiter: '/assets/jupiter.svg',
-                                raydium: '/assets/raydium.svg',
-                                whirlpool: '/assets/whirlpool.svg',
-                                drift: '/assets/drift.svg',
-                                meteora: '/assets/meteora.svg',
-                                kamino: '/assets/kamino.svg',
-                              }[selectedProtocol.id] || selectedProtocol.icon_url
-                            }
+                            src={getProtocolIcon(selectedProtocol.id, selectedProtocol.icon_url)}
                             alt={selectedProtocol.title}
                             className="h-12 w-12"
                           />
                           <div>
-                            <h3 className="text-xl font-semibold text-zinc-100">{selectedProtocol.title}</h3>
-                            <p className="text-sm text-zinc-400">{selectedProtocol.description}</p>
+                            <h3 className="text-xl font-semibold text-zinc-100">
+                              {selectedProtocol.title}
+                              {selectedProduct && (
+                                <span className="text-zinc-500"> / {selectedProduct.title}</span>
+                              )}
+                            </h3>
+                            <p className="text-sm text-zinc-400">
+                              {selectedProduct?.description ?? selectedProtocol.description}
+                            </p>
                           </div>
                         </div>
                         <button
                           onClick={() => {
                             setShowProtocolPanel(false);
+                            setSelectedProduct(null);
                             setSelectedAction(null);
                             setEditingAction(null);
                             setModifiedFields(new Set());
@@ -1596,7 +1684,38 @@ export default function ScenarioEditor({
                         </button>
                       </div>
 
-                      {/* Two Column Layout */}
+                      {/* Product picker, shown before the overrides of a multi-program protocol */}
+                      {selectedProtocol.products && !selectedProduct ? (
+                        <div className="flex-1 overflow-y-auto p-6">
+                          <p className="mb-4 text-sm text-zinc-400">
+                            Pick a product to see the accounts you can override.
+                          </p>
+                          <div className="grid grid-cols-3 gap-4">
+                            {selectedProtocol.products.map((product) => (
+                              <button
+                                key={product.id}
+                                onClick={() => {
+                                  setSelectedProduct(product);
+                                  setActionSearchQuery('');
+                                  if (product.actions.length > 0) {
+                                    handleActionSelect(product.actions[0]);
+                                  } else {
+                                    setSelectedAction(null);
+                                  }
+                                }}
+                                className="rounded-lg border border-zinc-700/50 bg-zinc-800/40 p-4 text-left transition-all hover:border-yellow-500 hover:bg-zinc-800"
+                              >
+                                <div className="text-base font-semibold text-zinc-100">{product.title}</div>
+                                <div className="mt-1 text-sm text-zinc-400">{product.description}</div>
+                                <div className="mt-3 text-xs text-zinc-500">
+                                  {product.actions.length} override{product.actions.length === 1 ? '' : 's'}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                      /* Two Column Layout */
                       <div className="flex flex-1 overflow-hidden">
                         {/* Left Column - Actions List */}
                         <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-700/50 p-6">
@@ -2280,6 +2399,7 @@ export default function ScenarioEditor({
                                           addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
                                         }
                                         setShowProtocolPanel(false);
+                                        setSelectedProduct(null);
                                         setSelectedAction(null);
                                         setAccountData({});
                                         setModifiedFields(new Set());
@@ -2305,6 +2425,7 @@ export default function ScenarioEditor({
                           )}
                         </div>
                       </div>
+                      )}
                     </div>
                   </div>
                 )}

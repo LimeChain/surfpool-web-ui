@@ -51,9 +51,9 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'Liquidation Arbitrage',
     prompt:
-      'A Kamino obligation worth ~$300k became unhealthy. Whirlpool and Raydium AMM pools are set up to create a profitable liquidation arbitrage path',
+      'Crash a Kamino collateral price in the Scope oracle so an obligation becomes unhealthy, while Whirlpool pools keep their real price - the gap makes liquidating it profitable',
     icon: '💰',
-    protocols: ['kamino', 'whirlpool', 'raydium'],
+    protocols: ['kamino', 'whirlpool'],
   },
   {
     label: 'Triangular Arbitrage',
