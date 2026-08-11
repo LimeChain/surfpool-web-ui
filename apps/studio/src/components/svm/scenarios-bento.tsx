@@ -6,6 +6,7 @@ import {
   createScenarioPayload,
   scenarioImportPayload,
   scenarioToBentoItem,
+  serializeScenarioJson,
 } from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
@@ -134,7 +135,7 @@ export default function ScenariosBento({
       const response = await fetch(`${studioUrl}/v1/scenarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createScenarioPayload(newScenario)),
+        body: serializeScenarioJson(createScenarioPayload(newScenario)),
       });
 
       if (!response.ok) {
@@ -167,7 +168,7 @@ export default function ScenariosBento({
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildUpdatePayload(updatedScenario)),
+        body: serializeScenarioJson(buildUpdatePayload(updatedScenario)),
       });
 
       if (!response.ok) {

@@ -1,7 +1,42 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
-import { parse, stringify } from 'lossless-json';
+import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
+
+// Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
+const parseScenarioNumber = (value: string): number | LosslessNumber =>
+  isSafeNumber(value) ? Number(value) : new LosslessNumber(value);
+
+export function parseScenariosJson(text: string): unknown {
+  return parse(text, null, parseScenarioNumber);
+}
+
+export function serializeScenarioJson(body: unknown, space?: number): string {
+  return stringify(body, null, space) ?? '';
+}
+
+/**
+ * Prepare a surfnet snapshot RPC response for download. `surfpool start --snapshot` expects the
+ * bare account map (result.value), not the full RPC result (which also carries `context`), and
+ * large u64/u128 balances must stay exact — so this extracts result.value and serializes it
+ * losslessly. Returns null when the response carries no snapshot value.
+ */
+export function snapshotDownloadContents(rawResponse: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = parse(rawResponse);
+  } catch {
+    return null;
+  }
+  const value = (parsed as { result?: { value?: unknown } } | null)?.result?.value;
+  if (value === undefined || value === null) return null;
+  return stringify(value, null, 2) ?? '';
+}
+
+export function toScenarioNumber(input: string): number | LosslessNumber {
+  if (input.trim() === '' || Number.isNaN(Number(input))) return Number(input);
+  return isSafeNumber(input) ? Number(input) : new LosslessNumber(input);
+}
 
 /**
  * Turn the contents of a downloaded scenario file into a POST /v1/scenarios body.
@@ -160,8 +195,9 @@ export function flattenOverrideValues(
   const flat: Record<string, unknown> = {};
   if (!overrides) return flat;
 
+  // A LosslessNumber is a scalar u64, not a nested object to recurse into.
   const isNestedObject = (value: unknown): boolean =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+    value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof LosslessNumber);
 
   for (const [key, value] of Object.entries(overrides)) {
     if (!isNestedObject(value)) {

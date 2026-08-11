@@ -2,7 +2,15 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
-import { flattenOverrideValues, scenarioDownloadFile, type OverridePayload } from '@/lib/scenarios-api';
+import {
+  flattenOverrideValues,
+  parseScenariosJson,
+  scenarioDownloadFile,
+  serializeScenarioJson,
+  snapshotDownloadContents,
+  toScenarioNumber,
+  type OverridePayload,
+} from '@/lib/scenarios-api';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -17,6 +25,7 @@ import {
 import { logger } from '@surfpool/shared';
 import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
+import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import TransactionInspector from './transaction-inspector';
 
@@ -165,18 +174,20 @@ export default function ScenarioEditor({
 
       // Update localStorage with fresh data
       const savedScenarios = localStorage.getItem('scenarios');
-      const scenarios: Record<string, unknown> = savedScenarios ? JSON.parse(savedScenarios) : {};
+      const scenarios: Record<string, unknown> = savedScenarios
+        ? (parseScenariosJson(savedScenarios) as Record<string, unknown>)
+        : {};
       scenarios[scenarioId] = {
         slots: convertedSlots,
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem('scenarios', JSON.stringify(scenarios));
+      localStorage.setItem('scenarios', serializeScenarioJson(scenarios));
     } else {
       // No initialSteps - try localStorage as fallback
       const savedScenarios = localStorage.getItem('scenarios');
       if (savedScenarios) {
         try {
-          const scenarios = JSON.parse(savedScenarios);
+          const scenarios = parseScenariosJson(savedScenarios) as Record<string, any>;
           const scenario = scenarios[scenarioId];
           if (scenario?.slots && scenario.slots.length > 0) {
             logger.log('Loading from localStorage (no initialSteps):', scenario.slots);
@@ -213,7 +224,7 @@ export default function ScenarioEditor({
 
     if (savedScenarios) {
       try {
-        scenarios = JSON.parse(savedScenarios);
+        scenarios = parseScenariosJson(savedScenarios) as Record<string, unknown>;
       } catch (error) {
         console.error('Error parsing scenarios:', error);
       }
@@ -224,7 +235,7 @@ export default function ScenarioEditor({
       updatedAt: new Date().toISOString(),
     };
 
-    localStorage.setItem('scenarios', JSON.stringify(scenarios));
+    localStorage.setItem('scenarios', serializeScenarioJson(scenarios));
 
     // Only dispatch event and sync with backend after the first change (skip on initial load into editor)
     if (!isFirstSlotsChangeRef.current) {
@@ -277,7 +288,7 @@ export default function ScenarioEditor({
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(patchData),
+            body: serializeScenarioJson(patchData),
           });
 
           if (!response.ok) {
@@ -862,7 +873,7 @@ export default function ScenarioEditor({
       const registerResponse = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: serializeScenarioJson({
           jsonrpc: '2.0',
           id: 1,
           method: 'surfnet_registerScenario',
@@ -937,12 +948,9 @@ export default function ScenarioEditor({
       });
 
       if (response.ok) {
-        const data = await response.json();
-        logger.log('📸 Export snapshot response:', data);
+        const jsonString = snapshotDownloadContents(await response.text());
 
-        if (data.result) {
-          // Create a blob from the JSON data
-          const jsonString = JSON.stringify(data.result, null, 2);
+        if (jsonString) {
           const blob = new Blob([jsonString], { type: 'application/json' });
 
           // Create download link
@@ -964,7 +972,7 @@ export default function ScenarioEditor({
 
           logger.log('✅ Snapshot exported successfully');
         } else {
-          console.error('❌ Export snapshot failed:', data.error);
+          console.error('❌ Export snapshot failed: empty or invalid snapshot');
         }
       } else {
         console.error('❌ HTTP error during export:', response.status);
@@ -1798,9 +1806,14 @@ export default function ScenarioEditor({
                                         return '';
                                       }
 
-                                      // Convert objects/arrays to JSON string for display
+                                      if (value instanceof LosslessNumber) {
+                                        return value.toString();
+                                      }
+
+                                      // Convert objects/arrays to JSON string for display,
+                                      // keeping any nested u64 as its exact digits.
                                       if (typeof value === 'object') {
-                                        return JSON.stringify(value);
+                                        return serializeScenarioJson(value);
                                       }
 
                                       return value;
@@ -2051,16 +2064,16 @@ export default function ScenarioEditor({
 
                                                 // Parse based on type
                                                 if (inputType === 'number') {
-                                                  newValue = Number(e.target.value);
+                                                  newValue = toScenarioNumber(e.target.value);
                                                 } else if (
                                                   typeString.includes('array') ||
                                                   typeString.includes('vec') ||
                                                   typeString === 'object'
                                                 ) {
-                                                  // Try to parse JSON for complex types
+                                                  // Parse complex types losslessly so a nested u64 is not rounded.
                                                   try {
                                                     newValue = e.target.value
-                                                      ? JSON.parse(e.target.value)
+                                                      ? parseScenariosJson(e.target.value)
                                                       : e.target.value;
                                                   } catch {
                                                     // Keep as string if not valid JSON
@@ -2615,7 +2628,6 @@ export default function ScenarioEditor({
                 </div>
               </div>
             </div>
-
           </motion.div>
         )}
       </AnimatePresence>
