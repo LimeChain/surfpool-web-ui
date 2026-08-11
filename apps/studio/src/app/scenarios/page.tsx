@@ -6,7 +6,7 @@ import { parseScenariosJson } from '@/lib/scenarios-api';
 import { Scenario } from '@/lib/scenarios-data';
 import { logger } from '@surfpool/shared';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 function ScenariosContent() {
   const searchParams = useSearchParams();
@@ -15,6 +15,8 @@ function ScenariosContent() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
+  const [pendingRefresh, setPendingRefresh] = useState(false);
+  const hasLoadedRef = useRef(false);
 
   // Read search params reactively - these will update when URL changes
   const selectedId = searchParams?.get('id') || undefined;
@@ -28,7 +30,10 @@ function ScenariosContent() {
   useEffect(() => {
     async function loadScenarios() {
       try {
-        setLoading(true);
+        // Full-screen spinner only on the first load. Later refetches (create,
+        // close-with-pending-update) swap the list in the background, so the page
+        // does not blank out and feel like a hard reload.
+        if (!hasLoadedRef.current) setLoading(true);
 
         const response = await fetch(`${studioUrl}/v1/scenarios`);
 
@@ -164,30 +169,42 @@ function ScenariosContent() {
         setScenarios(loadedScenarios);
       } catch (error) {
         console.error('Error loading scenarios:', error);
-        setScenarios([]);
+        // Only blank the list if we never had one. A failed background refetch
+        // keeps the current list rather than wiping it.
+        if (!hasLoadedRef.current) setScenarios([]);
       } finally {
         setLoading(false);
+        hasLoadedRef.current = true;
       }
     }
 
     loadScenarios();
   }, [refreshKey, studioUrl]);
 
-  // Listen for scenario updates (but not when detail pane is open to avoid refresh loops)
+  // The editor dispatches this while its pane is open; defer the refresh to close.
   useEffect(() => {
     const handleScenarioUpdate = () => {
-      // Only refresh if detail pane is closed
-      if (!isDetailPaneOpen) {
+      if (isDetailPaneOpen) {
+        logger.log('Scenario updated while detail pane open - deferring refresh until close');
+        setPendingRefresh(true);
+      } else {
         logger.log('Scenario updated event received, refreshing scenarios');
         setRefreshKey((prev) => prev + 1);
-      } else {
-        logger.log('Scenario updated event received, but detail pane is open - skipping refresh');
       }
     };
 
     window.addEventListener('scenarioUpdated', handleScenarioUpdate);
     return () => window.removeEventListener('scenarioUpdated', handleScenarioUpdate);
   }, [isDetailPaneOpen]);
+
+  // Flush the deferred refresh once the detail pane closes.
+  useEffect(() => {
+    if (!isDetailPaneOpen && pendingRefresh) {
+      logger.log('Detail pane closed with a pending update - refreshing scenarios');
+      setRefreshKey((prev) => prev + 1);
+      setPendingRefresh(false);
+    }
+  }, [isDetailPaneOpen, pendingRefresh]);
 
   const handleRefresh = () => {
     setRefreshKey((prev) => prev + 1);
