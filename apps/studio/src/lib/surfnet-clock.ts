@@ -17,8 +17,8 @@ export async function fetchSurfnetClockSeconds(rpcUrl: string): Promise<number |
     if (!response.ok) return null;
 
     const data = await response.json();
-    const unixTimestamp = Number(data?.result?.value?.data?.parsed?.info?.unixTimestamp);
-    return Number.isFinite(unixTimestamp) ? unixTimestamp : null;
+    const unixTimestamp = data?.result?.value?.data?.parsed?.info?.unixTimestamp;
+    return typeof unixTimestamp === 'number' && Number.isFinite(unixTimestamp) ? unixTimestamp : null;
   } catch {
     return null;
   }
