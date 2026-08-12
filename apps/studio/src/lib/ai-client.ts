@@ -10,7 +10,6 @@ export interface AIModel {
   model: string;
   name: string;
   description: string;
-  // gpt-5.6 rejects function tools with reasoning enabled on /v1/chat/completions
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | (string & {});
 }
 
@@ -66,7 +65,7 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
         model: 'gpt-5.6-luna',
         name: 'GPT-5.6 Luna',
         description: 'Cheapest',
-        reasoningEffort: 'none',
+        reasoningEffort: 'medium',
       },
       {
         id: 'openai-gpt5.6-terra',
@@ -74,7 +73,7 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
         model: 'gpt-5.6-terra',
         name: 'GPT-5.6 Terra',
         description: 'Balanced',
-        reasoningEffort: 'none',
+        reasoningEffort: 'medium',
       },
       {
         id: 'openai-gpt5.6-sol',
@@ -82,7 +81,7 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
         model: 'gpt-5.6-sol',
         name: 'GPT-5.6 Sol',
         description: 'Best',
-        reasoningEffort: 'none',
+        reasoningEffort: 'medium',
       },
     ],
   },
@@ -93,20 +92,20 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     requiresKey: true,
     models: [
       {
-        id: 'claude-haiku',
-        provider: 'claude',
-        model: 'claude-haiku-4-5',
-        name: 'Haiku 4.5',
-        description: 'Cheapest',
-      },
-      {
         id: 'claude-sonnet',
         provider: 'claude',
         model: 'claude-sonnet-5',
         name: 'Sonnet 5',
+        description: 'Cheapest',
+      },
+      {
+        id: 'claude-opus',
+        provider: 'claude',
+        model: 'claude-opus-5',
+        name: 'Opus 5',
         description: 'Balanced',
       },
-      { id: 'claude-opus', provider: 'claude', model: 'claude-opus-5', name: 'Opus 5', description: 'Best' },
+      { id: 'claude-fable', provider: 'claude', model: 'claude-fable-5', name: 'Fable 5', description: 'Best' },
     ],
   },
   {
@@ -412,6 +411,16 @@ function mcpToolsToOpenAIFunctions(tools: MCPTool[]) {
   }));
 }
 
+function mcpToolsToResponsesTools(tools: MCPTool[]) {
+  return tools.map((tool) => ({
+    type: 'function' as const,
+    name: tool.name,
+    description: tool.description || `Execute ${tool.name}`,
+    parameters: tool.inputSchema || { type: 'object', properties: {} },
+    strict: false,
+  }));
+}
+
 // Convert MCP tools to Anthropic tool format
 function mcpToolsToAnthropicTools(tools: MCPTool[]) {
   return tools.map((tool) => ({
@@ -454,6 +463,27 @@ IMPORTANT: A surfnet (simulation network) is ALREADY RUNNING. You do NOT need to
 3. Execute the tools
 4. Summarize what was created`;
 
+/**
+ * Keep a single cache breakpoint on the newest content block, so each round
+ * reads the whole conversation processed so far instead of re-reading it. The
+ * marker moves rather than accumulating: a request takes at most four, and only
+ * the newest one earns reads.
+ */
+function moveCacheBreakpointToLastBlock(messages: any[]) {
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (block?.cache_control) delete block.cache_control;
+    }
+  }
+
+  const lastContent = messages[messages.length - 1]?.content;
+  const lastBlock = Array.isArray(lastContent) ? lastContent[lastContent.length - 1] : null;
+  if (lastBlock) {
+    lastBlock.cache_control = { type: 'ephemeral' };
+  }
+}
+
 // Stream response from Claude
 export async function* streamClaudeResponse(
   prompt: string,
@@ -462,13 +492,17 @@ export async function* streamClaudeResponse(
   mcpUrl: string,
   sessionId: string | null,
   model: string,
+  thinkingEnabled: boolean = true,
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const anthropicTools = mcpToolsToAnthropicTools(tools);
+  const disableThinking = model !== 'claude-fable-5' && !thinkingEnabled;
 
   let messages: any[] = [{ role: 'user', content: prompt }];
-  const MAX_ITERATIONS = 5;
+  // Room for the 4-round drill-down plus a retriable tool error, without allowing a real runaway.
+  const MAX_ITERATIONS = 8;
   let iterations = 0;
+  let finished = false;
 
   while (iterations < MAX_ITERATIONS) {
     iterations++;
@@ -484,12 +518,13 @@ export async function* streamClaudeResponse(
       body: JSON.stringify({
         model,
         // Claude 5 models think by default and max_tokens caps thinking plus
-        // response text together, so 4096 could truncate mid-answer
-        max_tokens: 16000,
-        system: SYSTEM_PROMPT,
+        // response text together.
+        max_tokens: 32000,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         tools: anthropicTools,
         messages,
         stream: true,
+        ...(disableThinking ? { thinking: { type: 'disabled' } } : {}),
       }),
       signal,
     });
@@ -509,11 +544,19 @@ export async function* streamClaudeResponse(
     const decoder = new TextDecoder();
     let buffer = '';
     let currentToolUse: { id: string; name: string; input: string } | null = null;
+    let currentThinking: { type: 'thinking'; thinking: string; signature: string } | null = null;
     let stopReason: string | null = null;
     const assistantContent: any[] = [];
     const toolUses: { id: string; name: string; input: any }[] = [];
     const toolResults: any[] = [];
     let currentTextBlock = '';
+
+    const flushTextBlock = () => {
+      if (currentTextBlock) {
+        assistantContent.push({ type: 'text', text: currentTextBlock });
+        currentTextBlock = '';
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -534,15 +577,18 @@ export async function* streamClaudeResponse(
             if (event.type === 'content_block_start') {
               if (event.content_block?.type === 'tool_use') {
                 // Save any accumulated text first
-                if (currentTextBlock) {
-                  assistantContent.push({ type: 'text', text: currentTextBlock });
-                  currentTextBlock = '';
-                }
+                flushTextBlock();
                 currentToolUse = {
                   id: event.content_block.id,
                   name: event.content_block.name,
                   input: '',
                 };
+              } else if (event.content_block?.type === 'thinking') {
+                flushTextBlock();
+                currentThinking = { type: 'thinking', thinking: '', signature: '' };
+              } else if (event.content_block?.type === 'redacted_thinking') {
+                flushTextBlock();
+                assistantContent.push(event.content_block);
               }
             } else if (event.type === 'content_block_delta') {
               if (event.delta?.type === 'text_delta') {
@@ -550,9 +596,16 @@ export async function* streamClaudeResponse(
                 currentTextBlock += event.delta.text;
               } else if (event.delta?.type === 'input_json_delta' && currentToolUse) {
                 currentToolUse.input += event.delta.partial_json;
+              } else if (event.delta?.type === 'thinking_delta' && currentThinking) {
+                currentThinking.thinking += event.delta.thinking;
+              } else if (event.delta?.type === 'signature_delta' && currentThinking) {
+                currentThinking.signature = event.delta.signature;
               }
             } else if (event.type === 'content_block_stop') {
-              if (currentToolUse) {
+              if (currentThinking) {
+                assistantContent.push(currentThinking);
+                currentThinking = null;
+              } else if (currentToolUse) {
                 const toolInput = currentToolUse.input ? JSON.parse(currentToolUse.input) : {};
                 yield { type: 'tool_use', content: { name: currentToolUse.name, input: toolInput } };
 
@@ -596,18 +649,37 @@ export async function* streamClaudeResponse(
     }
 
     // Save any remaining text
-    if (currentTextBlock) {
-      assistantContent.push({ type: 'text', text: currentTextBlock });
-    }
+    flushTextBlock();
 
     // If we had tool calls and Claude wants to continue, add messages and loop
     if (toolResults.length > 0 && stopReason === 'tool_use') {
       messages.push({ role: 'assistant', content: assistantContent });
       messages.push({ role: 'user', content: toolResults });
+      moveCacheBreakpointToLastBlock(messages);
     } else {
-      // No more tool calls or Claude is done - exit loop
+      if (stopReason === 'max_tokens') {
+        yield {
+          type: 'error',
+          content: 'The model ran out of output budget before finishing. Try again, or narrow the request.',
+        };
+      } else if (stopReason === 'refusal') {
+        yield { type: 'error', content: 'The model declined to answer this request.' };
+      } else if (stopReason === 'model_context_window_exceeded') {
+        yield {
+          type: 'error',
+          content: 'The conversation is too long for the model context window. Start a new generation.',
+        };
+      }
+      finished = true;
       break;
     }
+  }
+
+  if (!finished) {
+    yield {
+      type: 'error',
+      content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
+    };
   }
 
   yield { type: 'done', content: null };
@@ -621,36 +693,40 @@ export async function* streamOpenAIResponse(
   mcpUrl: string,
   sessionId: string | null,
   model: string,
+  thinkingEnabled: boolean = true,
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
-  const openaiTools = mcpToolsToOpenAIFunctions(tools);
+  const responsesTools = mcpToolsToResponsesTools(tools);
   const reasoningEffort =
-    AI_PROVIDERS.find((p) => p.id === 'openai')
-      ?.models.find((m) => m.model === model)?.reasoningEffort ?? 'none';
+    AI_PROVIDERS.find((p) => p.id === 'openai')?.models.find((m) => m.model === model)?.reasoningEffort ?? 'medium';
+  // GPT-5.6 defaults to medium when reasoning is omitted, so OFF must send an explicit 'none'.
+  const effort = thinkingEnabled ? reasoningEffort : 'none';
 
-  let messages: any[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
-  ];
-  const MAX_ITERATIONS = 5;
-  let iterations = 0;
+  const MAX_ITERATIONS = 8;
+  let previousResponseId: string | null = null;
+  // First round sends the prompt; later rounds carry only the tool outputs via previous_response_id.
+  let input: any[] = [{ role: 'user', content: prompt }];
 
-  while (iterations < MAX_ITERATIONS) {
-    iterations++;
+  for (let iterations = 0; iterations < MAX_ITERATIONS; iterations++) {
+    // instructions and tools are not inherited through previous_response_id, so they go every round.
+    const body: any = {
+      model,
+      instructions: SYSTEM_PROMPT,
+      input,
+      tools: responsesTools,
+      stream: true,
+      store: true,
+      reasoning: { effort },
+    };
+    if (previousResponseId) body.previous_response_id = previousResponseId;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        tools: openaiTools,
-        stream: true,
-        reasoning_effort: reasoningEffort,
-      }),
+      body: JSON.stringify(body),
       signal,
     });
 
@@ -668,8 +744,10 @@ export async function* streamOpenAIResponse(
 
     const decoder = new TextDecoder();
     let buffer = '';
-    let toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
-    let finishReason: string | null = null;
+    let responseId: string | null = null;
+    const toolCalls: { call_id: string; name: string; arguments: string }[] = [];
+    let streamError: string | null = null;
+    let completed = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -680,76 +758,94 @@ export async function* streamOpenAIResponse(
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-
-          try {
-            const event = JSON.parse(data);
-            const delta = event.choices?.[0]?.delta;
-            finishReason = event.choices?.[0]?.finish_reason || finishReason;
-
-            if (delta?.content) {
-              yield { type: 'text', content: delta.content };
-            }
-
-            if (delta?.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                const existing = toolCalls.get(tc.index) || { id: '', name: '', arguments: '' };
-                if (tc.id) existing.id = tc.id;
-                if (tc.function?.name) existing.name = tc.function.name;
-                if (tc.function?.arguments) existing.arguments += tc.function.arguments;
-                toolCalls.set(tc.index, existing);
-              }
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-        }
-      }
-    }
-
-    // Process tool calls
-    if (toolCalls.size > 0 && finishReason === 'tool_calls') {
-      const toolResults: any[] = [];
-      const assistantToolCalls: any[] = [];
-
-      for (const [_, tc] of toolCalls) {
-        const input = tc.arguments ? JSON.parse(tc.arguments) : {};
-        yield { type: 'tool_use', content: { name: tc.name, input } };
-
-        assistantToolCalls.push({
-          id: tc.id,
-          type: 'function',
-          function: { name: tc.name, arguments: tc.arguments },
-        });
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
 
         try {
-          const result = await callMCPTool(mcpUrl, tc.name, input, sessionId);
-          yield { type: 'tool_result', content: { name: tc.name, result } };
-          toolResults.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify(result),
-          });
-        } catch (error: any) {
-          yield { type: 'tool_result', content: { name: tc.name, error: error.message } };
-          toolResults.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify({ error: error.message }),
-          });
+          const event = JSON.parse(data);
+          switch (event.type) {
+            case 'response.output_text.delta':
+              if (event.delta) yield { type: 'text', content: event.delta };
+              break;
+            case 'response.output_item.done':
+              if (event.item?.type === 'function_call') {
+                toolCalls.push({
+                  call_id: event.item.call_id,
+                  name: event.item.name,
+                  arguments: event.item.arguments || '',
+                });
+              }
+              break;
+            case 'response.completed':
+              completed = true;
+              responseId = event.response?.id ?? responseId;
+              break;
+            case 'response.incomplete':
+              streamError =
+                event.response?.incomplete_details?.reason === 'max_output_tokens'
+                  ? 'The model ran out of output budget before finishing. Try again, or narrow the request.'
+                  : `OpenAI response incomplete: ${event.response?.incomplete_details?.reason ?? 'unknown'}`;
+              break;
+            case 'response.failed':
+              streamError = `OpenAI API error: ${event.response?.error?.message ?? 'response failed'}`;
+              break;
+            case 'error':
+              streamError = `OpenAI API error: ${event.message ?? 'stream error'}`;
+              break;
+          }
+        } catch (e) {
+          // Ignore parse errors for partial chunks
         }
       }
-
-      messages.push({ role: 'assistant', tool_calls: assistantToolCalls });
-      messages.push(...toolResults);
-    } else {
-      // No more tool calls - exit loop
-      break;
     }
+
+    if (streamError) {
+      yield { type: 'error', content: streamError };
+      return;
+    }
+
+    if (!completed) {
+      yield { type: 'error', content: 'OpenAI stream ended before completing. Try again.' };
+      return;
+    }
+
+    if (toolCalls.length === 0) {
+      yield { type: 'done', content: null };
+      return;
+    }
+
+    if (!responseId) {
+      yield { type: 'error', content: 'OpenAI response completed without an id; cannot continue the tool calls.' };
+      return;
+    }
+
+    const outputs: any[] = [];
+    for (const tc of toolCalls) {
+      const args = tc.arguments ? JSON.parse(tc.arguments) : {};
+      yield { type: 'tool_use', content: { name: tc.name, input: args } };
+      try {
+        const result = await callMCPTool(mcpUrl, tc.name, args, sessionId);
+        yield { type: 'tool_result', content: { name: tc.name, result } };
+        outputs.push({ type: 'function_call_output', call_id: tc.call_id, output: JSON.stringify(result) });
+      } catch (error: any) {
+        yield { type: 'tool_result', content: { name: tc.name, error: error.message } };
+        outputs.push({
+          type: 'function_call_output',
+          call_id: tc.call_id,
+          output: JSON.stringify({ error: error.message }),
+        });
+      }
+    }
+
+    previousResponseId = responseId;
+    input = outputs;
   }
 
+  yield {
+    type: 'error',
+    content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
+  };
   yield { type: 'done', content: null };
 }
 
@@ -1122,7 +1218,8 @@ export async function* streamAIResponse(
   modelId: string,
   prompt: string,
   mcpUrl: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  thinkingEnabled: boolean = true
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error' | 'info'; content: any }> {
   // Get model config
   const modelConfig = getModelById(modelId);
@@ -1164,10 +1261,10 @@ export async function* streamAIResponse(
       yield* streamGroqResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, signal);
       break;
     case 'claude':
-      yield* streamClaudeResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, signal);
+      yield* streamClaudeResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, thinkingEnabled, signal);
       break;
     case 'openai':
-      yield* streamOpenAIResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, signal);
+      yield* streamOpenAIResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, thinkingEnabled, signal);
       break;
     case 'gemini':
       yield* streamGeminiResponse(prompt, tools, apiKey, mcpUrl, sessionId, model, signal);
