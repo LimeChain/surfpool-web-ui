@@ -673,6 +673,15 @@ export async function* streamClaudeResponse(
         };
         return;
       }
+      if (stopReason !== 'end_turn' && stopReason !== 'stop_sequence') {
+        yield {
+          type: 'error',
+          content: stopReason
+            ? `Claude stopped before completing (${stopReason}). Try again.`
+            : 'Claude stream ended before completing. Try again.',
+        };
+        return;
+      }
       finished = true;
       break;
     }
