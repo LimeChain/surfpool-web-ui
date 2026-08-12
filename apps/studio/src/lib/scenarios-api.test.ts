@@ -325,7 +325,28 @@ describe('scenarioDownloadFile', () => {
     expect(scenarioDownloadFile(huge, 'big')!.contents).toContain('9223372036854775807');
   });
 
-  it('returns null for an unknown id, a non-array body, or invalid JSON', () => {
+  it('round-trips an object-map scenario without losing a large integer', () => {
+    const exact = '10103697788335729001';
+    const objectMap =
+      `{"wanted":{"name":"Object map","tags":["pyth"],` +
+      `"overrides":[{"id":"ov","values":{"sqrt_price":${exact}}}]}}`;
+
+    const file = scenarioDownloadFile(objectMap, 'wanted');
+    expect(file).not.toBeNull();
+    expect(file!.contents).toContain(`"id": "wanted"`);
+    expect(file!.contents).toContain(exact);
+
+    const imported = scenarioImportPayload(file!.contents, 'fresh-id');
+    expect('error' in imported).toBe(false);
+    const payload = (imported as { payload: string }).payload;
+    expect(payload).toContain(exact);
+
+    const scenario = parseScenariosJson(payload) as Record<string, unknown>;
+    expect(scenario.id).toBe('fresh-id');
+    expect(scenario.tags).toEqual(['pyth']);
+  });
+
+  it('returns null for an unknown id, an invalid object body, or invalid JSON', () => {
     expect(scenarioDownloadFile(response, 'missing')).toBeNull();
     expect(scenarioDownloadFile('{"id":"wanted"}', 'wanted')).toBeNull();
     expect(scenarioDownloadFile('not json', 'wanted')).toBeNull();
