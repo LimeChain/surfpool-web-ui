@@ -1,5 +1,5 @@
 import { renderWithConfig } from '@/test-utils';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import AIHeader from './ai-header';
 
@@ -84,6 +84,22 @@ describe('AIHeader', () => {
     expect(screen.getByText('DEX Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Liquidation Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Triangular Arbitrage')).toBeInTheDocument();
+    expect(screen.getByText('Fresh Launch')).toBeInTheDocument();
+    expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
+    expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
+  });
+
+  it('loads the specialized Pump graduation prompt', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Pump Graduation'));
+
+    expect((screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value).toContain(
+      'specialized Pump graduation tool'
+    );
+    expect((screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value).toContain(
+      '<PASTE_TOKEN_MINT_HERE>'
+    );
   });
 
   it('renders the model selector button', () => {
