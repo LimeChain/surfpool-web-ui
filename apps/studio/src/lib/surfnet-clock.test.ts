@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSurfnetClockSeconds } from './surfnet-clock';
+import { fetchSurfnetClockSeconds, startSurfnetClockPolling } from './surfnet-clock';
 
 const mockFetchResponse = (response: Partial<Response> & { json?: () => Promise<unknown> }) => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, ...response });
@@ -9,6 +9,7 @@ const mockFetchResponse = (response: Partial<Response> & { json?: () => Promise<
 
 describe('fetchSurfnetClockSeconds', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -60,5 +61,45 @@ describe('fetchSurfnetClockSeconds', () => {
       }),
     });
     await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
+  });
+
+  it('does not start another poll while the current request is pending', async () => {
+    vi.useFakeTimers();
+    let resolveFirstRequest: ((response: Partial<Response>) => void) | undefined;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstRequest = resolve;
+          })
+      )
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          result: { value: { data: { parsed: { info: { unixTimestamp: 1785758171 } } } } },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const onUpdate = vi.fn();
+
+    const stop = startSurfnetClockPolling('http://127.0.0.1:8899', onUpdate);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFirstRequest?.({
+      ok: true,
+      json: async () => ({
+        result: { value: { data: { parsed: { info: { unixTimestamp: 1785758170 } } } } },
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onUpdate).toHaveBeenCalledWith(1785758170);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    stop();
   });
 });

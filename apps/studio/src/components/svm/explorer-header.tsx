@@ -2,7 +2,7 @@ import TransactionInspector from '@/components/svm/transaction-inspector';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { S3Credentials, uploadToS3 } from '@/lib/s3-upload';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
-import { fetchSurfnetClockSeconds } from '@/lib/surfnet-clock';
+import { fetchSurfnetClockSeconds, startSurfnetClockPolling } from '@/lib/surfnet-clock';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
@@ -86,22 +86,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
   // drifts from the wall clock (pauses, jumps, its own tick rate)
   useEffect(() => {
     if (!showTimeTravel) return;
-    let cancelled = false;
-    const readClock = () => {
-      fetchSurfnetClockSeconds(rpcUrl)
-        .then((seconds) => {
-          if (!cancelled) setSimnetClockSeconds(seconds);
-        })
-        .catch(() => {
-          if (!cancelled) setSimnetClockSeconds(null);
-        });
-    };
-    readClock();
-    const interval = setInterval(readClock, 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    return startSurfnetClockPolling(rpcUrl, setSimnetClockSeconds);
   }, [showTimeTravel, rpcUrl]);
 
   useEffect(() => {
