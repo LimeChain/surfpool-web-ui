@@ -10,6 +10,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import AIHeader from './ai-header';
+import DraftField from './draft-field';
 import GenericBento from './generic-bento';
 import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
@@ -176,15 +177,10 @@ export default function ScenariosBento({
   const renderDetailHeader = (item: ScenarioBentoItem, onClose?: () => void) => (
     <div className="flex-1">
       {editingTitle === item.id ? (
-        <input
-          type="text"
-          value={item.name}
-          onChange={(e) => handleUpdateScenario(item.id, { name: e.target.value })}
-          onBlur={() => setEditingTitle(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setEditingTitle(null);
-          }}
-          autoFocus
+        <DraftField
+          initialValue={item.name}
+          onCommit={(name) => handleUpdateScenario(item.id, { name })}
+          onDone={() => setEditingTitle(null)}
           className="w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 px-3 py-1 text-base font-semibold text-zinc-950 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:text-zinc-50"
         />
       ) : (
