@@ -142,12 +142,9 @@ export default function ScenariosBento({
       }
 
       logger.log('Scenario created successfully:', newScenario.id);
+      setScenarios((prev) => [...prev, newScenario]);
       onRefresh?.();
-
-      setTimeout(() => {
-        logger.log('Navigating to new scenario:', newScenario.id);
-        router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
-      }, 100);
+      router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
 
       return newScenario.id;
     } catch (error) {
