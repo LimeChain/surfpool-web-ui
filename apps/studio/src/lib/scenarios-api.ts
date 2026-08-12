@@ -132,6 +132,7 @@ export function scenarioToBentoItem(scenario: Scenario): ScenarioBentoItem {
     created_at: scenario.created_at,
     updated_at: scenario.updated_at,
     steps: scenario.steps,
+    tags: scenario.tags,
     metadata: scenario.metadata,
   };
 }

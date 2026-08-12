@@ -226,6 +226,7 @@ export default function ScenariosBento({
               scenarioId={item.id}
               scenarioName={item.name}
               scenarioDescription={item.description}
+              scenarioTags={item.tags}
               initialSteps={item.steps}
             />
           </div>
