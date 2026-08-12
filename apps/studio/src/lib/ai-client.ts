@@ -454,6 +454,27 @@ IMPORTANT: A surfnet (simulation network) is ALREADY RUNNING. You do NOT need to
 3. Execute the tools
 4. Summarize what was created`;
 
+/**
+ * Keep a single cache breakpoint on the newest content block, so each round
+ * reads the whole conversation processed so far instead of re-reading it. The
+ * marker moves rather than accumulating: a request takes at most four, and only
+ * the newest one earns reads.
+ */
+function moveCacheBreakpointToLastBlock(messages: any[]) {
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (block?.cache_control) delete block.cache_control;
+    }
+  }
+
+  const lastContent = messages[messages.length - 1]?.content;
+  const lastBlock = Array.isArray(lastContent) ? lastContent[lastContent.length - 1] : null;
+  if (lastBlock) {
+    lastBlock.cache_control = { type: 'ephemeral' };
+  }
+}
+
 // Stream response from Claude
 export async function* streamClaudeResponse(
   prompt: string,
@@ -487,7 +508,7 @@ export async function* streamClaudeResponse(
         // Claude 5 models think by default and max_tokens caps thinking plus
         // response text together.
         max_tokens: 32000,
-        system: SYSTEM_PROMPT,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         tools: anthropicTools,
         messages,
         stream: true,
@@ -510,11 +531,19 @@ export async function* streamClaudeResponse(
     const decoder = new TextDecoder();
     let buffer = '';
     let currentToolUse: { id: string; name: string; input: string } | null = null;
+    let currentThinking: { type: 'thinking'; thinking: string; signature: string } | null = null;
     let stopReason: string | null = null;
     const assistantContent: any[] = [];
     const toolUses: { id: string; name: string; input: any }[] = [];
     const toolResults: any[] = [];
     let currentTextBlock = '';
+
+    const flushTextBlock = () => {
+      if (currentTextBlock) {
+        assistantContent.push({ type: 'text', text: currentTextBlock });
+        currentTextBlock = '';
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -535,15 +564,18 @@ export async function* streamClaudeResponse(
             if (event.type === 'content_block_start') {
               if (event.content_block?.type === 'tool_use') {
                 // Save any accumulated text first
-                if (currentTextBlock) {
-                  assistantContent.push({ type: 'text', text: currentTextBlock });
-                  currentTextBlock = '';
-                }
+                flushTextBlock();
                 currentToolUse = {
                   id: event.content_block.id,
                   name: event.content_block.name,
                   input: '',
                 };
+              } else if (event.content_block?.type === 'thinking') {
+                flushTextBlock();
+                currentThinking = { type: 'thinking', thinking: '', signature: '' };
+              } else if (event.content_block?.type === 'redacted_thinking') {
+                flushTextBlock();
+                assistantContent.push(event.content_block);
               }
             } else if (event.type === 'content_block_delta') {
               if (event.delta?.type === 'text_delta') {
@@ -551,9 +583,16 @@ export async function* streamClaudeResponse(
                 currentTextBlock += event.delta.text;
               } else if (event.delta?.type === 'input_json_delta' && currentToolUse) {
                 currentToolUse.input += event.delta.partial_json;
+              } else if (event.delta?.type === 'thinking_delta' && currentThinking) {
+                currentThinking.thinking += event.delta.thinking;
+              } else if (event.delta?.type === 'signature_delta' && currentThinking) {
+                currentThinking.signature = event.delta.signature;
               }
             } else if (event.type === 'content_block_stop') {
-              if (currentToolUse) {
+              if (currentThinking) {
+                assistantContent.push(currentThinking);
+                currentThinking = null;
+              } else if (currentToolUse) {
                 const toolInput = currentToolUse.input ? JSON.parse(currentToolUse.input) : {};
                 yield { type: 'tool_use', content: { name: currentToolUse.name, input: toolInput } };
 
@@ -597,14 +636,13 @@ export async function* streamClaudeResponse(
     }
 
     // Save any remaining text
-    if (currentTextBlock) {
-      assistantContent.push({ type: 'text', text: currentTextBlock });
-    }
+    flushTextBlock();
 
     // If we had tool calls and Claude wants to continue, add messages and loop
     if (toolResults.length > 0 && stopReason === 'tool_use') {
       messages.push({ role: 'assistant', content: assistantContent });
       messages.push({ role: 'user', content: toolResults });
+      moveCacheBreakpointToLastBlock(messages);
     } else {
       if (stopReason === 'max_tokens') {
         yield {
