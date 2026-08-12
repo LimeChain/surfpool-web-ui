@@ -1,4 +1,5 @@
 import type { Scenario } from '@/lib/scenarios-data';
+import DraftField from './draft-field';
 import type { ScenarioBentoItem } from './scenarios-bento.types';
 
 interface ScenarioDetailOverviewProps {
@@ -23,16 +24,17 @@ export default function ScenarioDetailOverview({
               Description
             </h3>
             {editingDescription === item.id ? (
-              <textarea
-                value={
+              <DraftField
+                multiline
+                allowEmpty
+                rows={3}
+                initialValue={
                   item.description === 'No description available' || item.description === 'Add a description...'
                     ? ''
-                    : item.description
+                    : item.description || ''
                 }
-                onChange={(e) => onUpdateScenario(item.id, { description: e.target.value })}
-                onBlur={() => onEditDescription(null)}
-                autoFocus
-                rows={3}
+                onCommit={(description) => onUpdateScenario(item.id, { description })}
+                onDone={() => onEditDescription(null)}
                 className="w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-950 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:text-zinc-50"
               />
             ) : (

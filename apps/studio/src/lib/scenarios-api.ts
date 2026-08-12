@@ -16,30 +16,103 @@ export function createScenarioPayload(scenario: Scenario) {
 }
 
 /**
+ * The backend override document as PATCH payloads must send it. The index
+ * signature lets fields the UI does not know about (loaded via
+ * `ScenarioAction.original`) pass through a full-replace PATCH unharmed.
+ */
+export type OverridePayload = {
+  id: string;
+  templateId: string;
+  values: Record<string, unknown>;
+  scenarioRelativeSlot: number;
+  label: string;
+  enabled: boolean;
+  fetchBeforeUse: boolean;
+  account?: unknown;
+  [passthrough: string]: unknown;
+};
+
+/**
  * Convert a scenario's steps/actions into the backend "overrides" format
- * and return the full PATCH payload.
+ * and return the full PATCH payload. Mirrors the scenario editor's sync
+ * payload: everything loaded from the backend (override ids, values, account,
+ * fetchBeforeUse, enabled, tags) is carried through, so a metadata-only
+ * update cannot strip a scenario of its data.
  */
 export function buildUpdatePayload(scenario: Scenario) {
-  const overrides = (scenario.steps || []).flatMap((step, slotIndex) =>
-    (step.actions || []).map((action) => ({
-      id: `${action.protocolId}_${action.actionId}_${slotIndex}`,
-      templateId: `${action.protocolId}_${action.actionId}`,
-      values: {},
-      scenarioRelativeSlot: slotIndex + 1,
-      label: action.action,
-      enabled: true,
-      fetchBeforeUse: false,
-      account: { pubkey: '11111111111111111111111111111111' },
-    }))
-  );
+  const overrides = (scenario.steps || []).flatMap((step, stepIndex) => {
+    const slotNumber = step.slotNumber ?? stepIndex;
+    return (step.actions || []).map((action) => {
+      const original = (action.original ?? {}) as Partial<OverridePayload>;
+      const override: OverridePayload = {
+        ...original,
+        id: action.overrideId || `${action.actionId}_${slotNumber}`,
+        templateId: action.actionId,
+        values: flattenOverrideValues(action.overrides, action.modifiedFields),
+        scenarioRelativeSlot: slotNumber,
+        label: action.action,
+        enabled: original.enabled ?? true,
+        fetchBeforeUse: action.fetchBeforeUse || false,
+      };
+      if (action.account) {
+        override.account = action.account;
+      }
+      return override;
+    });
+  });
 
   return {
     id: scenario.id,
     name: scenario.name,
     description: scenario.description || '',
     overrides,
-    tags: [],
+    tags: scenario.tags || [],
   };
+}
+
+/**
+ * Collect an action's override values into the flat dot-notation map the backend expects.
+ *
+ * Values arrive in two shapes: entries restored from the backend (and constant_ref selections
+ * like feed_id) are already flat at the top level, while fields edited in the UI live nested
+ * inside the account-shaped editing state, reachable only through their dotted paths in
+ * modifiedFields. Dropping either shape loses data, so both are collected.
+ */
+export function flattenOverrideValues(
+  overrides: Record<string, unknown> | undefined,
+  modifiedFields?: string[]
+): Record<string, unknown> {
+  const flat: Record<string, unknown> = {};
+  if (!overrides) return flat;
+
+  const isNestedObject = (value: unknown): boolean =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!isNestedObject(value)) {
+      flat[key] = value;
+    }
+  }
+
+  for (const path of modifiedFields ?? []) {
+    if (path in flat) continue;
+
+    let current: unknown = overrides;
+    for (const key of path.split('.')) {
+      if (isNestedObject(current)) {
+        current = (current as Record<string, unknown>)[key];
+      } else {
+        current = undefined;
+        break;
+      }
+    }
+
+    if (current !== undefined && !isNestedObject(current)) {
+      flat[path] = current;
+    }
+  }
+
+  return flat;
 }
 
 /**
