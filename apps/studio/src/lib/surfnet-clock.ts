@@ -23,3 +23,27 @@ export async function fetchSurfnetClockSeconds(rpcUrl: string): Promise<number |
     return null;
   }
 }
+
+export function startSurfnetClockPolling(
+  rpcUrl: string,
+  onUpdate: (seconds: number | null) => void,
+  intervalMs = 1000
+): () => void {
+  let stopped = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const poll = async () => {
+    const seconds = await fetchSurfnetClockSeconds(rpcUrl);
+    if (stopped) return;
+
+    onUpdate(seconds);
+    timeout = setTimeout(poll, intervalMs);
+  };
+
+  void poll();
+
+  return () => {
+    stopped = true;
+    if (timeout !== undefined) clearTimeout(timeout);
+  };
+}
