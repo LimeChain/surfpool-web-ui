@@ -189,13 +189,14 @@ describe('buildUpdatePayload', () => {
 
 describe('scenarioToBentoItem', () => {
   it('maps all fields correctly', () => {
-    const result = scenarioToBentoItem(baseScenario);
+    const result = scenarioToBentoItem({ ...baseScenario, tags: ['pyth', 'oracle'] });
     expect(result.id).toBe('test-123');
     expect(result.name).toBe('Test Scenario');
     expect(result.description).toBe('A test scenario');
     expect(result.created_at).toBe('2025-01-01T00:00:00Z');
     expect(result.updated_at).toBe('2025-01-02T00:00:00Z');
     expect(result.steps).toBe(baseScenario.steps);
+    expect(result.tags).toEqual(['pyth', 'oracle']);
     expect(result.metadata).toBeUndefined();
   });
 

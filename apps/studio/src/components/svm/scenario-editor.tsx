@@ -65,6 +65,7 @@ interface ScenarioEditorProps {
   scenarioId?: string;
   scenarioName?: string;
   scenarioDescription?: string;
+  scenarioTags?: string[];
   initialSteps?: Array<{
     id: string;
     name: string;
@@ -89,10 +90,10 @@ export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
   scenarioDescription = 'Scenario created from editor',
+  scenarioTags,
   initialSteps,
 }: ScenarioEditorProps) {
   const { rpcUrl, studioUrl } = useAppConfig();
-  const [scenarioTags, setScenarioTags] = React.useState<string[]>([]);
   const [mode, setMode] = useState<'read' | 'edit' | 'play'>('read');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSearchQuery, setActionSearchQuery] = useState('');
@@ -118,28 +119,6 @@ export default function ScenarioEditor({
   React.useEffect(() => {
     isFirstSlotsChangeRef.current = true;
   }, [scenarioId]);
-
-  // Load scenario tags from backend
-  React.useEffect(() => {
-    const loadScenarioTags = async () => {
-      try {
-        // There is no GET /v1/scenarios/{id} endpoint; the CLI's SPA fallback answers
-        // it with index.html and HTTP 200, so the tags come from the list endpoint
-        const response = await fetch(`${studioUrl}/v1/scenarios`);
-        if (response.ok) {
-          const data = await response.json();
-          const scenario = Array.isArray(data) ? data.find((s) => s.id === scenarioId) : undefined;
-          if (scenario?.tags) {
-            setScenarioTags(scenario.tags);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading scenario tags:', error);
-      }
-    };
-
-    loadScenarioTags();
-  }, [scenarioId, studioUrl]);
 
   // Load scenario from initialSteps (backend data) - always prioritize fresh data
   React.useEffect(() => {
@@ -278,7 +257,7 @@ export default function ScenarioEditor({
             name: scenarioName,
             description: scenarioDescription,
             overrides: overrides,
-            tags: scenarioTags, // Preserve existing tags
+            tags: scenarioTags ?? [],
           };
 
           logger.log('🔍 PATCH request data:', JSON.stringify(patchData, null, 2));
@@ -311,7 +290,7 @@ export default function ScenarioEditor({
     } else {
       isFirstSlotsChangeRef.current = false;
     }
-  }, [slots, scenarioId, scenarioName, scenarioDescription, studioUrl]);
+  }, [slots, scenarioId, scenarioName, scenarioDescription, scenarioTags, studioUrl]);
 
   // Handle ESC key to exit Edit mode
   React.useEffect(() => {

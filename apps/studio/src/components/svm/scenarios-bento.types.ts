@@ -25,6 +25,7 @@ export interface ScenarioBentoItem extends BentoItem {
   created_at?: string;
   updated_at?: string;
   steps?: ScenarioStep[];
+  tags?: string[];
 }
 
 export interface ExampleScenario {
