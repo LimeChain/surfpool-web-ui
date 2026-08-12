@@ -364,6 +364,7 @@ describe('streamClaudeResponse thinking round-trip', () => {
     expect(events.filter((e) => e.type === 'error').map((e) => e.content)).toEqual([
       'The model ran out of output budget before finishing. Try again, or narrow the request.',
     ]);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });
 
@@ -518,6 +519,7 @@ describe('streamOpenAIResponse (Responses API)', () => {
     const events = await runOpenAITurn();
     expect(requests).toHaveLength(8);
     expect(events.find((e) => e.type === 'error')?.content).toContain('Stopped after 8 tool rounds');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });
 
@@ -563,5 +565,6 @@ describe('streamClaudeResponse thinking toggle', () => {
     ]);
     const events = await runClaudeTurn('claude-opus-5', true);
     expect(events.find((e) => e.type === 'error')?.content).toContain('context window');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });
