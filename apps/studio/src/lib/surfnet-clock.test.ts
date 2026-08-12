@@ -52,4 +52,13 @@ describe('fetchSurfnetClockSeconds', () => {
     });
     await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
   });
+
+  it('returns null when the timestamp is null', async () => {
+    mockFetchResponse({
+      json: async () => ({
+        result: { value: { data: { parsed: { info: { unixTimestamp: null } } } } },
+      }),
+    });
+    await expect(fetchSurfnetClockSeconds('http://127.0.0.1:8899')).resolves.toBeNull();
+  });
 });
