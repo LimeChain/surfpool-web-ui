@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createPumpGraduationScenario,
   createScenarioPayload,
   flattenOverrideValues,
   parseScenariosJson,
@@ -40,6 +41,42 @@ const baseScenario: Scenario = {
     },
   ],
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('createPumpGraduationScenario', () => {
+  it('posts the trimmed mint to the specialized scenario endpoint', async () => {
+    const payload = {
+      id: 'scenario-id',
+      tokenMint: 'mint',
+      completingBuyAmount: 10,
+      migrationReserve: 20,
+      addresses: { bondingCurve: 'curve', curveVault: 'vault', canonicalPool: 'pool' },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      );
+
+    await expect(createPumpGraduationScenario('http://studio', ' mint ')).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/pump-graduation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenMint: 'mint' }),
+    });
+  });
+
+  it('surfaces backend validation failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Bonding curve is already complete', { status: 400 }));
+
+    await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
+      'Bonding curve is already complete'
+    );
+  });
+});
 
 describe('createScenarioPayload', () => {
   it('returns correct shape with empty overrides and tags', () => {

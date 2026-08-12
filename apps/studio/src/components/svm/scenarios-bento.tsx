@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
+import PumpGraduationDialog from './pump-graduation-dialog';
 import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
 import type { ScenarioBentoItem, ScenariosBentoProps } from './scenarios-bento.types';
@@ -56,6 +57,7 @@ export default function ScenariosBento({
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
+  const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -152,6 +154,20 @@ export default function ScenariosBento({
       console.error('Error creating scenario:', error);
       return null;
     }
+  };
+
+  const handleOpenPumpGraduationDialog = () => {
+    setPumpGraduationDialogOpen(true);
+  };
+
+  const handleClosePumpGraduationDialog = () => {
+    setPumpGraduationDialogOpen(false);
+  };
+
+  const handlePumpGraduationCreated = (scenarioId: string) => {
+    setPumpGraduationDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
 
   // Update scenario
@@ -354,6 +370,7 @@ export default function ScenariosBento({
             <DropdownMenu anchor="top end">
               <DropdownItem onClick={handleCreateScenario}>New scenario</DropdownItem>
               <DropdownItem onClick={() => importInputRef.current?.click()}>Import from file…</DropdownItem>
+              <DropdownItem onClick={handleOpenPumpGraduationDialog}>Pump graduation preset…</DropdownItem>
             </DropdownMenu>
           </Dropdown>
         </div>
@@ -384,6 +401,13 @@ export default function ScenariosBento({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <PumpGraduationDialog
+        open={pumpGraduationDialogOpen}
+        studioUrl={studioUrl}
+        onClose={handleClosePumpGraduationDialog}
+        onCreated={handlePumpGraduationCreated}
+      />
     </div>
   );
 }

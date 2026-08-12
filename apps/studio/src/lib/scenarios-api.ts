@@ -121,6 +121,36 @@ export function scenarioDownloadFile(
   };
 }
 
+export type PumpGraduationScenarioResult = {
+  id: string;
+  tokenMint: string;
+  completingBuyAmount: number;
+  migrationReserve: number;
+  addresses: {
+    bondingCurve: string;
+    curveVault: string;
+    canonicalPool: string;
+  };
+};
+
+export async function createPumpGraduationScenario(
+  studioUrl: string,
+  tokenMint: string
+): Promise<PumpGraduationScenarioResult> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/pump-graduation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tokenMint: tokenMint.trim() }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Pump graduation validation failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 /**
  * Build the POST body for creating a new scenario.
  */
