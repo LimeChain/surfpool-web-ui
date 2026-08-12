@@ -93,11 +93,20 @@ export function scenarioDownloadFile(
   } catch {
     return null;
   }
-  if (!Array.isArray(scenarios)) return null;
-
-  const scenario = scenarios.find((entry) => (entry as { id?: unknown })?.id === scenarioId) as
-    | Record<string, unknown>
-    | undefined;
+  let scenario: Record<string, unknown> | undefined;
+  if (Array.isArray(scenarios)) {
+    scenario = scenarios.find((entry) => (entry as { id?: unknown })?.id === scenarioId) as
+      | Record<string, unknown>
+      | undefined;
+  } else if (scenarios !== null && typeof scenarios === 'object') {
+    const entry = Object.entries(scenarios as Record<string, unknown>).find(
+      ([id, value]) => id === scenarioId || (value as { id?: unknown })?.id === scenarioId
+    );
+    if (entry && entry[1] !== null && typeof entry[1] === 'object' && !Array.isArray(entry[1])) {
+      const value = entry[1] as Record<string, unknown>;
+      scenario = typeof value.id === 'string' ? value : { ...value, id: entry[0] };
+    }
+  }
   if (!scenario) return null;
 
   const name = typeof scenario.name === 'string' ? scenario.name : '';
