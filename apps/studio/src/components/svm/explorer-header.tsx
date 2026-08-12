@@ -2,12 +2,13 @@ import TransactionInspector from '@/components/svm/transaction-inspector';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { S3Credentials, uploadToS3 } from '@/lib/s3-upload';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
+import { fetchSurfnetClockSeconds } from '@/lib/surfnet-clock';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
+import { getTimeUnitInMs, logger, MONEYMQ_ENDPOINT, SURFNET_DOMAIN } from '@surfpool/shared';
 import { Faucet } from '@surfpool/svm';
 import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
-import { getTimeUnitInMs, logger, MONEYMQ_ENDPOINT, SURFNET_DOMAIN } from '@surfpool/shared';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
@@ -46,6 +47,8 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
     'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'years'
   >('days');
   const [selectedTimeAmount, setSelectedTimeAmount] = useState<number>(7);
+  const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
+  const [simnetClockSeconds, setSimnetClockSeconds] = useState<number | null>(null);
   const [currentEpoch, setCurrentEpoch] = useState<number>(0);
   const [currentSlot, setCurrentSlot] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
@@ -78,6 +81,32 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
   const [showVisitButton, setShowVisitButton] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
   const snapshotWsRef = useRef<WebSocket | null>(null);
+
+  // Keep the simnet clock in the time travel dialog live. The simulated clock
+  // drifts from the wall clock (pauses, jumps, its own tick rate)
+  useEffect(() => {
+    if (!showTimeTravel) return;
+    let cancelled = false;
+    const readClock = () => {
+      fetchSurfnetClockSeconds(rpcUrl)
+        .then((seconds) => {
+          if (!cancelled) setSimnetClockSeconds(seconds);
+        })
+        .catch(() => {
+          if (!cancelled) setSimnetClockSeconds(null);
+        });
+    };
+    readClock();
+    const interval = setInterval(readClock, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [showTimeTravel, rpcUrl]);
+
+  useEffect(() => {
+    setTimeTravelError(null);
+  }, [showTimeTravel, timeTravelMode, selectedTimeAmount, selectedTimeUnit, selectedEpoch, selectedSlot]);
 
   // Typewriter effect for published URL
   useEffect(() => {
@@ -427,23 +456,36 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
     }
   };
 
+  const impossibleDateJump = timeTravelMode === 'date' && selectedTimeAmount < 0;
+  const timeTravelInputInvalid = timeTravelMode === 'date' && (!selectedTimeAmount || selectedTimeAmount < 0);
+  const timeTravelMessage = impossibleDateJump
+    ? 'Impossible time travel (for now) — the surfnet clock only moves forward'
+    : timeTravelError;
 
   // Handle time travel
   const handleTimeTravel = async () => {
     try {
+      setTimeTravelError(null);
       let timeTravelConfig: any;
 
       switch (timeTravelMode) {
-        case 'date':
-          if (selectedTimeAmount === null || selectedTimeAmount === 0) {
-            console.error('Please enter a valid time amount');
+        case 'date': {
+          if (timeTravelInputInvalid) {
             return;
           }
-          const now = new Date();
+          // The surfnet clock drifts from the wall clock (pauses, prior jumps, slower
+          // ticking), so the jump must be computed from the Clock sysvar, not Date.now().
+          // Otherwise consecutive jumps of the same amount barely move the clock.
+          const clockSeconds = await fetchSurfnetClockSeconds(rpcUrl);
+          if (clockSeconds === null) {
+            setTimeTravelError('Could not read the surfnet clock, time travel aborted');
+            return;
+          }
           const timeAmountMs = selectedTimeAmount * getTimeUnitInMs(selectedTimeUnit);
-          const targetTimestamp = Math.floor(now.getTime() + timeAmountMs);
-          timeTravelConfig = { absoluteTimestamp: targetTimestamp };
+          // Clock sysvar is in seconds; surfnet_timeTravel expects milliseconds
+          timeTravelConfig = { absoluteTimestamp: clockSeconds * 1000 + timeAmountMs };
           break;
+        }
         case 'epoch':
           timeTravelConfig = { absoluteEpoch: selectedEpoch };
           break;
@@ -482,10 +524,22 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             })
           );
           setShowTimeTravel(false);
+        } else if (data.error) {
+          const message =
+            typeof data.error.data === 'string' ? data.error.data : String(data.error.message ?? 'Unknown error');
+          logger.log('Time travel rejected:', message);
+          setTimeTravelError(
+            message.includes('past timestamp')
+              ? 'Impossible time travel (for now) — the surfnet clock only moves forward'
+              : message
+          );
         }
+      } else {
+        setTimeTravelError(`Time travel failed — the RPC returned HTTP ${response.status}`);
       }
     } catch (error) {
       console.error('❌ Error during time travel:', error);
+      setTimeTravelError('Time travel failed — is the surfnet still running?');
     }
   };
 
@@ -725,6 +779,14 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                     </div>
                   </div>
                 </div>
+                {!!simnetClockSeconds && !!selectedTimeAmount && selectedTimeAmount > 0 && (
+                  <div className="text-center text-sm text-zinc-400">
+                    After jump:{' '}
+                    {new Date(
+                      simnetClockSeconds * 1000 + selectedTimeAmount * getTimeUnitInMs(selectedTimeUnit)
+                    ).toLocaleString()}
+                  </div>
+                )}
               </div>
             )}
 
@@ -759,12 +821,15 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                 </div>
               </div>
             )}
+
+            {!!timeTravelMessage && <div className="mt-2 text-center text-sm text-red-400">{timeTravelMessage}</div>}
           </DialogBody>
 
           <DialogActions className="!justify-center">
             <button
               onClick={handleTimeTravel}
-              className="rounded border border-[#E034AE] bg-[#E034AE] px-6 py-2 font-medium text-white transition-colors hover:bg-[#C02A8F]"
+              disabled={timeTravelInputInvalid}
+              className="rounded border border-[#E034AE] bg-[#E034AE] px-6 py-2 font-medium text-white transition-colors hover:bg-[#C02A8F] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Jump
             </button>
