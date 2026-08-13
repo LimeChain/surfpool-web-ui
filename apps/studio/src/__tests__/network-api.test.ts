@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isNetworkInitializing, getNetworks, fetchRpc, checkNetworkStatus, Network } from './index';
+import { isNetworkInitializing, getNetworks, fetchRpc, checkNetworkStatus, Network } from '@/pages/api/network';
 
 function makeNetwork(overrides: Partial<Network> = {}): Network {
   return {
