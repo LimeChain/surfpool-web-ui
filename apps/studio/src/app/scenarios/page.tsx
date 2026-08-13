@@ -52,6 +52,7 @@ function ScenariosContent() {
               status: scenarioData.status || 'active',
               created_at: scenarioData.created_at,
               updated_at: scenarioData.updated_at,
+              tags: scenarioData.tags,
             };
 
             // Convert overrides to steps/slots for UI
@@ -71,6 +72,7 @@ function ScenariosContent() {
                 const protocolId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
 
                 slotMap.get(slotNumber)!.push({
+                  original: override,
                   overrideId: override.id, // Preserve the override ID from backend
                   protocolId: protocolId || 'unknown',
                   actionId: templateId || 'unknown', // Use full templateId as actionId
@@ -91,6 +93,7 @@ function ScenariosContent() {
                   name: `Slot ${slotNumber}`,
                   type: 'slot',
                   status: 'pending',
+                  slotNumber,
                   actions: actions,
                 }));
             }
@@ -107,6 +110,7 @@ function ScenariosContent() {
               status: scenarioData.status || 'active',
               created_at: scenarioData.created_at,
               updated_at: scenarioData.updated_at,
+              tags: scenarioData.tags,
             };
 
             // Convert overrides to steps/slots for UI
@@ -126,6 +130,7 @@ function ScenariosContent() {
                 const protocolId = firstDashIndex > 0 ? templateId.substring(0, firstDashIndex) : templateId;
 
                 slotMap.get(slotNumber)!.push({
+                  original: override,
                   overrideId: override.id, // Preserve the override ID from backend
                   protocolId: protocolId || 'unknown',
                   actionId: templateId || 'unknown', // Use full templateId as actionId
@@ -146,6 +151,7 @@ function ScenariosContent() {
                   name: `Slot ${slotNumber}`,
                   type: 'slot',
                   status: 'pending',
+                  slotNumber,
                   actions: actions,
                 }));
             }

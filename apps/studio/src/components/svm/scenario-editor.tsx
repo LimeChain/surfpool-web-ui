@@ -2,6 +2,7 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
+import { flattenOverrideValues, type OverridePayload } from '@/lib/scenarios-api';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -13,9 +14,9 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
-import { Combobox, ComboboxOption, ComboboxLabel, Select, Switch } from '@surfpool/ui';
-import { AnimatePresence, motion } from 'framer-motion';
 import { logger } from '@surfpool/shared';
+import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect, useRef, useState } from 'react';
 import TransactionInspector from './transaction-inspector';
 
@@ -47,6 +48,7 @@ interface Slot {
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
     account?: any; // Account address from template (Pubkey or PDA)
+    original?: Record<string, unknown>; // Untouched backend override, passed through on save
   }[];
 }
 
@@ -54,6 +56,7 @@ interface ScenarioEditorProps {
   scenarioId?: string;
   scenarioName?: string;
   scenarioDescription?: string;
+  scenarioTags?: string[];
   initialSteps?: Array<{
     id: string;
     name: string;
@@ -69,6 +72,7 @@ interface ScenarioEditorProps {
       fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
       overrides?: Record<string, unknown>; // Preserve the values/overrides from backend
       modifiedFields?: string[]; // Track which fields were modified
+      original?: Record<string, unknown>; // Untouched backend override, passed through on save
     }>;
   }>;
 }
@@ -77,10 +81,10 @@ export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
   scenarioDescription = 'Scenario created from editor',
+  scenarioTags,
   initialSteps,
 }: ScenarioEditorProps) {
   const { rpcUrl, studioUrl } = useAppConfig();
-  const [scenarioTags, setScenarioTags] = React.useState<string[]>([]);
   const [mode, setMode] = useState<'read' | 'edit' | 'play'>('read');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSearchQuery, setActionSearchQuery] = useState('');
@@ -106,25 +110,6 @@ export default function ScenarioEditor({
     isFirstSlotsChangeRef.current = true;
   }, [scenarioId]);
 
-  // Load scenario tags from backend
-  React.useEffect(() => {
-    const loadScenarioTags = async () => {
-      try {
-        const response = await fetch(`${studioUrl}/v1/scenarios/${scenarioId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.scenario?.tags) {
-            setScenarioTags(data.scenario.tags);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading scenario tags:', error);
-      }
-    };
-
-    loadScenarioTags();
-  }, [scenarioId, studioUrl]);
-
   // Load scenario from initialSteps (backend data) - always prioritize fresh data
   React.useEffect(() => {
     if (initializedRef.current || typeof window === 'undefined') return;
@@ -140,14 +125,17 @@ export default function ScenarioEditor({
         actions: step.actions || [],
       }));
 
-      logger.log('Converted slots with actions:', convertedSlots.map(s => ({
-        id: s.id,
-        actions: s.actions.map(a => ({
-          actionId: a.actionId,
-          overrides: a.overrides,
-          modifiedFields: a.modifiedFields,
+      logger.log(
+        'Converted slots with actions:',
+        convertedSlots.map((s) => ({
+          id: s.id,
+          actions: s.actions.map((a) => ({
+            actionId: a.actionId,
+            overrides: a.overrides,
+            modifiedFields: a.modifiedFields,
+          })),
         }))
-      })));
+      );
 
       setSlots(convertedSlots);
       setHasAnimated(new Set(convertedSlots.map((s) => s.id)));
@@ -224,41 +212,22 @@ export default function ScenarioEditor({
           // Convert slots to overrides format for backend
           const overrides = slots.flatMap((slot) =>
             slot.actions.map((action) => {
-              // Start with existing overrides as flat values (they may already be flat from backend)
-              let flatValues: Record<string, unknown> = {};
+              // The backend expects flat dot-notation values ("price_message.price": 123);
+              // fields edited in the UI live nested and are reachable via modifiedFields
+              const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
-              // If action.overrides exists, extract only flat key-value pairs for the backend
-              // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
-              // Filter out any nested objects and only keep flat paths with primitive values
-              if (action.overrides && typeof action.overrides === 'object') {
-                for (const [key, value] of Object.entries(action.overrides)) {
-                  // Only include if the value is a primitive (not a nested object)
-                  // Arrays are allowed as values
-                  const isNestedObject = value !== null && typeof value === 'object' && !Array.isArray(value);
-                  if (!isNestedObject) {
-                    // Only include keys that look like flat paths (contain dots) or are simple keys
-                    flatValues[key] = value;
-                  }
-                }
-              }
-
-              const override: {
-                id: string;
-                templateId: string;
-                values: Record<string, unknown>;
-                scenarioRelativeSlot: number;
-                label: string;
-                enabled: boolean;
-                fetchBeforeUse: boolean;
-                account?: string;
-              } = {
+              const original = (action.original ?? {}) as Partial<OverridePayload>;
+              const override: OverridePayload = {
+                // Fields the UI does not edit (enabled, future backend additions)
+                // come from the loaded override and survive the full-replace PATCH
+                ...original,
                 // Use existing overrideId if available, otherwise generate one
                 id: action.overrideId || `${action.actionId}_${slot.height}`,
                 templateId: action.actionId, // actionId IS the templateId
                 values: flatValues,
                 scenarioRelativeSlot: slot.height, // 0-indexed to match backend
                 label: action.action,
-                enabled: true,
+                enabled: original.enabled ?? true,
                 fetchBeforeUse: action.fetchBeforeUse || false,
               };
 
@@ -276,7 +245,7 @@ export default function ScenarioEditor({
             name: scenarioName,
             description: scenarioDescription,
             overrides: overrides,
-            tags: scenarioTags, // Preserve existing tags
+            tags: scenarioTags ?? [],
           };
 
           logger.log('🔍 PATCH request data:', JSON.stringify(patchData, null, 2));
@@ -309,7 +278,7 @@ export default function ScenarioEditor({
     } else {
       isFirstSlotsChangeRef.current = false;
     }
-  }, [slots, scenarioId, scenarioName, scenarioDescription, studioUrl]);
+  }, [slots, scenarioId, scenarioName, scenarioDescription, scenarioTags, studioUrl]);
 
   // Handle ESC key to exit Edit mode
   React.useEffect(() => {
@@ -325,7 +294,7 @@ export default function ScenarioEditor({
           setFetchBeforeUse(false);
         } else {
           // Check if the selected slot has more than 1 override
-          const selectedSlot = slots.find(s => s.id === selectedSlotId);
+          const selectedSlot = slots.find((s) => s.id === selectedSlotId);
           if (selectedSlot && selectedSlot.actions.length > 1) {
             // If slot has multiple overrides, just exit edit mode but keep slot expanded
             setMode('read');
@@ -804,31 +773,22 @@ export default function ScenarioEditor({
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
-        // Start with existing overrides as flat values (they may already be flat from backend)
-        let flatValues: Record<string, unknown> = {};
+        // The backend expects flat dot-notation values ("price_message.price": 123);
+        // fields edited in the UI live nested and are reachable via modifiedFields
+        const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
-        // If action.overrides exists, extract only flat key-value pairs
-        // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
-        // Filter out any nested objects and only keep flat paths with primitive values
-        if (action.overrides && typeof action.overrides === 'object') {
-          for (const [key, value] of Object.entries(action.overrides)) {
-            // Only include if the value is a primitive (not a nested object)
-            // Arrays are allowed as values
-            const isNestedObject = value !== null && typeof value === 'object' && !Array.isArray(value);
-            if (!isNestedObject) {
-              flatValues[key] = value;
-            }
-          }
-        }
-
-        const override: any = {
+        const original = (action.original ?? {}) as Partial<OverridePayload>;
+        const override: OverridePayload = {
+          // Fields the UI does not edit (enabled, future backend additions)
+          // come from the loaded override and pass through unchanged
+          ...original,
           // Use existing overrideId if available, otherwise generate one
           id: action.overrideId || `${action.actionId}_${slot.height}`,
           templateId: action.actionId, // actionId IS the templateId
           values: flatValues,
           scenarioRelativeSlot: slot.height, // 0-indexed to match backend
           label: action.action,
-          enabled: true,
+          enabled: original.enabled ?? true,
           fetchBeforeUse: action.fetchBeforeUse || false,
         };
 
@@ -1032,7 +992,10 @@ export default function ScenarioEditor({
                 const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
                 const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
                 const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
-                const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot || (selectedSlotId === slot.id && slot.actions.length > 1);
+                const shouldExpand =
+                  (selectedSlotId === slot.id && mode === 'edit') ||
+                  isCurrentSlot ||
+                  (selectedSlotId === slot.id && slot.actions.length > 1);
 
                 // In play mode, only show previous, current, and next slots
                 if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
@@ -1176,12 +1139,17 @@ export default function ScenarioEditor({
                                                     if (action.overrides && Object.keys(action.overrides).length > 0) {
                                                       // Check if overrides are in flat dot-notation format
                                                       const keys = Object.keys(action.overrides);
-                                                      const isFlat = keys.some(k => k.includes('.'));
+                                                      const isFlat = keys.some((k) => k.includes('.'));
 
                                                       if (isFlat) {
                                                         // Convert flat to nested for the form
                                                         restoredData = flatToNested(action.overrides);
-                                                        logger.log('Converting flat overrides to nested:', action.overrides, '->', restoredData);
+                                                        logger.log(
+                                                          'Converting flat overrides to nested:',
+                                                          action.overrides,
+                                                          '->',
+                                                          restoredData
+                                                        );
                                                       } else {
                                                         restoredData = { ...action.overrides };
                                                       }
@@ -1189,7 +1157,10 @@ export default function ScenarioEditor({
 
                                                     // Extract constant_ref values from saved PDA seeds
                                                     // This restores "PDA Configuration" values when editing an existing override
-                                                    if (action.account?.pda?.seeds && foundAction.template?.address?.pda?.seeds) {
+                                                    if (
+                                                      action.account?.pda?.seeds &&
+                                                      foundAction.template?.address?.pda?.seeds
+                                                    ) {
                                                       const savedSeeds = action.account.pda.seeds;
                                                       const templateSeeds = foundAction.template.address.pda.seeds;
                                                       // Get properties in new unified format
@@ -1200,7 +1171,10 @@ export default function ScenarioEditor({
                                                       // Note: Backend serializes PropertyKind as "type" field
                                                       const findConstantRefProp = (path: string) => {
                                                         return templateProperties.find(
-                                                          (prop: any) => typeof prop !== 'string' && prop.path === path && prop.type === 'constant_ref'
+                                                          (prop: any) =>
+                                                            typeof prop !== 'string' &&
+                                                            prop.path === path &&
+                                                            prop.type === 'constant_ref'
                                                         );
                                                       };
 
@@ -1212,7 +1186,11 @@ export default function ScenarioEditor({
                                                       // This preserves the exact positional relationship
                                                       logger.log('  Matching seeds by position:');
 
-                                                      const matchSeedsByPosition = (tSeeds: any[], sSeeds: any[], prefix: string = '') => {
+                                                      const matchSeedsByPosition = (
+                                                        tSeeds: any[],
+                                                        sSeeds: any[],
+                                                        prefix: string = ''
+                                                      ) => {
                                                         tSeeds.forEach((templateSeed: any, index: number) => {
                                                           const savedSeed = sSeeds[index];
                                                           if (!savedSeed) return;
@@ -1229,19 +1207,29 @@ export default function ScenarioEditor({
                                                             if (savedPubkey) {
                                                               const constantRefProp = findConstantRefProp(propName);
 
-                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                              if (
+                                                                constantRefProp &&
+                                                                constantRefProp.constant &&
+                                                                constants[constantRefProp.constant]
+                                                              ) {
                                                                 const constantDef = constants[constantRefProp.constant];
                                                                 const matchingOption = constantDef.options?.find(
                                                                   (opt: any) => opt.value === savedPubkey
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${savedPubkey} (${matchingOption.label || matchingOption.id})`
+                                                                  );
                                                                 } else {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (not in constants)`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${savedPubkey} (not in constants)`
+                                                                  );
                                                                 }
                                                               } else {
-                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (no constant_ref)`);
+                                                                logger.log(
+                                                                  `    ${prefix}[${index}] ${propName} = ${savedPubkey} (no constant_ref)`
+                                                                );
                                                               }
 
                                                               restoredData[propName] = savedPubkey;
@@ -1256,19 +1244,29 @@ export default function ScenarioEditor({
                                                               const savedValue = String(savedSeed.u16Be);
                                                               const constantRefProp = findConstantRefProp(propName);
 
-                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                              if (
+                                                                constantRefProp &&
+                                                                constantRefProp.constant &&
+                                                                constants[constantRefProp.constant]
+                                                              ) {
                                                                 const constantDef = constants[constantRefProp.constant];
                                                                 const matchingOption = constantDef.options?.find(
                                                                   (opt: any) => opt.value === savedValue
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${savedValue} (${matchingOption.label || matchingOption.id})`
+                                                                  );
                                                                 } else {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (not in constants)`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${savedValue} (not in constants)`
+                                                                  );
                                                                 }
                                                               } else {
-                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (no constant_ref)`);
+                                                                logger.log(
+                                                                  `    ${prefix}[${index}] ${propName} = ${savedValue} (no constant_ref)`
+                                                                );
                                                               }
 
                                                               restoredData[propName] = savedValue;
@@ -1282,29 +1280,48 @@ export default function ScenarioEditor({
 
                                                             // Case 1: savedSeed.bytes is an array of numbers (original format)
                                                             if (savedSeed.bytes && Array.isArray(savedSeed.bytes)) {
-                                                              hexValue = '0x' + savedSeed.bytes.map((b: number) => b.toString(16).padStart(2, '0')).join('');
+                                                              hexValue =
+                                                                '0x' +
+                                                                savedSeed.bytes
+                                                                  .map((b: number) => b.toString(16).padStart(2, '0'))
+                                                                  .join('');
                                                             }
                                                             // Case 2: savedSeed.bytes32Ref contains the hex value directly (LLM format)
-                                                            else if (savedSeed.bytes32Ref && typeof savedSeed.bytes32Ref === 'string' && savedSeed.bytes32Ref.startsWith('0x')) {
+                                                            else if (
+                                                              savedSeed.bytes32Ref &&
+                                                              typeof savedSeed.bytes32Ref === 'string' &&
+                                                              savedSeed.bytes32Ref.startsWith('0x')
+                                                            ) {
                                                               hexValue = savedSeed.bytes32Ref;
                                                             }
 
                                                             if (hexValue) {
                                                               const constantRefProp = findConstantRefProp(propName);
 
-                                                              if (constantRefProp && constantRefProp.constant && constants[constantRefProp.constant]) {
+                                                              if (
+                                                                constantRefProp &&
+                                                                constantRefProp.constant &&
+                                                                constants[constantRefProp.constant]
+                                                              ) {
                                                                 const constantDef = constants[constantRefProp.constant];
                                                                 const matchingOption = constantDef.options?.find(
-                                                                  (opt: any) => opt.value.toLowerCase() === hexValue!.toLowerCase()
+                                                                  (opt: any) =>
+                                                                    opt.value.toLowerCase() === hexValue!.toLowerCase()
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${hexValue} (${matchingOption.label || matchingOption.id})`
+                                                                  );
                                                                 } else {
-                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (not in constants)`);
+                                                                  logger.log(
+                                                                    `    ${prefix}[${index}] ${propName} = ${hexValue} (not in constants)`
+                                                                  );
                                                                 }
                                                               } else {
-                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (no constant_ref)`);
+                                                                logger.log(
+                                                                  `    ${prefix}[${index}] ${propName} = ${hexValue} (no constant_ref)`
+                                                                );
                                                               }
 
                                                               restoredData[propName] = hexValue;
@@ -1312,7 +1329,10 @@ export default function ScenarioEditor({
                                                           }
 
                                                           // Recursively handle nested derivedPda
-                                                          if (templateSeed.derivedPda?.seeds && savedSeed.derivedPda?.seeds) {
+                                                          if (
+                                                            templateSeed.derivedPda?.seeds &&
+                                                            savedSeed.derivedPda?.seeds
+                                                          ) {
                                                             matchSeedsByPosition(
                                                               templateSeed.derivedPda.seeds,
                                                               savedSeed.derivedPda.seeds,
@@ -1330,7 +1350,7 @@ export default function ScenarioEditor({
                                                     // Combine action.modifiedFields with any restored constant_ref fields
                                                     const allModifiedFields = new Set(action.modifiedFields || []);
                                                     // Add all keys from restoredData that came from PDA seeds
-                                                    Object.keys(restoredData).forEach(key => {
+                                                    Object.keys(restoredData).forEach((key) => {
                                                       if (restoredData[key] !== undefined && restoredData[key] !== '') {
                                                         allModifiedFields.add(key);
                                                       }
@@ -1669,13 +1689,26 @@ export default function ScenarioEditor({
 
                                     // Helper to check if a field is a constant_ref
                                     // Note: Backend serializes PropertyKind as "type" field (not "kind")
-                                    const getConstantRefInfo = (fieldPath: string): { isConstantRef: boolean; constantDef?: any; label?: string; description?: string } => {
+                                    const getConstantRefInfo = (
+                                      fieldPath: string
+                                    ): {
+                                      isConstantRef: boolean;
+                                      constantDef?: any;
+                                      label?: string;
+                                      description?: string;
+                                    } => {
                                       // Find the property by path in the new unified format
                                       const prop = rawProperties.find(
                                         (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
                                       );
                                       // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
-                                      if (prop && typeof prop !== 'string' && prop.type === 'constant_ref' && prop.constant && constants[prop.constant]) {
+                                      if (
+                                        prop &&
+                                        typeof prop !== 'string' &&
+                                        prop.type === 'constant_ref' &&
+                                        prop.constant &&
+                                        constants[prop.constant]
+                                      ) {
                                         return {
                                           isConstantRef: true,
                                           constantDef: constants[prop.constant],
@@ -1687,7 +1720,9 @@ export default function ScenarioEditor({
                                     };
 
                                     // Helper to get property metadata (label, description)
-                                    const getPropertyMeta = (fieldPath: string): { label?: string; description?: string } => {
+                                    const getPropertyMeta = (
+                                      fieldPath: string
+                                    ): { label?: string; description?: string } => {
                                       const prop = rawProperties.find(
                                         (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
                                       );
@@ -1915,7 +1950,7 @@ export default function ScenarioEditor({
                                                 <p className="mt-0.5 text-xs text-zinc-500">{displayDescription}</p>
                                               )}
                                             </div>
-                                            <div className="flex items-center gap-2 ml-2">
+                                            <div className="ml-2 flex items-center gap-2">
                                               {fieldState === 'override' && (
                                                 <>
                                                   <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
@@ -1953,6 +1988,10 @@ export default function ScenarioEditor({
                                           ) : (
                                             <input
                                               type={inputType}
+                                              // Scrolling over a focused number input silently changes its value
+                                              onWheel={
+                                                inputType === 'number' ? (e) => e.currentTarget.blur() : undefined
+                                              }
                                               value={getValue(fieldPath)}
                                               onChange={(e) => {
                                                 let newValue: any = e.target.value;
@@ -1996,16 +2035,22 @@ export default function ScenarioEditor({
                                     const renderConstantRefFields = () => {
                                       // Filter for constant_ref properties from the new unified format
                                       // Note: Backend serializes PropertyKind as "type" field
-                                      const constantRefProps = rawProperties.filter(
-                                        (prop: any) => typeof prop !== 'string' && prop.type === 'constant_ref' && prop.constant && constants[prop.constant]
-                                      ).map((prop: any) => ({
-                                        // Map to the old format for compatibility with existing rendering logic
-                                        name: prop.path,
-                                        type: 'constant_ref',
-                                        constant: prop.constant,
-                                        label: prop.label,
-                                        description: prop.description,
-                                      }));
+                                      const constantRefProps = rawProperties
+                                        .filter(
+                                          (prop: any) =>
+                                            typeof prop !== 'string' &&
+                                            prop.type === 'constant_ref' &&
+                                            prop.constant &&
+                                            constants[prop.constant]
+                                        )
+                                        .map((prop: any) => ({
+                                          // Map to the old format for compatibility with existing rendering logic
+                                          name: prop.path,
+                                          type: 'constant_ref',
+                                          constant: prop.constant,
+                                          label: prop.label,
+                                          description: prop.description,
+                                        }));
 
                                       if (constantRefProps.length === 0) return null;
 
@@ -2014,7 +2059,7 @@ export default function ScenarioEditor({
                                         constantDef,
                                         fieldPath,
                                         currentValue,
-                                        isModified
+                                        isModified,
                                       }: {
                                         constantDef: any;
                                         fieldPath: string;
@@ -2025,11 +2070,12 @@ export default function ScenarioEditor({
                                         const currentValueStr = currentValue != null ? String(currentValue) : '';
 
                                         // Find the currently selected option (case-insensitive for hex values)
-                                        const selectedOption = constantDef.options.find(
-                                          (opt: any) => currentValueStr.startsWith('0x')
-                                            ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
-                                            : opt.value === currentValueStr
-                                        ) || null;
+                                        const selectedOption =
+                                          constantDef.options.find((opt: any) =>
+                                            currentValueStr.startsWith('0x')
+                                              ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
+                                              : opt.value === currentValueStr
+                                          ) || null;
 
                                         return (
                                           <Combobox
@@ -2077,9 +2123,7 @@ export default function ScenarioEditor({
                                                       {option.metadata?.symbol || option.id?.toUpperCase()}
                                                     </span>
                                                     {option.description && (
-                                                      <span className="ml-2 text-zinc-400">
-                                                        {option.description}
-                                                      </span>
+                                                      <span className="ml-2 text-zinc-400">{option.description}</span>
                                                     )}
                                                   </ComboboxLabel>
                                                 </div>
@@ -2134,18 +2178,17 @@ export default function ScenarioEditor({
                                                       // For hex values (like Pyth feed IDs), find matching option case-insensitively
                                                       currentValue.startsWith('0x')
                                                         ? constantDef.options.find(
-                                                            (opt: any) => opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                          )?.value || currentValue || ''
+                                                            (opt: any) =>
+                                                              opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                          )?.value ||
+                                                          currentValue ||
+                                                          ''
                                                         : currentValue || ''
                                                     }
                                                     onChange={(e) => {
                                                       setValue(fieldPath, e.target.value);
                                                     }}
-                                                    className={
-                                                      isModified
-                                                        ? '!border-yellow-500 !bg-yellow-500/5'
-                                                        : ''
-                                                    }
+                                                    className={isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''}
                                                   >
                                                     <option value="">
                                                       Select {constantDef.label.toLowerCase()}...
@@ -2159,45 +2202,47 @@ export default function ScenarioEditor({
                                                 )}
 
                                                 {/* Show selected token details */}
-                                                {currentValue && (() => {
-                                                  // Use case-insensitive comparison for hex values (like Pyth feed IDs)
-                                                  const selectedOption = constantDef.options.find(
-                                                    (opt: any) => currentValue.startsWith('0x')
-                                                      ? opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                      : opt.value === currentValue
-                                                  );
-                                                  if (!selectedOption) return null;
+                                                {currentValue &&
+                                                  (() => {
+                                                    // Use case-insensitive comparison for hex values (like Pyth feed IDs)
+                                                    const selectedOption = constantDef.options.find((opt: any) =>
+                                                      currentValue.startsWith('0x')
+                                                        ? opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                        : opt.value === currentValue
+                                                    );
+                                                    if (!selectedOption) return null;
 
-                                                  return (
-                                                    <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-3 py-2">
-                                                      {selectedOption.metadata?.logo_uri && (
-                                                        <img
-                                                          src={selectedOption.metadata.logo_uri}
-                                                          alt={selectedOption.metadata?.symbol || selectedOption.id}
-                                                          className="h-6 w-6 rounded-full"
-                                                          onError={(e) => {
-                                                            (e.target as HTMLImageElement).style.display = 'none';
-                                                          }}
-                                                        />
-                                                      )}
-                                                      <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="font-medium text-zinc-200">
-                                                            {selectedOption.metadata?.symbol || selectedOption.id?.toUpperCase()}
-                                                          </span>
-                                                          {selectedOption.metadata?.decimals !== undefined && (
-                                                            <span className="text-xs text-zinc-500">
-                                                              ({selectedOption.metadata.decimals} decimals)
+                                                    return (
+                                                      <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-3 py-2">
+                                                        {selectedOption.metadata?.logo_uri && (
+                                                          <img
+                                                            src={selectedOption.metadata.logo_uri}
+                                                            alt={selectedOption.metadata?.symbol || selectedOption.id}
+                                                            className="h-6 w-6 rounded-full"
+                                                            onError={(e) => {
+                                                              (e.target as HTMLImageElement).style.display = 'none';
+                                                            }}
+                                                          />
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                          <div className="flex items-center gap-2">
+                                                            <span className="font-medium text-zinc-200">
+                                                              {selectedOption.metadata?.symbol ||
+                                                                selectedOption.id?.toUpperCase()}
                                                             </span>
-                                                          )}
-                                                        </div>
-                                                        <div className="text-xs text-zinc-500 truncate font-mono">
-                                                          {selectedOption.value}
+                                                            {selectedOption.metadata?.decimals !== undefined && (
+                                                              <span className="text-xs text-zinc-500">
+                                                                ({selectedOption.metadata.decimals} decimals)
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          <div className="truncate font-mono text-xs text-zinc-500">
+                                                            {selectedOption.value}
+                                                          </div>
                                                         </div>
                                                       </div>
-                                                    </div>
-                                                  );
-                                                })()}
+                                                    );
+                                                  })()}
                                               </div>
                                             );
                                           })}
