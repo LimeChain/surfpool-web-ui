@@ -16,6 +16,7 @@ function ScenariosContent() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
   const [pendingRefresh, setPendingRefresh] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
 
   // Read search params reactively - these will update when URL changes
@@ -167,11 +168,16 @@ function ScenariosContent() {
         }
 
         setScenarios(loadedScenarios);
+        setRefreshError(null);
       } catch (error) {
         console.error('Error loading scenarios:', error);
         // Only blank the list if we never had one. A failed background refetch
-        // keeps the current list rather than wiping it.
-        if (!hasLoadedRef.current) setScenarios([]);
+        // keeps the current list rather than wiping it, but says the refresh failed.
+        if (!hasLoadedRef.current) {
+          setScenarios([]);
+        } else {
+          setRefreshError("Couldn't refresh the scenarios list.");
+        }
       } finally {
         setLoading(false);
         hasLoadedRef.current = true;
@@ -210,6 +216,10 @@ function ScenariosContent() {
     setRefreshKey((prev) => prev + 1);
   };
 
+  const handleDismissRefreshError = () => {
+    setRefreshError(null);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -219,13 +229,38 @@ function ScenariosContent() {
   }
 
   return (
-    <ScenariosBento
-      scenarios={scenarios}
-      onRefresh={handleRefresh}
-      onDetailPaneChange={setIsDetailPaneOpen}
-      initialSelectedId={selectedId}
-      initialTab={selectedTab}
-    />
+    <>
+      <ScenariosBento
+        scenarios={scenarios}
+        onRefresh={handleRefresh}
+        onDetailPaneChange={setIsDetailPaneOpen}
+        initialSelectedId={selectedId}
+        initialTab={selectedTab}
+      />
+      {!!refreshError && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-6 z-50 flex items-center gap-3 rounded-lg bg-zinc-900/90 px-3 py-2 text-sm text-red-400 shadow-lg"
+        >
+          <span>{refreshError}</span>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="text-zinc-300 underline-offset-2 hover:underline"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={handleDismissRefreshError}
+            aria-label="Dismiss"
+            className="text-zinc-500 hover:text-zinc-300"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 

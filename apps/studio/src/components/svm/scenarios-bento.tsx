@@ -189,6 +189,11 @@ export default function ScenariosBento({
 
   // Delete scenario
   const handleDeleteScenario = async (id: string) => {
+    const previousScenarios = scenarios;
+    // Drop the card immediately so it doesn't linger until the background
+    // refetch resolves; restore it if the delete fails.
+    setScenarios((prev) => prev.filter((s) => s.id !== id));
+
     try {
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'DELETE',
@@ -202,6 +207,7 @@ export default function ScenariosBento({
       onRefresh?.();
     } catch (error) {
       console.error('Error deleting scenario:', error);
+      setScenarios(previousScenarios);
     }
   };
 
