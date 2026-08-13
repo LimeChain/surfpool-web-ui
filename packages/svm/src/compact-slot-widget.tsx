@@ -19,6 +19,30 @@ const INACTIVE_SLOT_COLOR_MOBILE_LIGHT = '#18181b'; // zinc-900
 const INACTIVE_SLOT_COLOR_MOBILE_DARK = '#18181b'; // zinc-900
 const DISCONNECTED_SLOT_COLOR = '#ef4444'; // red-500
 
+export function absoluteSlotPosition(absoluteSlot: number, slotsInEpoch: number) {
+  if (
+    !Number.isSafeInteger(absoluteSlot) ||
+    absoluteSlot < 0 ||
+    !Number.isSafeInteger(slotsInEpoch) ||
+    slotsInEpoch <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    epoch: Math.floor(absoluteSlot / slotsInEpoch),
+    slotIndex: absoluteSlot % slotsInEpoch,
+  };
+}
+
+export function slotNotificationPosition(slotData: { slot?: unknown; [key: string]: unknown }, slotsInEpoch: number) {
+  return typeof slotData.slot === 'number' ? absoluteSlotPosition(slotData.slot, slotsInEpoch) : null;
+}
+
+export function isStaleSlotNotification(slot: number, minimumAcceptedSlot: number | null): boolean {
+  return minimumAcceptedSlot !== null && slot < minimumAcceptedSlot;
+}
+
 export default function CompactSlotWidget({
   className = '',
   rpcUrl,
@@ -39,6 +63,7 @@ export default function CompactSlotWidget({
   const lastSlotReceivedRef = useRef<number>(Date.now());
   const isClockPausedRef = useRef<boolean>(false);
   const slotsInEpochRef = useRef<number>(432000);
+  const minimumAcceptedSlotRef = useRef<number | null>(null);
 
   // Direct WebSocket refs for cleanupOnUnmount mode
   const directWsRef = useRef<WebSocket | null>(null);
@@ -84,15 +109,23 @@ export default function CompactSlotWidget({
 
   // Handle slot data from either direct WS or service
   const handleSlotData = (slotData: any) => {
-    if (slotData?.parent !== undefined) {
-      const newSlot = slotData.parent;
-      const currentSlotsInEpoch = slotsInEpochRef.current;
-      const slotIndexInEpoch = newSlot % currentSlotsInEpoch;
+    if (
+      typeof slotData?.slot !== 'number' ||
+      isStaleSlotNotification(slotData.slot, minimumAcceptedSlotRef.current)
+    ) {
+      return;
+    }
+
+    minimumAcceptedSlotRef.current = null;
+    const position = slotNotificationPosition(slotData, slotsInEpochRef.current);
+    if (position) {
+      const slotIndexInEpoch = position.slotIndex;
 
       lastSlotReceivedRef.current = Date.now();
+      setEpoch(position.epoch);
       setSlotHeight(slotIndexInEpoch);
 
-      const progress = (slotIndexInEpoch / currentSlotsInEpoch) * 100;
+      const progress = (slotIndexInEpoch / slotsInEpochRef.current) * 100;
       setEpochProgress(progress);
 
       const barIndex = slotIndexInEpoch % TOTAL_BARS;
@@ -147,7 +180,7 @@ export default function CompactSlotWidget({
 
           // Handle slot notifications
           if (data.method === 'slotNotification' && data.params?.result) {
-            const slot = data.params.result?.parent;
+            const slot = data.params.result?.slot;
             logger.log('CompactSlotWidget: Slot received:', slot);
             handleSlotData(data.params.result);
           }
@@ -282,14 +315,25 @@ export default function CompactSlotWidget({
   useEffect(() => {
     const handleEpochChange = (event: CustomEvent) => {
       logger.log('CompactSlotWidget: Received epoch change:', event.detail);
-      if (event.detail.epoch !== undefined) {
-        setEpoch(event.detail.epoch);
+      const absolutePosition =
+        event.detail.absoluteSlot === undefined
+          ? null
+          : absoluteSlotPosition(event.detail.absoluteSlot, slotsInEpochRef.current);
+      if (absolutePosition) {
+        minimumAcceptedSlotRef.current = event.detail.absoluteSlot;
       }
-      if (event.detail.slotIndex !== undefined) {
-        setSlotHeight(event.detail.slotIndex);
+      const nextEpoch = event.detail.epoch ?? absolutePosition?.epoch;
+      const nextSlotIndex = event.detail.slotIndex ?? absolutePosition?.slotIndex;
+
+      if (nextEpoch !== undefined) {
+        setEpoch(nextEpoch);
+      }
+      if (nextSlotIndex !== undefined) {
+        setSlotHeight(nextSlotIndex);
         // Recalculate progress with the new slot index
-        const progress = (event.detail.slotIndex / slotsInEpochRef.current) * 100;
+        const progress = (nextSlotIndex / slotsInEpochRef.current) * 100;
         setEpochProgress(progress);
+        setActiveBarIndex(nextSlotIndex % TOTAL_BARS);
       }
     };
 

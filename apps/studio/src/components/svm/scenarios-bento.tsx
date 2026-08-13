@@ -269,6 +269,7 @@ export default function ScenariosBento({
         return (
           <div className="h-[calc(100vh-300px)]">
             <ScenarioEditor
+              key={item.id}
               scenarioId={item.id}
               scenarioName={item.name}
               scenarioDescription={item.description}

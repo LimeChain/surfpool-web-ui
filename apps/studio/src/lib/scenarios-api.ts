@@ -2,6 +2,7 @@ import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
+import { overrideIdForAction } from './scenarios-playback';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -161,11 +162,11 @@ export type OverridePayload = {
 export function buildUpdatePayload(scenario: Scenario) {
   const overrides = (scenario.steps || []).flatMap((step, stepIndex) => {
     const slotNumber = step.slotNumber ?? stepIndex;
-    return (step.actions || []).map((action) => {
+    return (step.actions || []).map((action, actionIndex) => {
       const original = (action.original ?? {}) as Partial<OverridePayload>;
       const override: OverridePayload = {
         ...original,
-        id: action.overrideId || `${action.actionId}_${slotNumber}`,
+        id: overrideIdForAction(action, slotNumber, actionIndex),
         templateId: action.actionId,
         values: flattenOverrideValues(action.overrides, action.modifiedFields),
         scenarioRelativeSlot: slotNumber,

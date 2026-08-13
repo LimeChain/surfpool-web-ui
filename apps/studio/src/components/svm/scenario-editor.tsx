@@ -12,6 +12,20 @@ import {
   type OverridePayload,
 } from '@/lib/scenarios-api';
 import {
+  SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
+  dispatchAbsoluteSlotChange,
+  mergeOverrideOutcomes,
+  nextScenarioSlotHeight,
+  overrideIdForAction,
+  parseOverrideOutcomeResponse,
+  scenarioSlotInsertionHeight,
+  scenarioStepHeight,
+  scenarioTimelineStepPosition,
+  skippedOverrideToast,
+  validateScenarioSlotHeights,
+  type OverrideOutcomeState,
+} from '@/lib/scenarios-playback';
+import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
   CheckIcon,
@@ -26,7 +40,8 @@ import { logger } from '@surfpool/shared';
 import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -71,6 +86,7 @@ interface ScenarioEditorProps {
     name: string;
     type: string;
     status?: string;
+    slotNumber?: number;
     actions?: Array<{
       overrideId?: string; // Preserve the override ID from backend
       protocolId: string;
@@ -84,6 +100,37 @@ interface ScenarioEditorProps {
       original?: Record<string, unknown>; // Untouched backend override, passed through on save
     }>;
   }>;
+}
+
+function ensureOverrideIds(slots: Slot[]): Slot[] {
+  return slots.map((slot) => ({
+    ...slot,
+    actions: slot.actions.map((action) => ({
+      ...action,
+      overrideId: action.overrideId || crypto.randomUUID(),
+    })),
+  }));
+}
+
+async function requestJsonRpc(rpcUrl: string, method: string, params?: unknown[], keepalive = false): Promise<unknown> {
+  const request = params ? { jsonrpc: '2.0', id: 1, method, params } : { jsonrpc: '2.0', id: 1, method };
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: serializeScenarioJson(request),
+    keepalive,
+  });
+  if (!response.ok) {
+    throw new Error(`Surfnet RPC request failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function jsonRpcErrorMessage(payload: unknown): string | null {
+  if (payload === null || typeof payload !== 'object') return 'Surfnet returned an invalid response';
+  const error = (payload as { error?: { message?: unknown } }).error;
+  if (!error) return null;
+  return typeof error.message === 'string' ? error.message : 'Surfnet RPC request failed';
 }
 
 export default function ScenarioEditor({
@@ -109,11 +156,17 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
+  const [currentPlaybackStepIndex, setCurrentPlaybackStepIndex] = useState<number>(0);
+  const [playbackBaseSlot, setPlaybackBaseSlot] = useState<number | null>(null);
+  const [outcomeByOverrideId, setOutcomeByOverrideId] = useState<OverrideOutcomeState>({});
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
+  const activeOverrideIdsRef = useRef<string[]>([]);
+  const isPlaybackActiveRef = useRef(false);
+  const isPlayStartingRef = useRef(false);
+  const isStepAdvancingRef = useRef(false);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -129,11 +182,13 @@ export default function ScenarioEditor({
     // Always prefer initialSteps from backend over localStorage cache
     if (initialSteps && initialSteps.length > 0) {
       logger.log('Converting initialSteps to slots:', initialSteps);
-      const convertedSlots: Slot[] = initialSteps.map((step, index) => ({
-        id: step.id,
-        height: index,
-        actions: step.actions || [],
-      }));
+      const convertedSlots = ensureOverrideIds(
+        initialSteps.map((step, index) => ({
+          id: step.id,
+          height: scenarioStepHeight(step.slotNumber, index),
+          actions: step.actions || [],
+        }))
+      );
 
       logger.log(
         'Converted slots with actions:',
@@ -170,9 +225,10 @@ export default function ScenarioEditor({
           const scenario = scenarios[scenarioId];
           if (scenario?.slots && scenario.slots.length > 0) {
             logger.log('Loading from localStorage (no initialSteps):', scenario.slots);
-            setSlots(scenario.slots);
-            setHasAnimated(new Set(scenario.slots.map((s: Slot) => s.id)));
-            setSelectedSlotId(scenario.slots[0]?.id || '');
+            const normalizedSlots = ensureOverrideIds(scenario.slots);
+            setSlots(normalizedSlots);
+            setHasAnimated(new Set(normalizedSlots.map((slot) => slot.id)));
+            setSelectedSlotId(normalizedSlots[0]?.id || '');
             initializedRef.current = true;
             return;
           }
@@ -223,7 +279,7 @@ export default function ScenarioEditor({
         try {
           // Convert slots to overrides format for backend
           const overrides = slots.flatMap((slot) =>
-            slot.actions.map((action) => {
+            slot.actions.map((action, actionIndex) => {
               // The backend expects flat dot-notation values ("price_message.price": 123);
               // fields edited in the UI live nested and are reachable via modifiedFields
               const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
@@ -234,7 +290,7 @@ export default function ScenarioEditor({
                 // come from the loaded override and survive the full-replace PATCH
                 ...original,
                 // Use existing overrideId if available, otherwise generate one
-                id: action.overrideId || `${action.actionId}_${slot.height}`,
+                id: overrideIdForAction(action, slot.height, actionIndex),
                 templateId: action.actionId, // actionId IS the templateId
                 values: flatValues,
                 scenarioRelativeSlot: slot.height, // 0-indexed to match backend
@@ -596,9 +652,10 @@ export default function ScenarioEditor({
     }) || [];
 
   const addSlot = () => {
+    const nextHeight = nextScenarioSlotHeight(slots);
     const newSlot: Slot = {
       id: String(Date.now()),
-      height: slots.length,
+      height: nextHeight,
       actions: [],
     };
     setSlots((prevSlots) => [...prevSlots, newSlot]);
@@ -613,34 +670,36 @@ export default function ScenarioEditor({
 
     // Find the index of the slot being deleted
     const deletedIndex = slots.findIndex((slot) => slot.id === slotId);
+    if (slots[deletedIndex]?.height === 0) {
+      toast.error('Slot 0 is required and cannot be deleted');
+      return;
+    }
 
     const updatedSlots = slots.filter((slot) => slot.id !== slotId);
-    const reindexedSlots = updatedSlots.map((slot, idx) => ({
-      ...slot,
-      height: idx,
-    }));
-    setSlots(reindexedSlots);
+    setSlots(updatedSlots);
 
-    if (selectedSlotId === slotId && reindexedSlots.length > 0) {
+    if (selectedSlotId === slotId && updatedSlots.length > 0) {
       // Select the previous slot, or the first slot if deleting the first slot
       const newSelectedIndex = Math.max(0, deletedIndex - 1);
-      setSelectedSlotId(reindexedSlots[newSelectedIndex].id);
+      setSelectedSlotId(updatedSlots[newSelectedIndex].id);
     }
   };
 
   const insertSlotAt = (index: number) => {
+    const newHeight = scenarioSlotInsertionHeight(slots, index);
+    if (newHeight === null) {
+      toast.error('There is no free slot between these steps');
+      return;
+    }
+
     const newSlot: Slot = {
       id: String(Date.now()),
-      height: index,
+      height: newHeight,
       actions: [],
     };
 
     setSlots((prevSlots) => {
-      const updatedSlots = [...prevSlots.slice(0, index), newSlot, ...prevSlots.slice(index)];
-      return updatedSlots.map((slot, idx) => ({
-        ...slot,
-        height: idx,
-      }));
+      return [...prevSlots.slice(0, index), newSlot, ...prevSlots.slice(index)];
     });
 
     setTimeout(() => {
@@ -660,6 +719,7 @@ export default function ScenarioEditor({
             actions: [
               ...slot.actions,
               {
+                overrideId: crypto.randomUUID(),
                 protocolId: protocol.id,
                 actionId: action.id,
                 protocol: protocol.title,
@@ -700,6 +760,7 @@ export default function ScenarioEditor({
             actions: slot.actions.map((existingAction, index) =>
               index === actionIndex
                 ? {
+                    overrideId: existingAction.overrideId || crypto.randomUUID(),
                     protocolId: protocol.id,
                     actionId: action.id,
                     protocol: protocol.title,
@@ -727,64 +788,114 @@ export default function ScenarioEditor({
     setMouseX(null);
   };
 
-  const handleStepForward = async () => {
-    if (currentPlaybackSlot < slots.length - 1) {
-      setIsExecuting(false);
-
+  const resumePlaybackClock = useCallback(
+    async (showError: boolean): Promise<boolean> => {
       try {
-        // Get current absolute slot from getEpochInfo
-        const epochResponse = await fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getEpochInfo',
-          }),
-        });
+        const payload = await requestJsonRpc(rpcUrl, 'surfnet_resumeClock', undefined, !showError);
+        const errorMessage = jsonRpcErrorMessage(payload);
+        if (errorMessage) throw new Error(errorMessage);
 
-        if (epochResponse.ok) {
-          const epochData = await epochResponse.json();
-          if (epochData.result) {
-            const currentAbsoluteSlot = epochData.result.absoluteSlot;
-            const nextSlot = currentAbsoluteSlot + 1;
-
-            logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
-
-            // Call surfnet_timeTravel with next absolute slot
-            const timeTravelResponse = await fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'surfnet_timeTravel',
-                params: [{ absoluteSlot: nextSlot }],
-              }),
-            });
-
-            if (timeTravelResponse.ok) {
-              const timeTravelData = await timeTravelResponse.json();
-              logger.log('✅ Time travel successful:', timeTravelData.result);
-            } else {
-              console.error('❌ Time travel failed:', timeTravelResponse.status);
-            }
-          }
-        }
+        window.dispatchEvent(
+          new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: false },
+          })
+        );
+        return true;
       } catch (error) {
-        console.error('❌ Error stepping forward:', error);
+        console.error('Error resuming clock:', error);
+        if (showError) {
+          toast.error(error instanceof Error ? error.message : 'Failed to resume the clock');
+        }
+        return false;
+      }
+    },
+    [rpcUrl]
+  );
+
+  const cleanupActivePlayback = useCallback(
+    async (showError: boolean): Promise<boolean> => {
+      const overrideIds = activeOverrideIdsRef.current;
+      try {
+        if (overrideIds.length > 0) {
+          const payload = await requestJsonRpc(rpcUrl, 'surfnet_cancelScenarioOverrides', [overrideIds], !showError);
+          const errorMessage = jsonRpcErrorMessage(payload);
+          if (errorMessage) throw new Error(errorMessage);
+        }
+        activeOverrideIdsRef.current = [];
+      } catch (error) {
+        console.error('Error cancelling scenario overrides:', error);
+        if (showError) {
+          toast.error(error instanceof Error ? error.message : 'Failed to cancel pending overrides');
+        }
+        return false;
       }
 
-      setCurrentPlaybackSlot((prev) => prev + 1);
-      // Start executing next slot after a brief delay
-      setTimeout(() => setIsExecuting(true), 100);
+      const resumed = await resumePlaybackClock(showError);
+      if (resumed) isPlaybackActiveRef.current = false;
+      return resumed;
+    },
+    [resumePlaybackClock, rpcUrl]
+  );
+
+  const handleStepForward = async () => {
+    if (isStepAdvancingRef.current || currentPlaybackStepIndex >= slots.length - 1 || playbackBaseSlot === null) return;
+
+    const nextStepIndex = currentPlaybackStepIndex + 1;
+    const targetSlot = playbackBaseSlot + slots[nextStepIndex].height;
+    if (!Number.isSafeInteger(targetSlot)) {
+      toast.error('The target slot is outside the supported browser integer range');
+      return;
+    }
+
+    isStepAdvancingRef.current = true;
+    setIsExecuting(false);
+    try {
+      const payload = await requestJsonRpc(rpcUrl, 'surfnet_timeTravelWithOverrideOutcomes', [
+        { absoluteSlot: targetSlot },
+      ]);
+      const parsed = parseOverrideOutcomeResponse(payload, 'Failed to advance the scenario');
+      if (!parsed.ok) throw new Error(parsed.message);
+      if (parsed.slot !== targetSlot) throw new Error('Surfnet returned an unexpected target slot');
+      dispatchAbsoluteSlotChange(parsed.slot);
+      const outcomes = parsed.outcomes;
+
+      function mergeCurrentOutcomes(current: OverrideOutcomeState): OverrideOutcomeState {
+        return mergeOverrideOutcomes(current, outcomes);
+      }
+      setOutcomeByOverrideId(mergeCurrentOutcomes);
+      const skippedToast = skippedOverrideToast(outcomes, slots[nextStepIndex].height);
+      if (skippedToast) {
+        toast.error(skippedToast.title, {
+          id: SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
+          description: skippedToast.description,
+        });
+      }
+
+      setCurrentPlaybackStepIndex(nextStepIndex);
+      function resumeExecutionAnimation() {
+        setIsExecuting(true);
+      }
+      setTimeout(resumeExecutionAnimation, 100);
+    } catch (error) {
+      console.error('Error stepping forward:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to advance the scenario');
+      setIsExecuting(true);
+    } finally {
+      isStepAdvancingRef.current = false;
     }
   };
 
   const handlePlay = async () => {
-    // Build scenario structure for RPC
+    if (isPlayStartingRef.current) return;
+    const slotValidationError = validateScenarioSlotHeights(slots);
+    if (slotValidationError) {
+      toast.error(slotValidationError);
+      return;
+    }
+
+    isPlayStartingRef.current = true;
     const overrides = slots.flatMap((slot) =>
-      slot.actions.map((action) => {
+      slot.actions.map((action, actionIndex) => {
         // The backend expects flat dot-notation values ("price_message.price": 123);
         // fields edited in the UI live nested and are reachable via modifiedFields
         const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
@@ -794,8 +905,7 @@ export default function ScenarioEditor({
           // Fields the UI does not edit (enabled, future backend additions)
           // come from the loaded override and pass through unchanged
           ...original,
-          // Use existing overrideId if available, otherwise generate one
-          id: action.overrideId || `${action.actionId}_${slot.height}`,
+          id: overrideIdForAction(action, slot.height, actionIndex),
           templateId: action.actionId, // actionId IS the templateId
           values: flatValues,
           scenarioRelativeSlot: slot.height, // 0-indexed to match backend
@@ -818,99 +928,108 @@ export default function ScenarioEditor({
       name: scenarioName,
       description: scenarioDescription,
       overrides,
-      tags: [],
+      tags: scenarioTags,
     };
 
-    // IMPORTANT: Pause the clock BEFORE registering the scenario to prevent race conditions
-    // Otherwise, clock ticks between registration and pause can apply overrides prematurely
     try {
-      const pauseResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
+      const pausePayload = await requestJsonRpc(rpcUrl, 'surfnet_pauseClock');
+      const pauseError = jsonRpcErrorMessage(pausePayload);
+      if (pauseError) throw new Error(pauseError);
 
-      if (pauseResponse.ok) {
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
-        logger.log('🎬 Clock paused before scenario registration');
-      }
+      isPlaybackActiveRef.current = true;
+      window.dispatchEvent(
+        new CustomEvent('clockPauseStateChanged', {
+          detail: { isPaused: true },
+        })
+      );
     } catch (error) {
       console.error('Error pausing clock:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to pause the clock');
+      isPlayStartingRef.current = false;
+      return;
     }
 
-    // Register scenario with surfnet (clock is now paused, no race condition)
+    activeOverrideIdsRef.current = overrides.map((override) => override.id);
     try {
-      logger.log('📤 Registering scenario:', scenario);
-      const registerResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: serializeScenarioJson({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_registerScenario',
-          params: [scenario],
-        }),
-      });
-
-      if (registerResponse.ok) {
-        const registerData = await registerResponse.json();
-        logger.log('✅ Scenario registered:', registerData);
-      } else {
-        console.error('❌ Failed to register scenario:', await registerResponse.text());
+      const registerPayload = await requestJsonRpc(rpcUrl, 'surfnet_registerScenario', [scenario]);
+      const registerError = jsonRpcErrorMessage(registerPayload);
+      if (registerError) {
+        toast.error(registerError);
+        await cleanupActivePlayback(true);
+        return;
       }
-    } catch (error) {
-      console.error('❌ Error registering scenario:', error);
-    }
 
-    setCurrentPlaybackSlot(0);
-    setIsExecuting(true);
-    setMode('play');
+      const parsed = parseOverrideOutcomeResponse(registerPayload, 'Failed to register scenario');
+      if (!parsed.ok) throw new Error(parsed.message);
+
+      dispatchAbsoluteSlotChange(parsed.slot);
+      setPlaybackBaseSlot(parsed.slot);
+      setOutcomeByOverrideId(mergeOverrideOutcomes({}, parsed.outcomes));
+      const skipped = parsed.outcomes.filter((outcome) => !outcome.applied);
+      const hasLaterSteps = slots.some((slot) => slot.height > 0);
+      if (skipped.length > 0) {
+        toast.error(
+          `${skipped.length} of ${parsed.outcomes.length} override${parsed.outcomes.length === 1 ? '' : 's'} skipped`,
+          skipped[0].reason ? { description: skipped[0].reason } : undefined
+        );
+      } else if (parsed.outcomes.length > 0) {
+        toast.success(
+          `${parsed.outcomes.length} override${parsed.outcomes.length === 1 ? '' : 's'} applied`,
+          hasLaterSteps ? { description: 'Later steps report as they run.' } : undefined
+        );
+      } else {
+        toast.success(
+          'Scenario registered',
+          hasLaterSteps ? { description: 'Later steps report as they run.' } : undefined
+        );
+      }
+
+      setCurrentPlaybackStepIndex(0);
+      setIsExecuting(true);
+      setMode('play');
+    } catch (error) {
+      console.error('Error registering scenario:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to register scenario');
+      await cleanupActivePlayback(true);
+    } finally {
+      isPlayStartingRef.current = false;
+    }
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
+    if (!(await cleanupActivePlayback(true))) return;
     setMode('read');
     setIsExecuting(false);
-    setCurrentPlaybackSlot(0);
+    setCurrentPlaybackStepIndex(0);
+    setPlaybackBaseSlot(null);
+    setOutcomeByOverrideId({});
+  };
+
+  const getSlotSkip = (slot: Slot): { skipped: boolean; reason?: string } => {
+    for (const [actionIndex, action] of slot.actions.entries()) {
+      const overrideId = overrideIdForAction(action, slot.height, actionIndex);
+      const outcome = outcomeByOverrideId[overrideId];
+      if (outcome && !outcome.applied) {
+        return { skipped: true, reason: outcome.reason };
+      }
+    }
+    return { skipped: false };
   };
 
   const handleComplete = async () => {
-    // Resume the clock when completing scenario playback
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_resumeClock',
-        }),
-      });
-
-      if (response.ok) {
-        // Dispatch event so header widget and other components sync
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: false },
-          })
-        );
-        logger.log('▶️ Clock resumed after scenario completion');
-      }
-    } catch (error) {
-      console.error('Error resuming clock:', error);
-    }
-
+    if (!(await cleanupActivePlayback(true))) return;
     setMode('read');
     setIsExecuting(false);
-    setCurrentPlaybackSlot(0);
+    setCurrentPlaybackStepIndex(0);
+    setPlaybackBaseSlot(null);
+    setOutcomeByOverrideId({});
   };
+
+  useEffect(() => {
+    return function cleanupPlaybackOnUnmount() {
+      if (isPlaybackActiveRef.current) void cleanupActivePlayback(false);
+    };
+  }, [cleanupActivePlayback, scenarioId]);
 
   const exportSnapshot = async () => {
     try {
@@ -992,6 +1111,11 @@ export default function ScenarioEditor({
     }
   };
 
+  // DERIVED STATE
+  const isLastPlaybackStep = currentPlaybackStepIndex === slots.length - 1;
+  const currentPlaybackPosition = scenarioTimelineStepPosition(currentPlaybackStepIndex, slots.length);
+  const playbackProgress = slots.length === 1 || isLastPlaybackStep ? 100 : currentPlaybackPosition;
+
   return (
     <div className="relative flex h-full">
       {/* Main Stage - Scrollable */}
@@ -1029,13 +1153,14 @@ export default function ScenarioEditor({
             <AnimatePresence mode="popLayout">
               {slots.map((slot, index) => {
                 // In play mode, determine slot visibility and state
-                const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
-                const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
-                const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
+                const isCurrentSlot = mode === 'play' && index === currentPlaybackStepIndex;
+                const isPreviousSlot = mode === 'play' && index === currentPlaybackStepIndex - 1;
+                const isNextSlot = mode === 'play' && index === currentPlaybackStepIndex + 1;
                 const shouldExpand =
                   (selectedSlotId === slot.id && mode === 'edit') ||
                   isCurrentSlot ||
                   (selectedSlotId === slot.id && slot.actions.length > 1);
+                const skip = getSlotSkip(slot);
 
                 // In play mode, only show previous, current, and next slots
                 if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
@@ -1089,7 +1214,7 @@ export default function ScenarioEditor({
                       {/* Slot Height Label */}
                       <div className="flex items-center justify-center">
                         <span className="font-mono text-sm text-zinc-400">
-                          {slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}
+                          {slots.length < 5 ? `Slot ${slot.height}` : `${slot.height}`}
                         </span>
                       </div>
 
@@ -1107,7 +1232,9 @@ export default function ScenarioEditor({
                           className={`cursor-pointer overflow-hidden rounded-lg border-2 p-6 transition-all ${
                             // Play mode styling - current slot
                             mode === 'play' && isCurrentSlot
-                              ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
+                              ? skip.skipped
+                                ? 'min-h-[450px] border-red-500 bg-red-500/10 shadow-lg shadow-red-500/20'
+                                : 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
                               : // Play mode styling - previous/next slots (dimmed)
                                 mode === 'play' && (isPreviousSlot || isNextSlot)
                                 ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
@@ -2379,28 +2506,34 @@ export default function ScenarioEditor({
                   {/* Slot Labels */}
                   <div className="relative flex items-start px-5" style={{ height: '20px' }}>
                     {slots.map((slot, index) => {
-                      // Calculate position: 12.5% offset + (index * 75% / (slots.length - 1))
-                      const totalSlots = slots.length;
-                      const position = totalSlots > 1 ? 12.5 + (index / (totalSlots - 1)) * 75 : 50; // Single slot: centered at 50%
-                      const isExecuted = mode === 'play' && index <= currentPlaybackSlot;
+                      const position = scenarioTimelineStepPosition(index, slots.length);
+                      const isExecuted = mode === 'play' && index <= currentPlaybackStepIndex;
+                      const skip = getSlotSkip(slot);
+                      const labelColor = skip.skipped
+                        ? 'text-red-500'
+                        : isExecuted
+                          ? 'text-green-500'
+                          : 'text-zinc-400';
+                      const tickColor = skip.skipped
+                        ? 'border-t-red-500'
+                        : isExecuted
+                          ? 'border-t-green-500'
+                          : 'border-t-zinc-400';
                       return (
                         <div
                           key={`label-${slot.id}`}
                           className="absolute flex flex-col items-center gap-0.5"
                           style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
+                          title={skip.skipped ? (skip.reason ?? 'Override skipped') : undefined}
                         >
                           <span
-                            className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wide transition-colors ${
-                              isExecuted ? 'text-green-500' : 'text-zinc-400'
-                            }`}
+                            className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wide transition-colors ${labelColor}`}
                           >
-                            {slots.length < 5 ? `SLOT ${index + 1}` : `${index + 1}`}
+                            {slots.length < 5 ? `SLOT ${slot.height}` : `${slot.height}`}
                           </span>
                           {/* Small triangle tick pointing down */}
                           <div
-                            className={`h-0 w-0 border-l-[3px] border-r-[3px] border-t-[3px] border-l-transparent border-r-transparent transition-colors ${
-                              isExecuted ? 'border-t-green-500' : 'border-t-zinc-400'
-                            }`}
+                            className={`h-0 w-0 border-l-[3px] border-r-[3px] border-t-[3px] border-l-transparent border-r-transparent transition-colors ${tickColor}`}
                           />
                         </div>
                       );
@@ -2464,87 +2597,55 @@ export default function ScenarioEditor({
                     )}
 
                     {/* Green progress overlay (execution state) */}
-                    {mode === 'play' &&
-                      (() => {
-                        // For the last slot, extend to 100% and include the final dashed segment
-                        const isLastSlot = currentPlaybackSlot === slots.length - 1;
+                    {mode === 'play' && (
+                      <>
+                        <div
+                          className="absolute left-0 top-0 h-2 transition-all duration-300"
+                          style={{
+                            width: '12.5%',
+                            backgroundImage:
+                              'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
+                          }}
+                        />
 
-                        let greenProgress;
-                        if (slots.length === 1) {
-                          // Single slot: always show full progress (100%)
-                          greenProgress = 100;
-                        } else if (currentPlaybackSlot === 0) {
-                          // First slot of multiple: full first dashed (12.5%) + half of first solid segment
-                          greenProgress = 12.5 + 37.5 / (slots.length - 1);
-                        } else if (isLastSlot) {
-                          // Last slot: full progress
-                          greenProgress = 100;
-                        } else {
-                          // Middle slots: calculate position
-                          greenProgress = 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
-                        }
+                        {playbackProgress > 12.5 && (
+                          <div
+                            className="absolute top-0 h-2 bg-green-500 transition-all duration-300"
+                            style={{
+                              left: '12.5%',
+                              width: isLastPlaybackStep ? '75%' : `${playbackProgress - 12.5}%`,
+                            }}
+                          />
+                        )}
 
-                        return (
-                          <>
-                            {/* Green dashed segment - always 12.5% of full bar */}
-                            <div
-                              className="absolute left-0 top-0 h-2 transition-all duration-300"
-                              style={{
-                                width: '12.5%',
-                                backgroundImage:
-                                  'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
-                              }}
-                            />
-
-                            {/* Green solid segment - from 12.5% to greenProgress (or 87.5% if last slot) */}
-                            {greenProgress > 12.5 && (
-                              <div
-                                className="absolute top-0 h-2 bg-green-500 transition-all duration-300"
-                                style={{
-                                  left: '12.5%',
-                                  width: isLastSlot ? `${87.5 - 12.5}%` : `${greenProgress - 12.5}%`,
-                                }}
-                              />
-                            )}
-
-                            {/* Last green dashed segment - only for last slot */}
-                            {isLastSlot && (
-                              <div
-                                className="absolute top-0 h-2"
-                                style={{
-                                  right: 0,
-                                  width: '12.5%',
-                                  backgroundImage:
-                                    'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
-                                }}
-                              />
-                            )}
-                          </>
-                        );
-                      })()}
+                        {isLastPlaybackStep && (
+                          <div
+                            className="absolute top-0 h-2"
+                            style={{
+                              right: 0,
+                              width: '12.5%',
+                              backgroundImage:
+                                'repeating-linear-gradient(to right, #10b981 0px, #10b981 4px, transparent 4px, transparent 8px)',
+                            }}
+                          />
+                        )}
+                      </>
+                    )}
 
                     {/* Spinning wheel at end of green progress - not shown for last slot or single slot */}
                     {mode === 'play' &&
                       isExecuting &&
-                      currentPlaybackSlot < slots.length - 1 &&
-                      slots.length > 1 &&
-                      (() => {
-                        const greenProgress =
-                          currentPlaybackSlot === 0
-                            ? 12.5 + 37.5 / (slots.length - 1) // Full first dashed + half of first solid segment
-                            : 12.5 + (currentPlaybackSlot + 0.5) * (75 / (slots.length - 1));
-
-                        return (
-                          <div
-                            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-                            style={{ left: `${greenProgress}%` }}
-                          >
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
-                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            </div>
+                      currentPlaybackStepIndex < slots.length - 1 &&
+                      slots.length > 1 && (
+                        <div
+                          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                          style={{ left: `${currentPlaybackPosition}%` }}
+                        >
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
                           </div>
-                        );
-                      })()}
+                        </div>
+                      )}
                   </div>
                 </div>
 
@@ -2567,7 +2668,7 @@ export default function ScenarioEditor({
                         <ArrowDownTrayIcon className="h-5 w-5" />
                       </button>
                     </>
-                  ) : currentPlaybackSlot >= slots.length - 1 ? (
+                  ) : currentPlaybackStepIndex >= slots.length - 1 ? (
                     <>
                       {/* Playback complete - show checkmark and download */}
                       <button
