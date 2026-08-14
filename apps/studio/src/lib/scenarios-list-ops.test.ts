@@ -32,6 +32,14 @@ describe('reinsertScenario', () => {
     expect(reinsertScenario(current, a, 0)).toBe(current);
   });
 
+  it('preserves a newer version of the item after a failed delete', () => {
+    const deleted = { ...s('a'), name: 'stale' };
+    const current = [{ ...s('a'), name: 'updated' }, s('b')];
+
+    expect(reinsertScenario(current, deleted, 0)).toBe(current);
+    expect(current[0].name).toBe('updated');
+  });
+
   it('clamps the index when the current list is shorter than the original', () => {
     const a = s('a');
     // Original index 3, but concurrent deletes shrank the list to one item.
