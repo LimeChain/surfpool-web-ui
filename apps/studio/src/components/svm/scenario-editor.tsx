@@ -13,6 +13,7 @@ import {
 } from '@/lib/scenarios-api';
 import {
   SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
+  beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
@@ -23,6 +24,7 @@ import {
   scenarioTimelineStepPosition,
   skippedOverrideToast,
   validateScenarioSlotHeights,
+  waitForPlaybackCleanup,
   type OverrideOutcomeState,
 } from '@/lib/scenarios-playback';
 import {
@@ -813,26 +815,35 @@ export default function ScenarioEditor({
   );
 
   const cleanupActivePlayback = useCallback(
-    async (showError: boolean): Promise<boolean> => {
-      const overrideIds = activeOverrideIdsRef.current;
-      try {
-        if (overrideIds.length > 0) {
-          const payload = await requestJsonRpc(rpcUrl, 'surfnet_cancelScenarioOverrides', [overrideIds], !showError);
-          const errorMessage = jsonRpcErrorMessage(payload);
-          if (errorMessage) throw new Error(errorMessage);
+    (showError: boolean): Promise<boolean> => {
+      async function runCleanup(): Promise<boolean> {
+        const overrideIds = activeOverrideIdsRef.current;
+        try {
+          if (overrideIds.length > 0) {
+            const payload = await requestJsonRpc(
+              rpcUrl,
+              'surfnet_cancelScenarioOverrides',
+              [overrideIds],
+              !showError
+            );
+            const errorMessage = jsonRpcErrorMessage(payload);
+            if (errorMessage) throw new Error(errorMessage);
+          }
+          activeOverrideIdsRef.current = [];
+        } catch (error) {
+          console.error('Error cancelling scenario overrides:', error);
+          if (showError) {
+            toast.error(error instanceof Error ? error.message : 'Failed to cancel pending overrides');
+          }
+          return false;
         }
-        activeOverrideIdsRef.current = [];
-      } catch (error) {
-        console.error('Error cancelling scenario overrides:', error);
-        if (showError) {
-          toast.error(error instanceof Error ? error.message : 'Failed to cancel pending overrides');
-        }
-        return false;
+
+        const resumed = await resumePlaybackClock(showError);
+        if (resumed) isPlaybackActiveRef.current = false;
+        return resumed;
       }
 
-      const resumed = await resumePlaybackClock(showError);
-      if (resumed) isPlaybackActiveRef.current = false;
-      return resumed;
+      return beginPlaybackCleanup(runCleanup);
     },
     [resumePlaybackClock, rpcUrl]
   );
@@ -894,6 +905,11 @@ export default function ScenarioEditor({
     }
 
     isPlayStartingRef.current = true;
+    if (!(await waitForPlaybackCleanup())) {
+      toast.error('Failed to finish the previous scenario playback');
+      isPlayStartingRef.current = false;
+      return;
+    }
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action, actionIndex) => {
         // The backend expects flat dot-notation values ("price_message.price": 123);
@@ -1025,7 +1041,7 @@ export default function ScenarioEditor({
     setOutcomeByOverrideId({});
   };
 
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     return function cleanupPlaybackOnUnmount() {
       if (isPlaybackActiveRef.current) void cleanupActivePlayback(false);
     };

@@ -22,6 +22,8 @@ type ParsedOverrideOutcomeResponse =
   | { ok: true; outcomes: OverrideOutcome[]; slot: number }
   | { ok: false; message: string };
 
+let pendingPlaybackCleanup: Promise<boolean> | null = null;
+
 export function overrideIdForAction(action: ScenarioActionIdentity, slotHeight: number, actionIndex: number): string {
   return action.overrideId || `${action.actionId}_${slotHeight}_${actionIndex}`;
 }
@@ -40,6 +42,22 @@ export function dispatchAbsoluteSlotChange(absoluteSlot: number): void {
       detail: { absoluteSlot },
     })
   );
+}
+
+export function beginPlaybackCleanup(runCleanup: () => Promise<boolean>): Promise<boolean> {
+  if (pendingPlaybackCleanup) return pendingPlaybackCleanup;
+
+  const cleanup = runCleanup();
+  pendingPlaybackCleanup = cleanup;
+  function clearPendingCleanup() {
+    if (pendingPlaybackCleanup === cleanup) pendingPlaybackCleanup = null;
+  }
+  void cleanup.then(clearPendingCleanup, clearPendingCleanup);
+  return cleanup;
+}
+
+export async function waitForPlaybackCleanup(): Promise<boolean> {
+  return pendingPlaybackCleanup ?? true;
 }
 
 export function nextScenarioSlotHeight(slots: ReadonlyArray<{ height: number }>): number {

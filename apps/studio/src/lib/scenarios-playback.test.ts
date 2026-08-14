@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
@@ -10,6 +11,7 @@ import {
   scenarioTimelineStepPosition,
   skippedOverrideToast,
   validateScenarioSlotHeights,
+  waitForPlaybackCleanup,
 } from './scenarios-playback';
 
 describe('dispatchAbsoluteSlotChange', () => {
@@ -22,6 +24,34 @@ describe('dispatchAbsoluteSlotChange', () => {
     expect(listener).toHaveBeenCalledOnce();
     expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ absoluteSlot: 439000871 });
     window.removeEventListener('epochChanged', listener);
+  });
+});
+
+describe('waitForPlaybackCleanup', () => {
+  it('does not release replacement playback before the previous cleanup finishes', async () => {
+    let finishCleanup: ((result: boolean) => void) | undefined;
+    const cleanup = new Promise<boolean>((resolve) => {
+      finishCleanup = resolve;
+    });
+    beginPlaybackCleanup(function runCleanup() {
+      return cleanup;
+    });
+    let released = false;
+    const waiting = waitForPlaybackCleanup().then(function markReleased(result) {
+      released = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(released).toBe(false);
+
+    finishCleanup?.(true);
+    await expect(waiting).resolves.toBe(true);
+    expect(released).toBe(true);
+  });
+
+  it('allows playback immediately when no cleanup is pending', async () => {
+    await expect(waitForPlaybackCleanup()).resolves.toBe(true);
   });
 });
 
