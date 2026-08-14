@@ -29,8 +29,10 @@ import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
 import PumpGraduationDialog from './pump-graduation-dialog';
+import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
 import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
+import ScenarioPresets from './scenario-presets';
 import type { ScenarioBentoItem, ScenariosBentoProps } from './scenarios-bento.types';
 
 const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
@@ -58,6 +60,7 @@ export default function ScenariosBento({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
+  const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -166,6 +169,24 @@ export default function ScenariosBento({
 
   const handlePumpGraduationCreated = (scenarioId: string) => {
     setPumpGraduationDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleScenarioNavigate = (scenarioId: string) => {
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenPumpSwapPriceShockDialog = () => {
+    setPumpSwapPriceShockDialogOpen(true);
+  };
+
+  const handleClosePumpSwapPriceShockDialog = () => {
+    setPumpSwapPriceShockDialogOpen(false);
+  };
+
+  const handlePumpSwapPriceShockCreated = (scenarioId: string) => {
+    setPumpSwapPriceShockDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -307,10 +328,13 @@ export default function ScenariosBento({
     <div className="relative h-full">
       {/* AI Header - always visible when detail pane is closed */}
       {!isDetailPaneOpen && (
-        <AIHeader
-          onRefresh={onRefresh}
-          onScenarioNavigate={(scenarioId) => router.push(`/scenarios?id=${scenarioId}&tab=editor`)}
-        />
+        <>
+          <AIHeader onRefresh={onRefresh} onScenarioNavigate={handleScenarioNavigate} />
+          <ScenarioPresets
+            onPumpGraduationSelect={handleOpenPumpGraduationDialog}
+            onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
+          />
+        </>
       )}
 
       <GenericBento
@@ -322,7 +346,7 @@ export default function ScenariosBento({
             <SparklesIcon className="mb-4 h-12 w-12 text-zinc-600" />
             <p className="mb-4 text-zinc-400">No scenarios yet</p>
             <p className="max-w-md text-sm text-zinc-500">
-              Use the AI prompt above to generate a scenario, or click the + button to create one manually.
+              Use AI, choose a preset, or click the + button to create one manually.
             </p>
           </div>
         }
@@ -370,7 +394,6 @@ export default function ScenariosBento({
             <DropdownMenu anchor="top end">
               <DropdownItem onClick={handleCreateScenario}>New scenario</DropdownItem>
               <DropdownItem onClick={() => importInputRef.current?.click()}>Import from file…</DropdownItem>
-              <DropdownItem onClick={handleOpenPumpGraduationDialog}>Pump graduation preset…</DropdownItem>
             </DropdownMenu>
           </Dropdown>
         </div>
@@ -407,6 +430,12 @@ export default function ScenariosBento({
         studioUrl={studioUrl}
         onClose={handleClosePumpGraduationDialog}
         onCreated={handlePumpGraduationCreated}
+      />
+      <PumpSwapPriceShockDialog
+        open={pumpSwapPriceShockDialogOpen}
+        studioUrl={studioUrl}
+        onClose={handleClosePumpSwapPriceShockDialog}
+        onCreated={handlePumpSwapPriceShockCreated}
       />
     </div>
   );

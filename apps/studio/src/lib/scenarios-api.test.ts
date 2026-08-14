@@ -4,6 +4,7 @@ import {
   buildAiPrompt,
   buildUpdatePayload,
   createPumpGraduationScenario,
+  createPumpSwapPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
   parseScenariosJson,
@@ -74,6 +75,39 @@ describe('createPumpGraduationScenario', () => {
 
     await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
       'Bonding curve is already complete'
+    );
+  });
+});
+
+describe('createPumpSwapPriceShockScenario', () => {
+  it('posts trimmed inputs to the specialized scenario endpoint', async () => {
+    const payload = {
+      id: 'scenario-id',
+      tokenMint: 'mint',
+      canonicalPool: 'pool',
+      virtualQuoteReserves: '15000000000000',
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      );
+
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
+      payload
+    );
+    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/pump-swap-price-shock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenMint: 'mint', virtualQuoteReserves: '15000000000000' }),
+    });
+  });
+
+  it('surfaces backend validation failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Canonical PumpSwap pool not found', { status: 400 }));
+
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Canonical PumpSwap pool not found'
     );
   });
 });
