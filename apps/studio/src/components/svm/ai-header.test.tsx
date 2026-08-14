@@ -87,6 +87,17 @@ describe('AIHeader', () => {
     expect(screen.getByText('Fresh Launch')).toBeInTheDocument();
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
+    expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
+  });
+
+  it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
+    renderWithConfig(<AIHeader />);
+
+    const scroller = screen.getByLabelText('Example scenarios');
+    expect(scroller).toHaveClass('overflow-x-auto', '[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden');
+    expect(screen.getAllByRole('group', { name: /Example scenarios row/ })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Scroll example scenarios left' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scroll example scenarios right' })).toBeInTheDocument();
   });
 
   it('loads the specialized Pump graduation prompt', () => {
@@ -100,6 +111,17 @@ describe('AIHeader', () => {
     expect((screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value).toContain(
       '<PASTE_TOKEN_MINT_HERE>'
     );
+  });
+
+  it('loads an editable PumpSwap price shock prompt for a custom mint', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('PumpSwap Price Shock'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('<PASTE_TOKEN_MINT_HERE>');
+    expect(prompt).toContain('virtualQuoteReserves');
+    expect(prompt).toContain('do not build or execute a swap');
   });
 
   it('renders the model selector button', () => {

@@ -32,6 +32,35 @@ export async function createPumpGraduationScenario(
   return response.json();
 }
 
+export type PumpSwapPriceShockScenarioResult = {
+  id: string;
+  tokenMint: string;
+  canonicalPool: string;
+  virtualQuoteReserves: string;
+};
+
+export async function createPumpSwapPriceShockScenario(
+  studioUrl: string,
+  tokenMint: string,
+  virtualQuoteReserves: string
+): Promise<PumpSwapPriceShockScenarioResult> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/pump-swap-price-shock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tokenMint: tokenMint.trim(),
+      virtualQuoteReserves: virtualQuoteReserves.trim(),
+    }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `PumpSwap price shock validation failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 /**
  * Build the POST body for creating a new scenario.
  */
