@@ -9,6 +9,7 @@ import {
   serializeScenarioJson,
 } from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
+import { reinsertScenario } from '@/lib/scenarios-list-ops';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
 import {
@@ -162,7 +163,7 @@ export default function ScenariosBento({
     const updatedScenario = { ...scenario, ...updates, updated_at: new Date().toISOString() };
 
     // Optimistic update
-    setScenarios(scenarios.map((s) => (s.id === id ? updatedScenario : s)));
+    setScenarios((prev) => prev.map((s) => (s.id === id ? updatedScenario : s)));
 
     try {
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
@@ -182,14 +183,17 @@ export default function ScenariosBento({
       }
     } catch (error) {
       console.error('Error updating scenario:', error);
-      // Revert optimistic update
-      setScenarios(scenarios.map((s) => (s.id === id ? scenario : s)));
+      // Revert against the current list so concurrent changes are not clobbered.
+      setScenarios((prev) => prev.map((s) => (s.id === id ? scenario : s)));
     }
   };
 
   // Delete scenario
   const handleDeleteScenario = async (id: string) => {
-    const previousScenarios = scenarios;
+    const index = scenarios.findIndex((s) => s.id === id);
+    const deleted = scenarios[index];
+    if (!deleted) return;
+
     // Drop the card immediately so it doesn't linger until the background
     // refetch resolves; restore it if the delete fails.
     setScenarios((prev) => prev.filter((s) => s.id !== id));
@@ -207,7 +211,9 @@ export default function ScenariosBento({
       onRefresh?.();
     } catch (error) {
       console.error('Error deleting scenario:', error);
-      setScenarios(previousScenarios);
+      // Reinsert into the current list so a create/delete that landed while the
+      // request was in flight survives the rollback.
+      setScenarios((prev) => reinsertScenario(prev, deleted, index));
     }
   };
 
