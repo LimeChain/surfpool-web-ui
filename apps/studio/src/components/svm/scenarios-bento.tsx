@@ -9,7 +9,7 @@ import {
   serializeScenarioJson,
 } from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
-import { reinsertScenario } from '@/lib/scenarios-list-ops';
+import { reinsertScenario, rollbackScenarioUpdate } from '@/lib/scenarios-list-ops';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
 import {
@@ -160,7 +160,8 @@ export default function ScenariosBento({
     const scenario = scenarios.find((s) => s.id === id);
     if (!scenario) return;
 
-    const updatedScenario = { ...scenario, ...updates, updated_at: new Date().toISOString() };
+    const previousScenario = scenario;
+    const updatedScenario = { ...previousScenario, ...updates, updated_at: new Date().toISOString() };
 
     // Optimistic update
     setScenarios((prev) => prev.map((s) => (s.id === id ? updatedScenario : s)));
@@ -183,8 +184,12 @@ export default function ScenariosBento({
       }
     } catch (error) {
       console.error('Error updating scenario:', error);
-      // Revert against the current list so concurrent changes are not clobbered.
-      setScenarios((prev) => prev.map((s) => (s.id === id ? scenario : s)));
+
+      function rollbackFailedUpdate(current: Scenario[]) {
+        return rollbackScenarioUpdate(current, updatedScenario, previousScenario);
+      }
+
+      setScenarios(rollbackFailedUpdate);
     }
   };
 

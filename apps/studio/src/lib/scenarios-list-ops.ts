@@ -1,4 +1,13 @@
-import { Scenario } from '@/lib/scenarios-data';
+import type { Scenario } from '@/lib/scenarios-data';
+
+export function rollbackScenarioUpdate(current: Scenario[], optimistic: Scenario, previous: Scenario): Scenario[] {
+  const index = current.indexOf(optimistic);
+  if (index === -1) return current;
+
+  const restored = [...current];
+  restored[index] = previous;
+  return restored;
+}
 
 // Reinsert a scenario that was optimistically removed back into the *current*
 // list. The list may have changed while the delete request was in flight (a
