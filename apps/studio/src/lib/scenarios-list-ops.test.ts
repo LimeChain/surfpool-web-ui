@@ -1,30 +1,8 @@
 import type { Scenario } from '@/lib/scenarios-data';
-import { reinsertScenario, rollbackScenarioUpdate } from '@/lib/scenarios-list-ops';
+import { reinsertScenario } from '@/lib/scenarios-list-ops';
 import { describe, expect, it } from 'vitest';
 
 const s = (id: string): Scenario => ({ id, name: id });
-
-describe('rollbackScenarioUpdate', () => {
-  it('restores the previous scenario while preserving unrelated current items', () => {
-    const previous = { ...s('a'), name: 'previous' };
-    const optimistic = { ...previous, name: 'optimistic' };
-    const concurrent = s('b');
-
-    const result = rollbackScenarioUpdate([optimistic, concurrent], optimistic, previous);
-
-    expect(result).toEqual([previous, concurrent]);
-  });
-
-  it('preserves a refreshed version of the same scenario', () => {
-    const previous = { ...s('a'), name: 'previous' };
-    const optimistic = { ...previous, name: 'optimistic' };
-    const refreshed = { ...previous, name: 'refreshed' };
-    const current = [refreshed, s('b')];
-
-    expect(rollbackScenarioUpdate(current, optimistic, previous)).toBe(current);
-    expect(current[0]).toBe(refreshed);
-  });
-});
 
 describe('reinsertScenario', () => {
   it('restores the item at its original index when nothing else changed', () => {
