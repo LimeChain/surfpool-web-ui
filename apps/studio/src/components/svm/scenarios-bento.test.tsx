@@ -206,4 +206,37 @@ describe('ScenariosBento', function scenariosBentoTests() {
       expect.objectContaining({ action: expect.objectContaining({ label: 'Retry' }) })
     );
   });
+
+  it('preserves a refreshed scenario when an in-flight edit fails', async function preservesRefreshedScenario() {
+    const patchResponse = createPendingResponse();
+    const fetchMock = vi.fn().mockReturnValueOnce(patchResponse.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { rerender } = renderWithConfig(
+      <ScenariosBento scenarios={scenarios} initialSelectedId="scenario-a" initialTab="overview" />
+    );
+
+    fireEvent.click(screen.getByText('Scenario A'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Failed name' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    expect(screen.getByText('Failed name')).toBeInTheDocument();
+
+    const refreshedScenarios = [{ ...scenarios[0], name: 'Refreshed name' }, scenarios[1]];
+    rerender(<ScenariosBento scenarios={refreshedScenarios} initialSelectedId="scenario-a" initialTab="overview" />);
+
+    await waitFor(function waitsForRefresh() {
+      expect(screen.getByText('Refreshed name')).toBeInTheDocument();
+    });
+
+    await act(async function failPatch() {
+      patchResponse.resolve({ ok: false, status: 500 } as Response);
+      await patchResponse.promise;
+    });
+
+    expect(screen.getByText('Refreshed name')).toBeInTheDocument();
+    expect(screen.queryByText('Scenario A')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failed name')).not.toBeInTheDocument();
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
 });
