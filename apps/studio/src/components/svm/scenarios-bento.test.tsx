@@ -239,4 +239,55 @@ describe('ScenariosBento', function scenariosBentoTests() {
     expect(screen.queryByText('Failed name')).not.toBeInTheDocument();
     expect(toastError).toHaveBeenCalledTimes(1);
   });
+
+  it('uses a refreshed scenario as the baseline for a queued edit', async function usesRefreshedScenarioForQueuedEdit() {
+    const firstResponse = createPendingResponse();
+    const secondResponse = createPendingResponse();
+    const fetchMock = vi.fn().mockReturnValueOnce(firstResponse.promise).mockReturnValueOnce(secondResponse.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { rerender } = renderWithConfig(
+      <ScenariosBento scenarios={scenarios} initialSelectedId="scenario-a" initialTab="overview" />
+    );
+
+    fireEvent.click(screen.getByText('Scenario A'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Failed name' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    const refreshedScenarios = [{ ...scenarios[0], name: 'Refreshed name' }, scenarios[1]];
+    rerender(<ScenariosBento scenarios={refreshedScenarios} initialSelectedId="scenario-a" initialTab="overview" />);
+
+    await waitFor(function waitsForRefresh() {
+      expect(screen.getByText('Refreshed name')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('First scenario'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Failed description' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    await act(async function completeFirstUpdate() {
+      firstResponse.resolve({ ok: true, status: 200 } as Response);
+      await firstResponse.promise;
+    });
+
+    await waitFor(function waitsForSecondUpdate() {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const secondRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    const secondPayload = JSON.parse(secondRequest.body as string);
+    expect(secondPayload.name).toBe('Refreshed name');
+    expect(secondPayload.description).toBe('Failed description');
+
+    await act(async function failSecondUpdate() {
+      secondResponse.resolve({ ok: false, status: 500 } as Response);
+      await secondResponse.promise;
+    });
+
+    expect(screen.getByText('Refreshed name')).toBeInTheDocument();
+    expect(screen.getByText('First scenario')).toBeInTheDocument();
+    expect(screen.queryByText('Failed name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failed description')).not.toBeInTheDocument();
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
 });
