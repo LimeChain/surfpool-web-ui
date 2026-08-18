@@ -2,7 +2,6 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import {
-  buildUpdatePayload,
   createScenarioPayload,
   scenarioImportPayload,
   scenarioToBentoItem,
@@ -192,7 +191,7 @@ export default function ScenariosBento({
         const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: serializeScenarioJson(buildUpdatePayload(updatedScenario)),
+          body: serializeScenarioJson(updates),
         });
 
         if (!response.ok) {
@@ -200,10 +199,6 @@ export default function ScenariosBento({
         }
 
         logger.log('Scenario updated successfully:', id);
-
-        if (!isDetailPaneOpen && onRefresh) {
-          onRefresh();
-        }
 
         return { scenario: updatedScenario, succeeded: true };
       } catch (error) {
@@ -232,11 +227,14 @@ export default function ScenariosBento({
           setScenarios((current) =>
             current.map((item) => {
               if (item.id !== id) return item;
-              if (!result.succeeded && item !== optimisticScenario) return item;
+              if (item !== optimisticScenario) {
+                return result.succeeded ? { ...item, ...updates, updated_at: persistedScenario.updated_at } : item;
+              }
               return persistedScenario;
             })
           );
         }
+        onRefresh?.();
       }
     }
 

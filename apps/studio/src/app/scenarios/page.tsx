@@ -18,6 +18,7 @@ function ScenariosContent() {
   const [pendingRefresh, setPendingRefresh] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+  const latestLoadRequestRef = useRef(0);
 
   // Read search params reactively - these will update when URL changes
   const selectedId = searchParams?.get('id') || undefined;
@@ -29,6 +30,9 @@ function ScenariosContent() {
   }, [selectedId, selectedTab]);
 
   useEffect(() => {
+    const requestId = latestLoadRequestRef.current + 1;
+    latestLoadRequestRef.current = requestId;
+
     async function loadScenarios() {
       try {
         // Full-screen spinner only on the first load. Later refetches (create,
@@ -43,6 +47,7 @@ function ScenariosContent() {
         }
 
         const data = parseScenariosJson(await response.text());
+        if (requestId !== latestLoadRequestRef.current) return;
         logger.log('Loaded scenarios from API:', data);
 
         // Convert API response to scenarios array
@@ -170,6 +175,7 @@ function ScenariosContent() {
         setScenarios(loadedScenarios);
         setRefreshError(null);
       } catch (error) {
+        if (requestId !== latestLoadRequestRef.current) return;
         console.error('Error loading scenarios:', error);
         // Only blank the list if we never had one. A failed background refetch
         // keeps the current list rather than wiping it, but says the refresh failed.
@@ -179,6 +185,7 @@ function ScenariosContent() {
           setRefreshError("Couldn't refresh the scenarios list.");
         }
       } finally {
+        if (requestId !== latestLoadRequestRef.current) return;
         setLoading(false);
         hasLoadedRef.current = true;
       }
@@ -243,11 +250,7 @@ function ScenariosContent() {
           className="fixed bottom-6 left-6 z-50 flex items-center gap-3 rounded-lg bg-zinc-900/90 px-3 py-2 text-sm text-red-400 shadow-lg"
         >
           <span>{refreshError}</span>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="text-zinc-300 underline-offset-2 hover:underline"
-          >
+          <button type="button" onClick={handleRefresh} className="text-zinc-300 underline-offset-2 hover:underline">
             Retry
           </button>
           <button

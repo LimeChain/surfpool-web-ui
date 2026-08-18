@@ -188,8 +188,7 @@ describe('ScenariosBento', function scenariosBentoTests() {
 
     const secondRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const secondPayload = JSON.parse(secondRequest.body as string);
-    expect(secondPayload.name).toBe('Scenario A');
-    expect(secondPayload.description).toBe('Failed description');
+    expect(secondPayload).toEqual({ description: 'Failed description' });
 
     await act(async function failSecondUpdate() {
       secondResponse.resolve({ ok: false, status: 500 } as Response);
@@ -276,8 +275,7 @@ describe('ScenariosBento', function scenariosBentoTests() {
 
     const secondRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const secondPayload = JSON.parse(secondRequest.body as string);
-    expect(secondPayload.name).toBe('Refreshed name');
-    expect(secondPayload.description).toBe('Failed description');
+    expect(secondPayload).toEqual({ description: 'Failed description' });
 
     await act(async function failSecondUpdate() {
       secondResponse.resolve({ ok: false, status: 500 } as Response);
@@ -289,5 +287,49 @@ describe('ScenariosBento', function scenariosBentoTests() {
     expect(screen.queryByText('Failed name')).not.toBeInTheDocument();
     expect(screen.queryByText('Failed description')).not.toBeInTheDocument();
     expect(toastError).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges a successful edit into a refreshed scenario', async function mergesSuccessfulEditIntoRefresh() {
+    const patchResponse = createPendingResponse();
+    const fetchMock = vi.fn().mockReturnValueOnce(patchResponse.promise);
+    const onRefresh = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { rerender } = renderWithConfig(
+      <ScenariosBento
+        scenarios={scenarios}
+        onRefresh={onRefresh}
+        initialSelectedId="scenario-a"
+        initialTab="overview"
+      />
+    );
+
+    fireEvent.click(screen.getByText('Scenario A'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Saved name' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    const refreshedScenarios = [{ ...scenarios[0], description: 'Refreshed description' }, scenarios[1]];
+    rerender(
+      <ScenariosBento
+        scenarios={refreshedScenarios}
+        onRefresh={onRefresh}
+        initialSelectedId="scenario-a"
+        initialTab="overview"
+      />
+    );
+
+    await waitFor(function waitsForRefresh() {
+      expect(screen.getByText('Refreshed description')).toBeInTheDocument();
+    });
+
+    await act(async function completePatch() {
+      patchResponse.resolve({ ok: true, status: 200 } as Response);
+      await patchResponse.promise;
+    });
+
+    expect(JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)).toEqual({ name: 'Saved name' });
+    expect(screen.getByText('Saved name')).toBeInTheDocument();
+    expect(screen.getByText('Refreshed description')).toBeInTheDocument();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

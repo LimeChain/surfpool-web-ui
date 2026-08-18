@@ -1,6 +1,6 @@
+import { renderWithConfig } from '@/test-utils';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderWithConfig } from '@/test-utils';
 import Scenarios from './page';
 
 vi.mock('next/navigation', () => ({
@@ -33,6 +33,14 @@ const okResponse = (items: Array<{ id: string; name: string }>) => ({
 
 const failResponse = () => ({ ok: false, status: 500, text: async () => '' });
 
+function createPendingResponse() {
+  let resolve!: (response: ReturnType<typeof okResponse>) => void;
+  const promise = new Promise<ReturnType<typeof okResponse>>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe('scenarios page refresh state machine', () => {
   beforeEach(() => {
     global.fetch = vi.fn();
@@ -53,9 +61,12 @@ describe('scenarios page refresh state machine', () => {
   });
 
   it('refreshes in the background without blanking the list', async () => {
-    (global.fetch as any)
-      .mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }]))
-      .mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]));
+    (global.fetch as any).mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }])).mockResolvedValueOnce(
+      okResponse([
+        { id: 'a', name: 'Alpha' },
+        { id: 'b', name: 'Beta' },
+      ])
+    );
 
     renderWithConfig(<Scenarios />);
     await screen.findByText('Alpha');
@@ -109,7 +120,12 @@ describe('scenarios page refresh state machine', () => {
     (global.fetch as any)
       .mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }]))
       .mockResolvedValueOnce(failResponse())
-      .mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]));
+      .mockResolvedValueOnce(
+        okResponse([
+          { id: 'a', name: 'Alpha' },
+          { id: 'b', name: 'Beta' },
+        ])
+      );
 
     renderWithConfig(<Scenarios />);
     await screen.findByText('Alpha');
@@ -121,5 +137,41 @@ describe('scenarios page refresh state machine', () => {
 
     expect(await screen.findByText('Beta')).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't refresh/i)).not.toBeInTheDocument();
+  });
+
+  it('ignores an older refresh that finishes after a newer refresh', async () => {
+    const olderRefresh = createPendingResponse();
+    const newerRefresh = createPendingResponse();
+    (global.fetch as any)
+      .mockResolvedValueOnce(okResponse([{ id: 'a', name: 'Alpha' }]))
+      .mockReturnValueOnce(olderRefresh.promise)
+      .mockReturnValueOnce(newerRefresh.promise);
+
+    renderWithConfig(<Scenarios />);
+    await screen.findByText('Alpha');
+
+    fireEvent.click(screen.getByText('refresh'));
+    await waitFor(function waitsForOlderRefresh() {
+      expect((global.fetch as any).mock.calls.length).toBe(2);
+    });
+
+    fireEvent.click(screen.getByText('refresh'));
+    await waitFor(function waitsForNewerRefresh() {
+      expect((global.fetch as any).mock.calls.length).toBe(3);
+    });
+
+    await act(async function resolveNewerRefresh() {
+      newerRefresh.resolve(okResponse([{ id: 'a', name: 'Latest' }]));
+      await newerRefresh.promise;
+    });
+    expect(await screen.findByText('Latest')).toBeInTheDocument();
+
+    await act(async function resolveOlderRefresh() {
+      olderRefresh.resolve(okResponse([{ id: 'a', name: 'Stale' }]));
+      await olderRefresh.promise;
+    });
+
+    expect(screen.getByText('Latest')).toBeInTheDocument();
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
   });
 });
