@@ -62,4 +62,18 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '🔄',
     protocols: ['pyth'],
   },
+  {
+    label: 'Fresh Launch',
+    prompt:
+      "Reset Fartcoin's bonding curve to its fresh launch state so it can be bought from the start again",
+    icon: '🚀',
+    protocols: ['pump'],
+  },
+  {
+    label: 'Pump Graduation',
+    prompt:
+      "Set The Official 67 Coin's canonical PumpSwap pool virtual_quote_reserves to 15000000000000 so buying it becomes far more expensive",
+    icon: '🪙',
+    protocols: ['pumpswap'],
+  },
 ];
