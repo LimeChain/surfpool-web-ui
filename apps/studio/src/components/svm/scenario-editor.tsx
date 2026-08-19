@@ -329,7 +329,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -1602,18 +1602,7 @@ export default function ScenarioEditor({
                       <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
                         <div className="flex items-center gap-4">
                           <img
-                            src={
-                              {
-                                pyth: '/assets/pyth.svg',
-                                switchboard: '/assets/switchboard.svg',
-                                jupiter: '/assets/jupiter.svg',
-                                raydium: '/assets/raydium.svg',
-                                whirlpool: '/assets/whirlpool.svg',
-                                drift: '/assets/drift.svg',
-                                meteora: '/assets/meteora.svg',
-                                kamino: '/assets/kamino.svg',
-                              }[selectedProtocol.id] || selectedProtocol.icon_url
-                            }
+                            src={getProtocolIcon(selectedProtocol.id, selectedProtocol.icon_url)}
                             alt={selectedProtocol.title}
                             className="h-12 w-12"
                           />
