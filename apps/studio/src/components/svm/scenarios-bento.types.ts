@@ -89,4 +89,11 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Phoenix Liquidation Cascade',
+    prompt:
+      'Create an editable Phoenix Liquidation Cascade scenario for Trader <PASTE_PHOENIX_TRADER_ACCOUNT> on market <PASTE_MARKET_SYMBOL> using the specialized Phoenix liquidation cascade tool. Set targetQuoteLots to "1" at slot 0 and targetTicks to "1" at slot 1. Call the tool exactly once with all four values. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a liquidation transaction.',
+    icon: '🔥',
+    protocols: ['phoenix-eternal'],
+  },
 ];

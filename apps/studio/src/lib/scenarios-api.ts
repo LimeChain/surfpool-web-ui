@@ -61,6 +61,80 @@ export async function createPumpSwapPriceShockScenario(
   return response.json();
 }
 
+export type PhoenixScenarioResult = {
+  id: string;
+};
+
+export async function fetchPhoenixMarketSymbols(studioUrl: string): Promise<string[]> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/phoenix-markets`);
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Phoenix market discovery failed (${response.status})`);
+  }
+
+  const result = (await response.json()) as { symbols?: unknown };
+  if (!Array.isArray(result.symbols) || !result.symbols.every((symbol) => typeof symbol === 'string')) {
+    throw new Error('Phoenix market discovery returned an invalid response');
+  }
+
+  return result.symbols;
+}
+
+async function createPhoenixScenario(
+  studioUrl: string,
+  endpoint: string,
+  body: Record<string, string>
+): Promise<PhoenixScenarioResult> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Phoenix state validation failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export function createPhoenixCollateralScenario(
+  studioUrl: string,
+  trader: string,
+  targetQuoteLots: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(studioUrl, 'phoenix-collateral', {
+    trader: trader.trim(),
+    targetQuoteLots: targetQuoteLots.trim(),
+  });
+}
+
+export function createPhoenixDirectMarkScenario(
+  studioUrl: string,
+  symbol: string,
+  targetTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(studioUrl, 'phoenix-direct-mark', {
+    symbol: symbol.trim(),
+    targetTicks: targetTicks.trim(),
+  });
+}
+
+export function createPhoenixReferencePriceScenario(
+  studioUrl: string,
+  symbol: string,
+  spotTicks: string,
+  perpTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(studioUrl, 'phoenix-reference-prices', {
+    symbol: symbol.trim(),
+    spotTicks: spotTicks.trim(),
+    perpTicks: perpTicks.trim(),
+  });
+}
+
 /**
  * Build the POST body for creating a new scenario.
  */

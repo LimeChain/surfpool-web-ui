@@ -5,6 +5,7 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  fetchPhoenixMarketSymbols,
   flattenOverrideValues,
   scenarioToBentoItem,
 } from './scenarios-api';
@@ -101,6 +102,33 @@ describe('createPumpSwapPriceShockScenario', () => {
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
       'Canonical PumpSwap pool not found'
+    );
+  });
+});
+
+describe('fetchPhoenixMarketSymbols', () => {
+  it('returns the live Phoenix market symbols', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ symbols: ['BTC', 'ETH', 'SOL'] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual(['BTC', 'ETH', 'SOL']);
+    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/phoenix-markets');
+  });
+
+  it('rejects malformed market discovery responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ symbols: ['BTC', 7] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(fetchPhoenixMarketSymbols('http://studio')).rejects.toThrow(
+      'Phoenix market discovery returned an invalid response'
     );
   });
 });
