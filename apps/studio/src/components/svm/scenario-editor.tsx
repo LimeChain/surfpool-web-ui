@@ -15,6 +15,7 @@ import {
   SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
   beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
+  jsonRpcContextSlot,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
   overrideIdForAction,
@@ -165,7 +166,6 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
-  const activeOverrideIdsRef = useRef<string[]>([]);
   const isPlaybackActiveRef = useRef(false);
   const isPlayStartingRef = useRef(false);
   const isStepAdvancingRef = useRef(false);
@@ -814,33 +814,27 @@ export default function ScenarioEditor({
     [rpcUrl]
   );
 
-  const cleanupActivePlayback = useCallback(
+  const resetActivePlayback = useCallback(
     (showError: boolean): Promise<boolean> => {
       async function runCleanup(): Promise<boolean> {
-        const overrideIds = activeOverrideIdsRef.current;
+        let resetSucceeded = false;
         try {
-          if (overrideIds.length > 0) {
-            const payload = await requestJsonRpc(
-              rpcUrl,
-              'surfnet_cancelScenarioOverrides',
-              [overrideIds],
-              !showError
-            );
-            const errorMessage = jsonRpcErrorMessage(payload);
-            if (errorMessage) throw new Error(errorMessage);
-          }
-          activeOverrideIdsRef.current = [];
+          const payload = await requestJsonRpc(rpcUrl, 'surfnet_resetNetwork', undefined, !showError);
+          const errorMessage = jsonRpcErrorMessage(payload);
+          if (errorMessage) throw new Error(errorMessage);
+          const resetSlot = jsonRpcContextSlot(payload);
+          if (resetSlot !== null) dispatchAbsoluteSlotChange(resetSlot);
+          resetSucceeded = true;
         } catch (error) {
-          console.error('Error cancelling scenario overrides:', error);
+          console.error('Error resetting Surfnet:', error);
           if (showError) {
-            toast.error(error instanceof Error ? error.message : 'Failed to cancel pending overrides');
+            toast.error(error instanceof Error ? error.message : 'Failed to reset Surfnet');
           }
-          return false;
         }
 
         const resumed = await resumePlaybackClock(showError);
-        if (resumed) isPlaybackActiveRef.current = false;
-        return resumed;
+        if (resetSucceeded && resumed) isPlaybackActiveRef.current = false;
+        return resetSucceeded && resumed;
       }
 
       return beginPlaybackCleanup(runCleanup);
@@ -894,6 +888,14 @@ export default function ScenarioEditor({
     } finally {
       isStepAdvancingRef.current = false;
     }
+  };
+
+  const clearPlaybackState = () => {
+    setMode('read');
+    setIsExecuting(false);
+    setCurrentPlaybackStepIndex(0);
+    setPlaybackBaseSlot(null);
+    setOutcomeByOverrideId({});
   };
 
   const handlePlay = async () => {
@@ -965,13 +967,12 @@ export default function ScenarioEditor({
       return;
     }
 
-    activeOverrideIdsRef.current = overrides.map((override) => override.id);
     try {
       const registerPayload = await requestJsonRpc(rpcUrl, 'surfnet_registerScenario', [scenario]);
       const registerError = jsonRpcErrorMessage(registerPayload);
       if (registerError) {
         toast.error(registerError);
-        await cleanupActivePlayback(true);
+        await resetActivePlayback(true);
         return;
       }
 
@@ -1006,19 +1007,15 @@ export default function ScenarioEditor({
     } catch (error) {
       console.error('Error registering scenario:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to register scenario');
-      await cleanupActivePlayback(true);
+      await resetActivePlayback(true);
     } finally {
       isPlayStartingRef.current = false;
     }
   };
 
   const handleStop = async () => {
-    if (!(await cleanupActivePlayback(true))) return;
-    setMode('read');
-    setIsExecuting(false);
-    setCurrentPlaybackStepIndex(0);
-    setPlaybackBaseSlot(null);
-    setOutcomeByOverrideId({});
+    if (!(await resetActivePlayback(true))) return;
+    clearPlaybackState();
   };
 
   const getSlotSkip = (slot: Slot): { skipped: boolean; reason?: string } => {
@@ -1033,19 +1030,15 @@ export default function ScenarioEditor({
   };
 
   const handleComplete = async () => {
-    if (!(await cleanupActivePlayback(true))) return;
-    setMode('read');
-    setIsExecuting(false);
-    setCurrentPlaybackStepIndex(0);
-    setPlaybackBaseSlot(null);
-    setOutcomeByOverrideId({});
+    if (!(await resetActivePlayback(true))) return;
+    clearPlaybackState();
   };
 
   React.useLayoutEffect(() => {
     return function cleanupPlaybackOnUnmount() {
-      if (isPlaybackActiveRef.current) void cleanupActivePlayback(false);
+      if (isPlaybackActiveRef.current) void resetActivePlayback(false);
     };
-  }, [cleanupActivePlayback, scenarioId]);
+  }, [resetActivePlayback, scenarioId]);
 
   const exportSnapshot = async () => {
     try {
@@ -2690,7 +2683,7 @@ export default function ScenarioEditor({
                       <button
                         onClick={handleComplete}
                         className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
-                        title="Complete - back to read mode"
+                        title="Complete and reset Surfnet"
                       >
                         <CheckIcon className="h-6 w-6" />
                       </button>
@@ -2715,7 +2708,7 @@ export default function ScenarioEditor({
                       <button
                         onClick={handleStop}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
-                        title="Stop scenario"
+                        title="Stop and reset Surfnet"
                       >
                         <StopIcon className="h-5 w-5" />
                       </button>

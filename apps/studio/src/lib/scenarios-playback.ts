@@ -44,6 +44,12 @@ export function dispatchAbsoluteSlotChange(absoluteSlot: number): void {
   );
 }
 
+export function jsonRpcContextSlot(payload: unknown): number | null {
+  if (payload === null || typeof payload !== 'object') return null;
+  const slot = (payload as { result?: { context?: { slot?: unknown } } }).result?.context?.slot;
+  return typeof slot === 'number' && Number.isSafeInteger(slot) ? slot : null;
+}
+
 export function beginPlaybackCleanup(runCleanup: () => Promise<boolean>): Promise<boolean> {
   if (pendingPlaybackCleanup) return pendingPlaybackCleanup;
 

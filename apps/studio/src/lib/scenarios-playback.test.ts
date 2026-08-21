@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
+  jsonRpcContextSlot,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
   overrideIdForAction,
@@ -13,6 +14,17 @@ import {
   validateScenarioSlotHeights,
   waitForPlaybackCleanup,
 } from './scenarios-playback';
+
+describe('jsonRpcContextSlot', () => {
+  it('reads a safe slot from a JSON-RPC response', () => {
+    expect(jsonRpcContextSlot({ result: { context: { slot: 439000871 } } })).toBe(439000871);
+  });
+
+  it('rejects missing and unsafe slots', () => {
+    expect(jsonRpcContextSlot({ result: { context: {} } })).toBeNull();
+    expect(jsonRpcContextSlot({ result: { context: { slot: Number.MAX_SAFE_INTEGER + 1 } } })).toBeNull();
+  });
+});
 
 describe('dispatchAbsoluteSlotChange', () => {
   it('dispatches an absolute slot update for shared clock widgets', () => {
