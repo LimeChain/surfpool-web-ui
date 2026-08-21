@@ -78,9 +78,11 @@ export function Listbox<T>({
         </Headless.ListboxButton>
         <Headless.ListboxOptions
           transition
+          anchor="bottom start"
           className={clsx(
+            '[--anchor-gap:--spacing(2)] [--anchor-padding:--spacing(4)]',
             // Base styles
-            'absolute top-full left-0 isolate z-[60] mt-2 max-h-64 w-full scroll-py-1 rounded-xl p-1 select-none',
+            'isolate z-[60] max-h-64 w-[var(--button-width)] scroll-py-1 rounded-xl p-1 select-none',
             // Invisible border that is only visible in `forced-colors` mode for accessibility purposes
             'outline outline-transparent focus:outline-hidden',
             // Handle scrolling when menu won't fit in viewport
