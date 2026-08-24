@@ -350,7 +350,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'BisonFi'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -416,9 +416,28 @@ export default function ScenarioEditor({
     );
   });
 
+  // Protocols that publish no IDL describe their accounts with a byte layout instead, and their
+  // templates arrive with `idl: null` and a `rawLayout`. Their editable fields are exactly the
+  // declared properties, so synthesise the field list from those - otherwise the panel renders
+  // "No editable fields available" for a template that is perfectly usable.
+  const getFieldsFromRawLayout = (template: any) => {
+    if (!template?.rawLayout || !Array.isArray(template?.properties)) return [];
+
+    return template.properties.map((prop: any) => ({
+      name: prop.path,
+      // `encoding` is either a primitive name ("u64") or a single-key object describing a repeated
+      // write, e.g. { i32_strided: { count, stride } }. Either way the value the user supplies is one
+      // scalar of the underlying integer type, so that is what the field should be typed as.
+      type:
+        typeof prop.encoding === 'string'
+          ? prop.encoding
+          : Object.keys(prop.encoding ?? {})[0]?.replace(/_strided$/, '') || 'u64',
+    }));
+  };
+
   // Helper function to extract fields from IDL using accountType
   const getFieldsFromIDL = (template: any) => {
-    if (!template?.idl || !template?.accountType) return [];
+    if (!template?.idl || !template?.accountType) return getFieldsFromRawLayout(template);
 
     // First, try to find the account in the accounts array
     if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
@@ -449,7 +468,7 @@ export default function ScenarioEditor({
       }
     }
 
-    return [];
+    return getFieldsFromRawLayout(template);
   };
 
   // Helper function to look up a type definition in the IDL
@@ -1622,19 +1641,12 @@ export default function ScenarioEditor({
                       {/* Header */}
                       <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
                         <div className="flex items-center gap-4">
+                          {/* Resolved through the shared registry, not a local literal. This used to
+                              inline its own protocol->icon map, which silently fell through to
+                              `icon_url` (always empty from the API) for anything the map had not been
+                              updated with - a broken image with no error. */}
                           <img
-                            src={
-                              {
-                                pyth: '/assets/pyth.svg',
-                                switchboard: '/assets/switchboard.svg',
-                                jupiter: '/assets/jupiter.svg',
-                                raydium: '/assets/raydium.svg',
-                                whirlpool: '/assets/whirlpool.svg',
-                                drift: '/assets/drift.svg',
-                                meteora: '/assets/meteora.svg',
-                                kamino: '/assets/kamino.svg',
-                              }[selectedProtocol.id] || selectedProtocol.icon_url
-                            }
+                            src={getProtocolIcon(selectedProtocol.id, selectedProtocol.icon_url)}
                             alt={selectedProtocol.title}
                             className="h-12 w-12"
                           />
