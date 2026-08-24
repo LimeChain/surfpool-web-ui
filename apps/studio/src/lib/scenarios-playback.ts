@@ -102,7 +102,12 @@ export function parseOverrideOutcomeResponse(payload: unknown, fallbackMessage: 
 
   const response = payload as {
     error?: { message?: unknown };
-    result?: { context?: { slot?: unknown }; value?: unknown };
+    result?: {
+      context?: { slot?: unknown };
+      value?: unknown;
+      absoluteSlot?: unknown;
+      overrideOutcomes?: unknown;
+    };
   };
   if (response.error) {
     return {
@@ -111,8 +116,8 @@ export function parseOverrideOutcomeResponse(payload: unknown, fallbackMessage: 
     };
   }
 
-  const value = response.result?.value;
-  const slot = response.result?.context?.slot;
+  const value = response.result?.value ?? response.result?.overrideOutcomes;
+  const slot = response.result?.context?.slot ?? response.result?.absoluteSlot;
   if (!Array.isArray(value) || typeof slot !== 'number') {
     return { ok: false, message: fallbackMessage };
   }

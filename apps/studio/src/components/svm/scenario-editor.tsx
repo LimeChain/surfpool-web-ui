@@ -855,9 +855,7 @@ export default function ScenarioEditor({
     isStepAdvancingRef.current = true;
     setIsExecuting(false);
     try {
-      const payload = await requestJsonRpc(rpcUrl, 'surfnet_timeTravelWithOverrideOutcomes', [
-        { absoluteSlot: targetSlot },
-      ]);
+      const payload = await requestJsonRpc(rpcUrl, 'surfnet_timeTravel', [{ absoluteSlot: targetSlot }]);
       const parsed = parseOverrideOutcomeResponse(payload, 'Failed to advance the scenario');
       if (!parsed.ok) throw new Error(parsed.message);
       if (parsed.slot !== targetSlot) throw new Error('Surfnet returned an unexpected target slot');

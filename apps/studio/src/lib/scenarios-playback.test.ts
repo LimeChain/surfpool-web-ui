@@ -100,6 +100,24 @@ describe('parseOverrideOutcomeResponse', () => {
       'override-1': { applied: false, reason: 'account not found' },
     });
   });
+
+  it('parses outcomes returned by time travel', () => {
+    expect(
+      parseOverrideOutcomeResponse(
+        {
+          result: {
+            absoluteSlot: 30,
+            overrideOutcomes: [{ overrideId: 'override-2', applied: true, reason: null }],
+          },
+        },
+        'Failed to advance the scenario'
+      )
+    ).toEqual({
+      ok: true,
+      outcomes: [{ overrideId: 'override-2', applied: true, reason: null }],
+      slot: 30,
+    });
+  });
 });
 
 describe('overrideIdForAction', () => {
