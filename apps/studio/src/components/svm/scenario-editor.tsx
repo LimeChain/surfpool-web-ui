@@ -905,8 +905,8 @@ export default function ScenarioEditor({
     }
 
     isPlayStartingRef.current = true;
-    if (!(await waitForPlaybackCleanup())) {
-      toast.error('Failed to finish the previous scenario playback');
+    const previousCleanupSucceeded = await waitForPlaybackCleanup();
+    if (!previousCleanupSucceeded && !(await resetActivePlayback(true))) {
       isPlayStartingRef.current = false;
       return;
     }

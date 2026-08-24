@@ -23,6 +23,7 @@ type ParsedOverrideOutcomeResponse =
   | { ok: false; message: string };
 
 let pendingPlaybackCleanup: Promise<boolean> | null = null;
+let playbackCleanupRequired = false;
 
 export function overrideIdForAction(action: ScenarioActionIdentity, slotHeight: number, actionIndex: number): string {
   return action.overrideId || `${action.actionId}_${slotHeight}_${actionIndex}`;
@@ -53,17 +54,22 @@ export function jsonRpcContextSlot(payload: unknown): number | null {
 export function beginPlaybackCleanup(runCleanup: () => Promise<boolean>): Promise<boolean> {
   if (pendingPlaybackCleanup) return pendingPlaybackCleanup;
 
+  playbackCleanupRequired = true;
   const cleanup = runCleanup();
   pendingPlaybackCleanup = cleanup;
-  function clearPendingCleanup() {
+  function finishCleanup(succeeded: boolean) {
+    if (succeeded) playbackCleanupRequired = false;
     if (pendingPlaybackCleanup === cleanup) pendingPlaybackCleanup = null;
   }
-  void cleanup.then(clearPendingCleanup, clearPendingCleanup);
+  function retainRequiredCleanup() {
+    if (pendingPlaybackCleanup === cleanup) pendingPlaybackCleanup = null;
+  }
+  void cleanup.then(finishCleanup, retainRequiredCleanup);
   return cleanup;
 }
 
 export async function waitForPlaybackCleanup(): Promise<boolean> {
-  return pendingPlaybackCleanup ?? true;
+  return pendingPlaybackCleanup ?? !playbackCleanupRequired;
 }
 
 export function nextScenarioSlotHeight(slots: ReadonlyArray<{ height: number }>): number {

@@ -65,6 +65,22 @@ describe('waitForPlaybackCleanup', () => {
   it('allows playback immediately when no cleanup is pending', async () => {
     await expect(waitForPlaybackCleanup()).resolves.toBe(true);
   });
+
+  it('keeps replacement playback blocked until cleanup succeeds', async () => {
+    await expect(
+      beginPlaybackCleanup(function failCleanup() {
+        return Promise.resolve(false);
+      })
+    ).resolves.toBe(false);
+    await expect(waitForPlaybackCleanup()).resolves.toBe(false);
+
+    await expect(
+      beginPlaybackCleanup(function retryCleanup() {
+        return Promise.resolve(true);
+      })
+    ).resolves.toBe(true);
+    await expect(waitForPlaybackCleanup()).resolves.toBe(true);
+  });
 });
 
 describe('parseOverrideOutcomeResponse', () => {
