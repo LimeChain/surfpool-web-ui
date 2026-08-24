@@ -494,7 +494,10 @@ export default function ScenarioEditor({
   };
 
   // Helper function to get field type information
-  const getFieldTypeInfo = (field: any, idl: any): { type: string; isNested: boolean; nestedFields?: any[] } => {
+  const getFieldTypeInfo = (
+    field: any,
+    idl: any
+  ): { type: string; isNested: boolean; nestedFields?: any[]; elementType?: any } => {
     const fieldType = field.type;
 
     logger.log('🔍 getFieldTypeInfo for field:', field.name, 'fieldType:', fieldType);
@@ -504,16 +507,22 @@ export default function ScenarioEditor({
       return { type: fieldType, isNested: false };
     }
 
-    // Array type
-    if (fieldType?.array) {
-      const innerType = typeof fieldType.array === 'string' ? fieldType.array : 'unknown';
-      return { type: `array<${innerType}>`, isNested: false };
-    }
-
-    // Vec type
-    if (fieldType?.vec) {
-      const innerType = typeof fieldType.vec === 'string' ? fieldType.vec : 'unknown';
-      return { type: `vec<${innerType}>`, isNested: false };
+    if (fieldType?.array || fieldType?.vec) {
+      const isArrayType = Boolean(fieldType.array);
+      const raw = isArrayType ? fieldType.array : fieldType.vec;
+      
+      const element = Array.isArray(raw) ? raw[0] : raw;
+      const elementName =
+        typeof element === 'string'
+          ? element
+          : typeof element?.defined === 'string'
+            ? element.defined
+            : (element?.defined?.name ?? 'unknown');
+      return {
+        type: `${isArrayType ? 'array' : 'vec'}<${elementName}>`,
+        isNested: false,
+        elementType: element,
+      };
     }
 
     // Option type
@@ -1956,6 +1965,44 @@ export default function ScenarioEditor({
                                       if (!shouldRenderField(fieldPath)) {
                                         logger.log('❌ Skipping field:', fieldPath);
                                         return null;
+                                      }
+
+                                      if (typeInfo.elementType !== undefined && !isFieldEditable(fieldPath)) {
+                                        const declaredIndices = Array.from(
+                                          new Set(
+                                            editableProperties
+                                              .filter((prop: string) => prop.startsWith(fieldPath + '.'))
+                                              .map((prop: string) => prop.slice(fieldPath.length + 1).split('.')[0])
+                                              .filter((segment: string) => /^\d+$/.test(segment))
+                                          )
+                                        );
+
+                                        const indexChildren = declaredIndices
+                                          .map((index: string) =>
+                                            renderField({ name: index, type: typeInfo.elementType }, fieldPath, depth + 1)
+                                          )
+                                          .filter(Boolean);
+
+                                        if (indexChildren.length === 0) {
+                                          return null;
+                                        }
+
+                                        return (
+                                          <div key={fieldPath} className="space-y-2">
+                                            <div
+                                              className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
+                                              style={{ marginLeft: `${depth * 12}px` }}
+                                            >
+                                              <label className="mb-2 block text-sm font-semibold text-zinc-200">
+                                                {String(field.name)}
+                                                <span className="ml-2 text-xs font-normal text-zinc-500">
+                                                  ({String(typeInfo.type)})
+                                                </span>
+                                              </label>
+                                              <div className="space-y-3 pl-3">{indexChildren}</div>
+                                            </div>
+                                          </div>
+                                        );
                                       }
 
                                       // Nested struct - render recursively
