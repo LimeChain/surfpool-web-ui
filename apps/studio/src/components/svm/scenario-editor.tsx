@@ -1968,8 +1968,8 @@ export default function ScenarioEditor({
                                       }
 
                                       if (typeInfo.elementType !== undefined && !isFieldEditable(fieldPath)) {
-                                        const declaredIndices = Array.from(
-                                          new Set(
+                                        const declaredIndices: string[] = Array.from(
+                                          new Set<string>(
                                             editableProperties
                                               .filter((prop: string) => prop.startsWith(fieldPath + '.'))
                                               .map((prop: string) => prop.slice(fieldPath.length + 1).split('.')[0])
