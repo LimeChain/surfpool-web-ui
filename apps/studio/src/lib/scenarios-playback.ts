@@ -22,6 +22,14 @@ type ParsedOverrideOutcomeResponse =
   | { ok: true; outcomes: OverrideOutcome[]; slot: number }
   | { ok: false; message: string };
 
+export const PLAYBACK_CLEANUP_PHASE = {
+  None: 'none',
+  ResumeClock: 'resume-clock',
+  ResetNetwork: 'reset-network',
+} as const;
+
+export type PlaybackCleanupPhase = (typeof PLAYBACK_CLEANUP_PHASE)[keyof typeof PLAYBACK_CLEANUP_PHASE];
+
 let pendingPlaybackCleanup: Promise<boolean> | null = null;
 let playbackCleanupRequired = false;
 
@@ -74,6 +82,19 @@ export function beginPlaybackCleanup(runCleanup: () => Promise<boolean>): Promis
 
 export async function waitForPlaybackCleanup(): Promise<boolean> {
   return pendingPlaybackCleanup ?? !playbackCleanupRequired;
+}
+
+export async function cleanupPendingPlaybackStart(
+  pendingStart: Promise<void> | null,
+  cleanupPhase: () => PlaybackCleanupPhase,
+  resumeClock: () => Promise<boolean>,
+  resetNetwork: () => Promise<boolean>
+): Promise<boolean> {
+  if (pendingStart) await pendingStart;
+  const phase = cleanupPhase();
+  if (phase === PLAYBACK_CLEANUP_PHASE.ResumeClock) return resumeClock();
+  if (phase === PLAYBACK_CLEANUP_PHASE.ResetNetwork) return resetNetwork();
+  return true;
 }
 
 export function nextScenarioSlotHeight(slots: ReadonlyArray<{ height: number }>): number {

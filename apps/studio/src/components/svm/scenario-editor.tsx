@@ -12,8 +12,10 @@ import {
   type OverridePayload,
 } from '@/lib/scenarios-api';
 import {
+  PLAYBACK_CLEANUP_PHASE,
   SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
   beginPlaybackCleanup,
+  cleanupPendingPlaybackStart,
   dispatchAbsoluteSlotChange,
   isCurrentPlaybackStart,
   jsonRpcContextSlot,
@@ -28,6 +30,7 @@ import {
   validateScenarioSlotHeights,
   waitForPlaybackCleanup,
   type OverrideOutcomeState,
+  type PlaybackCleanupPhase,
 } from '@/lib/scenarios-playback';
 import {
   ArrowDownTrayIcon,
@@ -167,7 +170,7 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
-  const isPlaybackActiveRef = useRef(false);
+  const playbackCleanupPhaseRef = useRef<PlaybackCleanupPhase>(PLAYBACK_CLEANUP_PHASE.None);
   const isPlayStartingRef = useRef(false);
   const playbackStartGenerationRef = useRef(0);
   const pendingPlaybackStartRef = useRef<Promise<void> | null>(null);
@@ -835,7 +838,7 @@ export default function ScenarioEditor({
       }
 
       const resumed = await resumePlaybackClock(showError);
-      if (resetSucceeded && resumed) isPlaybackActiveRef.current = false;
+      if (resetSucceeded && resumed) playbackCleanupPhaseRef.current = PLAYBACK_CLEANUP_PHASE.None;
       return resetSucceeded && resumed;
     },
     [resumePlaybackClock, rpcUrl]
@@ -955,12 +958,12 @@ export default function ScenarioEditor({
     };
 
     try {
+      playbackCleanupPhaseRef.current = PLAYBACK_CLEANUP_PHASE.ResumeClock;
       const pausePayload = await requestJsonRpc(rpcUrl, 'surfnet_pauseClock');
       if (!isStartCurrent()) return;
       const pauseError = jsonRpcErrorMessage(pausePayload);
       if (pauseError) throw new Error(pauseError);
 
-      isPlaybackActiveRef.current = true;
       window.dispatchEvent(
         new CustomEvent('clockPauseStateChanged', {
           detail: { isPaused: true },
@@ -970,10 +973,13 @@ export default function ScenarioEditor({
       if (!isStartCurrent()) return;
       console.error('Error pausing clock:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to pause the clock');
+      const resumed = await resumePlaybackClock(true);
+      if (resumed) playbackCleanupPhaseRef.current = PLAYBACK_CLEANUP_PHASE.None;
       return;
     }
 
     try {
+      playbackCleanupPhaseRef.current = PLAYBACK_CLEANUP_PHASE.ResetNetwork;
       const registerPayload = await requestJsonRpc(rpcUrl, 'surfnet_registerScenario', [scenario]);
       if (!isStartCurrent()) return;
       const registerError = jsonRpcErrorMessage(registerPayload);
@@ -1065,15 +1071,28 @@ export default function ScenarioEditor({
     return function cleanupPlaybackOnUnmount() {
       playbackStartGenerationRef.current += 1;
       const pendingStart = pendingPlaybackStartRef.current;
-      if (!pendingStart && !isPlaybackActiveRef.current) return;
+      if (!pendingStart && playbackCleanupPhaseRef.current === PLAYBACK_CLEANUP_PHASE.None) return;
 
       async function cleanupAfterPlaybackStart(): Promise<boolean> {
-        if (pendingStart) await pendingStart;
-        return runPlaybackCleanup(false);
+        function cleanupPhase(): PlaybackCleanupPhase {
+          return playbackCleanupPhaseRef.current;
+        }
+
+        async function resumeClock(): Promise<boolean> {
+          const resumed = await resumePlaybackClock(false);
+          if (resumed) playbackCleanupPhaseRef.current = PLAYBACK_CLEANUP_PHASE.None;
+          return resumed;
+        }
+
+        function resetNetwork(): Promise<boolean> {
+          return runPlaybackCleanup(false);
+        }
+
+        return cleanupPendingPlaybackStart(pendingStart, cleanupPhase, resumeClock, resetNetwork);
       }
       void beginPlaybackCleanup(cleanupAfterPlaybackStart);
     };
-  }, [runPlaybackCleanup, scenarioId]);
+  }, [resumePlaybackClock, runPlaybackCleanup, scenarioId]);
 
   const exportSnapshot = async () => {
     try {

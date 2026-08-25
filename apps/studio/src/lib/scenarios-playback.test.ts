@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PLAYBACK_CLEANUP_PHASE,
   beginPlaybackCleanup,
+  cleanupPendingPlaybackStart,
   dispatchAbsoluteSlotChange,
   isCurrentPlaybackStart,
   jsonRpcContextSlot,
@@ -14,6 +16,7 @@ import {
   skippedOverrideToast,
   validateScenarioSlotHeights,
   waitForPlaybackCleanup,
+  type PlaybackCleanupPhase,
 } from './scenarios-playback';
 
 describe('jsonRpcContextSlot', () => {
@@ -106,6 +109,66 @@ describe('isCurrentPlaybackStart', () => {
     await start;
 
     expect(register).not.toHaveBeenCalled();
+  });
+});
+
+describe('cleanupPendingPlaybackStart', () => {
+  it('does not reset Surfnet when a cancelled start made no mutating request', async () => {
+    let finishStart: (() => void) | undefined;
+    const pendingStart = new Promise<void>(function captureStart(resolve) {
+      finishStart = resolve;
+    });
+    const resumeClock = vi.fn().mockResolvedValue(true);
+    const resetNetwork = vi.fn().mockResolvedValue(true);
+    const cleanup = cleanupPendingPlaybackStart(
+      pendingStart,
+      () => PLAYBACK_CLEANUP_PHASE.None,
+      resumeClock,
+      resetNetwork
+    );
+
+    expect(resumeClock).not.toHaveBeenCalled();
+    expect(resetNetwork).not.toHaveBeenCalled();
+    finishStart?.();
+    await expect(cleanup).resolves.toBe(true);
+
+    expect(resumeClock).not.toHaveBeenCalled();
+    expect(resetNetwork).not.toHaveBeenCalled();
+  });
+
+  it('only resumes the clock when cancellation happens after pause starts', async () => {
+    let finishStart: (() => void) | undefined;
+    const pendingStart = new Promise<void>(function captureStart(resolve) {
+      finishStart = resolve;
+    });
+    let cleanupPhase: PlaybackCleanupPhase = PLAYBACK_CLEANUP_PHASE.None;
+    const resumeClock = vi.fn().mockResolvedValue(true);
+    const resetNetwork = vi.fn().mockResolvedValue(true);
+    const cleanup = cleanupPendingPlaybackStart(pendingStart, () => cleanupPhase, resumeClock, resetNetwork);
+
+    cleanupPhase = PLAYBACK_CLEANUP_PHASE.ResumeClock;
+    finishStart?.();
+    await expect(cleanup).resolves.toBe(true);
+
+    expect(resumeClock).toHaveBeenCalledOnce();
+    expect(resetNetwork).not.toHaveBeenCalled();
+  });
+
+  it('resets Surfnet when cancellation happens after registration starts', async () => {
+    const resumeClock = vi.fn().mockResolvedValue(true);
+    const resetNetwork = vi.fn().mockResolvedValue(true);
+
+    await expect(
+      cleanupPendingPlaybackStart(
+        Promise.resolve(),
+        () => PLAYBACK_CLEANUP_PHASE.ResetNetwork,
+        resumeClock,
+        resetNetwork
+      )
+    ).resolves.toBe(true);
+
+    expect(resumeClock).not.toHaveBeenCalled();
+    expect(resetNetwork).toHaveBeenCalledOnce();
   });
 });
 
