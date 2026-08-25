@@ -15,6 +15,7 @@ import {
   SCENARIO_PLAYBACK_OUTCOME_TOAST_ID,
   beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
+  isCurrentPlaybackStart,
   jsonRpcContextSlot,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
@@ -168,6 +169,8 @@ export default function ScenarioEditor({
   const isFirstSlotsChangeRef = useRef(true);
   const isPlaybackActiveRef = useRef(false);
   const isPlayStartingRef = useRef(false);
+  const playbackStartGenerationRef = useRef(0);
+  const pendingPlaybackStartRef = useRef<Promise<void> | null>(null);
   const isStepAdvancingRef = useRef(false);
 
   // Reset first slots change flag when scenario changes
@@ -814,32 +817,39 @@ export default function ScenarioEditor({
     [rpcUrl]
   );
 
+  const runPlaybackCleanup = useCallback(
+    async (showError: boolean): Promise<boolean> => {
+      let resetSucceeded = false;
+      try {
+        const payload = await requestJsonRpc(rpcUrl, 'surfnet_resetNetwork', undefined, !showError);
+        const errorMessage = jsonRpcErrorMessage(payload);
+        if (errorMessage) throw new Error(errorMessage);
+        const resetSlot = jsonRpcContextSlot(payload);
+        if (resetSlot !== null) dispatchAbsoluteSlotChange(resetSlot);
+        resetSucceeded = true;
+      } catch (error) {
+        console.error('Error resetting Surfnet:', error);
+        if (showError) {
+          toast.error(error instanceof Error ? error.message : 'Failed to reset Surfnet');
+        }
+      }
+
+      const resumed = await resumePlaybackClock(showError);
+      if (resetSucceeded && resumed) isPlaybackActiveRef.current = false;
+      return resetSucceeded && resumed;
+    },
+    [resumePlaybackClock, rpcUrl]
+  );
+
   const resetActivePlayback = useCallback(
     (showError: boolean): Promise<boolean> => {
-      async function runCleanup(): Promise<boolean> {
-        let resetSucceeded = false;
-        try {
-          const payload = await requestJsonRpc(rpcUrl, 'surfnet_resetNetwork', undefined, !showError);
-          const errorMessage = jsonRpcErrorMessage(payload);
-          if (errorMessage) throw new Error(errorMessage);
-          const resetSlot = jsonRpcContextSlot(payload);
-          if (resetSlot !== null) dispatchAbsoluteSlotChange(resetSlot);
-          resetSucceeded = true;
-        } catch (error) {
-          console.error('Error resetting Surfnet:', error);
-          if (showError) {
-            toast.error(error instanceof Error ? error.message : 'Failed to reset Surfnet');
-          }
-        }
-
-        const resumed = await resumePlaybackClock(showError);
-        if (resetSucceeded && resumed) isPlaybackActiveRef.current = false;
-        return resetSucceeded && resumed;
+      function runCleanup(): Promise<boolean> {
+        return runPlaybackCleanup(showError);
       }
 
       return beginPlaybackCleanup(runCleanup);
     },
-    [resumePlaybackClock, rpcUrl]
+    [runPlaybackCleanup]
   );
 
   const handleStepForward = async () => {
@@ -896,20 +906,17 @@ export default function ScenarioEditor({
     setOutcomeByOverrideId({});
   };
 
-  const handlePlay = async () => {
-    if (isPlayStartingRef.current) return;
-    const slotValidationError = validateScenarioSlotHeights(slots);
-    if (slotValidationError) {
-      toast.error(slotValidationError);
-      return;
+  const startPlayback = async (attemptGeneration: number) => {
+    function isStartCurrent(): boolean {
+      return isCurrentPlaybackStart(playbackStartGenerationRef.current, attemptGeneration);
     }
 
-    isPlayStartingRef.current = true;
     const previousCleanupSucceeded = await waitForPlaybackCleanup();
+    if (!isStartCurrent()) return;
     if (!previousCleanupSucceeded && !(await resetActivePlayback(true))) {
-      isPlayStartingRef.current = false;
       return;
     }
+    if (!isStartCurrent()) return;
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action, actionIndex) => {
         // The backend expects flat dot-notation values ("price_message.price": 123);
@@ -949,6 +956,7 @@ export default function ScenarioEditor({
 
     try {
       const pausePayload = await requestJsonRpc(rpcUrl, 'surfnet_pauseClock');
+      if (!isStartCurrent()) return;
       const pauseError = jsonRpcErrorMessage(pausePayload);
       if (pauseError) throw new Error(pauseError);
 
@@ -959,14 +967,15 @@ export default function ScenarioEditor({
         })
       );
     } catch (error) {
+      if (!isStartCurrent()) return;
       console.error('Error pausing clock:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to pause the clock');
-      isPlayStartingRef.current = false;
       return;
     }
 
     try {
       const registerPayload = await requestJsonRpc(rpcUrl, 'surfnet_registerScenario', [scenario]);
+      if (!isStartCurrent()) return;
       const registerError = jsonRpcErrorMessage(registerPayload);
       if (registerError) {
         toast.error(registerError);
@@ -1003,12 +1012,32 @@ export default function ScenarioEditor({
       setIsExecuting(true);
       setMode('play');
     } catch (error) {
+      if (!isStartCurrent()) return;
       console.error('Error registering scenario:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to register scenario');
       await resetActivePlayback(true);
-    } finally {
+    }
+  };
+
+  const handlePlay = () => {
+    if (isPlayStartingRef.current) return;
+    const slotValidationError = validateScenarioSlotHeights(slots);
+    if (slotValidationError) {
+      toast.error(slotValidationError);
+      return;
+    }
+
+    isPlayStartingRef.current = true;
+    const attemptGeneration = playbackStartGenerationRef.current + 1;
+    playbackStartGenerationRef.current = attemptGeneration;
+    const start = startPlayback(attemptGeneration);
+    pendingPlaybackStartRef.current = start;
+
+    function finishStart() {
+      if (pendingPlaybackStartRef.current === start) pendingPlaybackStartRef.current = null;
       isPlayStartingRef.current = false;
     }
+    void start.then(finishStart, finishStart);
   };
 
   const handleStop = async () => {
@@ -1034,9 +1063,17 @@ export default function ScenarioEditor({
 
   React.useLayoutEffect(() => {
     return function cleanupPlaybackOnUnmount() {
-      if (isPlaybackActiveRef.current) void resetActivePlayback(false);
+      playbackStartGenerationRef.current += 1;
+      const pendingStart = pendingPlaybackStartRef.current;
+      if (!pendingStart && !isPlaybackActiveRef.current) return;
+
+      async function cleanupAfterPlaybackStart(): Promise<boolean> {
+        if (pendingStart) await pendingStart;
+        return runPlaybackCleanup(false);
+      }
+      void beginPlaybackCleanup(cleanupAfterPlaybackStart);
     };
-  }, [resetActivePlayback, scenarioId]);
+  }, [runPlaybackCleanup, scenarioId]);
 
   const exportSnapshot = async () => {
     try {

@@ -25,6 +25,10 @@ type ParsedOverrideOutcomeResponse =
 let pendingPlaybackCleanup: Promise<boolean> | null = null;
 let playbackCleanupRequired = false;
 
+export function isCurrentPlaybackStart(currentGeneration: number, attemptGeneration: number): boolean {
+  return currentGeneration === attemptGeneration;
+}
+
 export function overrideIdForAction(action: ScenarioActionIdentity, slotHeight: number, actionIndex: number): string {
   return action.overrideId || `${action.actionId}_${slotHeight}_${actionIndex}`;
 }

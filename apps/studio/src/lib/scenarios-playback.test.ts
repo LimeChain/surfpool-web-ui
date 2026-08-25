@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   beginPlaybackCleanup,
   dispatchAbsoluteSlotChange,
+  isCurrentPlaybackStart,
   jsonRpcContextSlot,
   mergeOverrideOutcomes,
   nextScenarioSlotHeight,
@@ -80,6 +81,31 @@ describe('waitForPlaybackCleanup', () => {
       })
     ).resolves.toBe(true);
     await expect(waitForPlaybackCleanup()).resolves.toBe(true);
+  });
+});
+
+describe('isCurrentPlaybackStart', () => {
+  it('prevents an invalidated start from registering after an awaited request', async () => {
+    let finishPause: (() => void) | undefined;
+    const pause = new Promise<void>(function capturePause(resolve) {
+      finishPause = resolve;
+    });
+    let currentGeneration = 1;
+    const register = vi.fn();
+
+    async function startPlayback() {
+      const attemptGeneration = currentGeneration;
+      await pause;
+      if (!isCurrentPlaybackStart(currentGeneration, attemptGeneration)) return;
+      register();
+    }
+
+    const start = startPlayback();
+    currentGeneration += 1;
+    finishPause?.();
+    await start;
+
+    expect(register).not.toHaveBeenCalled();
   });
 });
 
