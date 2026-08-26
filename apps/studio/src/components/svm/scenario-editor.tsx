@@ -131,6 +131,10 @@ export default function ScenarioEditor({
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
+  // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
+  // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
+  // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
+  const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
@@ -1910,6 +1914,15 @@ export default function ScenarioEditor({
                                     };
 
                                     // Helper to check if a field or any of its children should be rendered
+                                    // A declared path names one example entry of an array. Compare with
+                                    // numeric segments wildcarded so choosing a different entry stays
+                                    // editable - otherwise picking SOL (index 3) would render nothing,
+                                    // because only `prices.0.*` is declared.
+                                    const withoutIndices = (path: string) => path.replace(/\.\d+(?=\.|$)/g, '.#');
+                                    const editablePatterns = new Set(
+                                      editableProperties.map((prop: string) => withoutIndices(prop))
+                                    );
+
                                     const shouldRenderField = (fieldPath: string): boolean => {
                                       // Skip constant_ref properties - they're rendered as Comboboxes in PDA Configuration
                                       if (isConstantRefProperty(fieldPath)) {
@@ -1926,9 +1939,16 @@ export default function ScenarioEditor({
                                         return true;
                                       }
 
+                                      const pattern = withoutIndices(fieldPath);
+                                      if (editablePatterns.has(pattern)) {
+                                        return true;
+                                      }
+
                                       // Check if any property starts with this path (has children)
-                                      return editableProperties.some((prop: string) =>
-                                        prop.startsWith(fieldPath + '.')
+                                      return editableProperties.some(
+                                        (prop: string) =>
+                                          prop.startsWith(fieldPath + '.') ||
+                                          withoutIndices(prop).startsWith(pattern + '.')
                                       );
                                     };
 
@@ -1936,7 +1956,10 @@ export default function ScenarioEditor({
                                       if (editableProperties.length === 0) {
                                         return true;
                                       }
-                                      return editableProperties.includes(fieldPath);
+                                      return (
+                                        editableProperties.includes(fieldPath) ||
+                                        editablePatterns.has(withoutIndices(fieldPath))
+                                      );
                                     };
 
                                     // Recursive function to render fields
@@ -1977,11 +2000,14 @@ export default function ScenarioEditor({
                                           )
                                         );
 
-                                        const indexChildren = declaredIndices
-                                          .map((index: string) =>
-                                            renderField({ name: index, type: typeInfo.elementType }, fieldPath, depth + 1)
-                                          )
-                                          .filter(Boolean);
+                                        const activeIndex = arrayEntryIndex[fieldPath] ?? declaredIndices[0] ?? '0';
+                                        const indexChildren = [
+                                          renderField(
+                                            { name: activeIndex, type: typeInfo.elementType },
+                                            fieldPath,
+                                            depth + 1
+                                          ),
+                                        ].filter(Boolean);
 
                                         if (indexChildren.length === 0) {
                                           return null;
@@ -1993,10 +2019,25 @@ export default function ScenarioEditor({
                                               className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
                                               style={{ marginLeft: `${depth * 12}px` }}
                                             >
-                                              <label className="mb-2 block text-sm font-semibold text-zinc-200">
+                                              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-200">
                                                 {String(field.name)}
-                                                <span className="ml-2 text-xs font-normal text-zinc-500">
+                                                <span className="text-xs font-normal text-zinc-500">
                                                   ({String(typeInfo.type)})
+                                                </span>
+                                                <span className="ml-auto flex items-center gap-1 text-xs font-normal text-zinc-400">
+                                                  entry
+                                                  <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={activeIndex}
+                                                    onChange={(e) =>
+                                                      setArrayEntryIndex((prev) => ({
+                                                        ...prev,
+                                                        [fieldPath]: e.target.value.replace(/[^0-9]/g, '') || '0',
+                                                      }))
+                                                    }
+                                                    className="w-20 rounded border border-zinc-600/50 bg-zinc-900/60 px-2 py-1 text-right text-zinc-200 focus:border-yellow-500 focus:outline-none"
+                                                  />
                                                 </span>
                                               </label>
                                               <div className="space-y-3 pl-3">{indexChildren}</div>
