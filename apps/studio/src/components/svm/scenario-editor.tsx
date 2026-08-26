@@ -514,7 +514,7 @@ export default function ScenarioEditor({
     if (fieldType?.array || fieldType?.vec) {
       const isArrayType = Boolean(fieldType.array);
       const raw = isArrayType ? fieldType.array : fieldType.vec;
-      
+
       const element = Array.isArray(raw) ? raw[0] : raw;
       const elementName =
         typeof element === 'string'
@@ -1673,9 +1673,7 @@ export default function ScenarioEditor({
                           <div>
                             <h3 className="text-xl font-semibold text-zinc-100">
                               {selectedProtocol.title}
-                              {selectedProduct && (
-                                <span className="text-zinc-500"> / {selectedProduct.title}</span>
-                              )}
+                              {selectedProduct && <span className="text-zinc-500"> / {selectedProduct.title}</span>}
                             </h3>
                             <p className="text-sm text-zinc-400">
                               {selectedProduct?.description ?? selectedProtocol.description}
@@ -1728,791 +1726,799 @@ export default function ScenarioEditor({
                           </div>
                         </div>
                       ) : (
-                      /* Two Column Layout */
-                      <div className="flex flex-1 overflow-hidden">
-                        {/* Left Column - Actions List */}
-                        <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-700/50 p-6">
-                          {/* Search Field */}
-                          <div className="relative mb-4">
-                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                              <MagnifyingGlassIcon className="h-5 w-5 text-zinc-400" aria-hidden="true" />
+                        /* Two Column Layout */
+                        <div className="flex flex-1 overflow-hidden">
+                          {/* Left Column - Actions List */}
+                          <div className="w-[400px] flex-shrink-0 overflow-y-auto border-r border-zinc-700/50 p-6">
+                            {/* Search Field */}
+                            <div className="relative mb-4">
+                              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                                <MagnifyingGlassIcon className="h-5 w-5 text-zinc-400" aria-hidden="true" />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Search overrides..."
+                                value={actionSearchQuery}
+                                onChange={(e) => setActionSearchQuery(e.target.value)}
+                                className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pl-11 pr-4 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                              />
                             </div>
-                            <input
-                              type="text"
-                              placeholder="Search overrides..."
-                              value={actionSearchQuery}
-                              onChange={(e) => setActionSearchQuery(e.target.value)}
-                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pl-11 pr-4 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            {filteredActions.map((action) => (
-                              <div
-                                key={action.id}
-                                className={`cursor-pointer rounded-lg border p-4 transition-all ${
-                                  selectedAction?.id === action.id
-                                    ? 'border-yellow-500 bg-zinc-800/80'
-                                    : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
-                                }`}
-                                onClick={() => handleActionSelect(action)}
-                              >
-                                <h5 className="font-semibold text-zinc-100">{action.title}</h5>
-                                <p className="mt-1 text-xs text-zinc-400">{action.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Right Column - Account Data Editor */}
-                        <div className="flex flex-1 flex-col overflow-y-auto p-6">
-                          {selectedAction ? (
-                            <>
-                              <div className="mb-4">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                    Account Data
-                                  </h4>
-                                  <div className="flex items-center gap-3">
-                                    <label className="text-sm text-zinc-400">Fetch before use</label>
-                                    <Switch checked={fetchBeforeUse} onChange={setFetchBeforeUse} color="purple" />
-                                  </div>
+                            <div className="space-y-2">
+                              {filteredActions.map((action) => (
+                                <div
+                                  key={action.id}
+                                  className={`cursor-pointer rounded-lg border p-4 transition-all ${
+                                    selectedAction?.id === action.id
+                                      ? 'border-yellow-500 bg-zinc-800/80'
+                                      : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
+                                  }`}
+                                  onClick={() => handleActionSelect(action)}
+                                >
+                                  <h5 className="font-semibold text-zinc-100">{action.title}</h5>
+                                  <p className="mt-1 text-xs text-zinc-400">{action.description}</p>
                                 </div>
-                                <p className="mt-2 text-xs text-zinc-500">
-                                  Fetch account data just before transaction execution. Useful for price feeds, oracle
-                                  updates, and dynamic balances.
-                                </p>
-                              </div>
-                              {loadingAccountData ? (
-                                <div className="flex flex-1 items-center justify-center">
-                                  <div className="flex flex-col items-center gap-3">
-                                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-yellow-500" />
-                                    <p className="text-sm text-zinc-500">Loading account data...</p>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Right Column - Account Data Editor */}
+                          <div className="flex flex-1 flex-col overflow-y-auto p-6">
+                            {selectedAction ? (
+                              <>
+                                <div className="mb-4">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                      Account Data
+                                    </h4>
+                                    <div className="flex items-center gap-3">
+                                      <label className="text-sm text-zinc-400">Fetch before use</label>
+                                      <Switch checked={fetchBeforeUse} onChange={setFetchBeforeUse} color="purple" />
+                                    </div>
                                   </div>
+                                  <p className="mt-2 text-xs text-zinc-500">
+                                    Fetch account data just before transaction execution. Useful for price feeds, oracle
+                                    updates, and dynamic balances.
+                                  </p>
                                 </div>
-                              ) : (
-                                <div className="mb-6 flex-1 space-y-4">
-                                  {(() => {
-                                    const fields = getFieldsFromIDL(selectedAction.template);
+                                {loadingAccountData ? (
+                                  <div className="flex flex-1 items-center justify-center">
+                                    <div className="flex flex-col items-center gap-3">
+                                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-yellow-500" />
+                                      <p className="text-sm text-zinc-500">Loading account data...</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mb-6 flex-1 space-y-4">
+                                    {(() => {
+                                      const fields = getFieldsFromIDL(selectedAction.template);
 
-                                    logger.log('🔍 Fields extracted from IDL:', fields);
-                                    logger.log('🔍 Account type:', selectedAction.template?.accountType);
-                                    logger.log('🔍 Properties:', selectedAction.template?.properties);
+                                      logger.log('🔍 Fields extracted from IDL:', fields);
+                                      logger.log('🔍 Account type:', selectedAction.template?.accountType);
+                                      logger.log('🔍 Properties:', selectedAction.template?.properties);
 
-                                    if (fields.length === 0) {
-                                      return <p className="text-zinc-500">No editable fields available</p>;
-                                    }
+                                      if (fields.length === 0) {
+                                        return <p className="text-zinc-500">No editable fields available</p>;
+                                      }
 
-                                    // Get the list of properties from the template (new unified format)
-                                    // Properties are now objects with { path, kind, label, description, constant }
-                                    const rawProperties = selectedAction.template?.properties || [];
-                                    // Extract just the paths for backward compatibility with field filtering
-                                    const editableProperties = rawProperties.map((prop: any) =>
-                                      typeof prop === 'string' ? prop : prop.path
-                                    );
-                                    logger.log('🔍 Editable properties:', editableProperties);
-                                    editableProperties.forEach((prop: string) => {
-                                      logger.log('  📌', prop);
-                                    });
-
-                                    // Get constants from template
-                                    const constants = selectedAction.template?.constants || {};
-                                    logger.log('🔍 Properties (raw):', rawProperties);
-                                    logger.log('🔍 Constants:', constants);
-
-                                    // Helper to check if a field is a constant_ref
-                                    // Note: Backend serializes PropertyKind as "type" field (not "kind")
-                                    const getConstantRefInfo = (
-                                      fieldPath: string
-                                    ): {
-                                      isConstantRef: boolean;
-                                      constantDef?: any;
-                                      label?: string;
-                                      description?: string;
-                                    } => {
-                                      // Find the property by path in the new unified format
-                                      const prop = rawProperties.find(
-                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                      // Get the list of properties from the template (new unified format)
+                                      // Properties are now objects with { path, kind, label, description, constant }
+                                      const rawProperties = selectedAction.template?.properties || [];
+                                      // Extract just the paths for backward compatibility with field filtering
+                                      const editableProperties = rawProperties.map((prop: any) =>
+                                        typeof prop === 'string' ? prop : prop.path
                                       );
-                                      // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
-                                      if (
-                                        prop &&
-                                        typeof prop !== 'string' &&
-                                        prop.type === 'constant_ref' &&
-                                        prop.constant &&
-                                        constants[prop.constant]
-                                      ) {
-                                        return {
-                                          isConstantRef: true,
-                                          constantDef: constants[prop.constant],
-                                          label: prop.label,
-                                          description: prop.description,
-                                        };
-                                      }
-                                      return { isConstantRef: false };
-                                    };
+                                      logger.log('🔍 Editable properties:', editableProperties);
+                                      editableProperties.forEach((prop: string) => {
+                                        logger.log('  📌', prop);
+                                      });
 
-                                    // Helper to get property metadata (label, description)
-                                    const getPropertyMeta = (
-                                      fieldPath: string
-                                    ): { label?: string; description?: string } => {
-                                      const prop = rawProperties.find(
-                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
-                                      );
-                                      if (prop && typeof prop !== 'string') {
-                                        return { label: prop.label, description: prop.description };
-                                      }
-                                      return {};
-                                    };
+                                      // Get constants from template
+                                      const constants = selectedAction.template?.constants || {};
+                                      logger.log('🔍 Properties (raw):', rawProperties);
+                                      logger.log('🔍 Constants:', constants);
 
-                                    // Get the value from accountData using the path
-                                    const getValue = (path: string) => {
-                                      const keys = path.split('.');
-                                      let value: any = accountData;
-                                      for (const key of keys) {
-                                        value = value?.[key];
-                                      }
-
-                                      // Handle undefined/null
-                                      if (value === undefined || value === null) {
-                                        return '';
-                                      }
-
-                                      // Convert objects/arrays to JSON string for display
-                                      if (typeof value === 'object') {
-                                        return JSON.stringify(value);
-                                      }
-
-                                      return value;
-                                    };
-
-                                    // Set the value in accountData using the path
-                                    const setValue = (path: string, newValue: any) => {
-                                      const keys = path.split('.');
-                                      const newData = { ...accountData };
-                                      let current: any = newData;
-
-                                      for (let i = 0; i < keys.length - 1; i++) {
-                                        if (!current[keys[i]]) {
-                                          current[keys[i]] = {};
-                                        }
-                                        current = current[keys[i]];
-                                      }
-
-                                      current[keys[keys.length - 1]] = newValue;
-                                      setAccountData(newData);
-
-                                      // Mark this field as modified
-                                      setModifiedFields((prev) => new Set(prev).add(path));
-                                    };
-
-                                    // Helper to check if a property is a constant_ref (rendered separately as Combobox)
-                                    const isConstantRefProperty = (fieldPath: string): boolean => {
-                                      const prop = rawProperties.find(
-                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
-                                      );
-                                      return prop && typeof prop !== 'string' && prop.type === 'constant_ref';
-                                    };
-
-                                    // Helper to check if a field or any of its children should be rendered
-                                    // A declared path names one example entry of an array. Compare with
-                                    // numeric segments wildcarded so choosing a different entry stays
-                                    // editable - otherwise picking SOL (index 3) would render nothing,
-                                    // because only `prices.0.*` is declared.
-                                    const withoutIndices = (path: string) => path.replace(/\.\d+(?=\.|$)/g, '.#');
-                                    const editablePatterns = new Set(
-                                      editableProperties.map((prop: string) => withoutIndices(prop))
-                                    );
-
-                                    const shouldRenderField = (fieldPath: string): boolean => {
-                                      // Skip constant_ref properties - they're rendered as Comboboxes in PDA Configuration
-                                      if (isConstantRefProperty(fieldPath)) {
-                                        return false;
-                                      }
-
-                                      if (editableProperties.length === 0) {
-                                        // If no properties specified, show all fields
-                                        return true;
-                                      }
-
-                                      // Check if this exact path is in properties
-                                      if (editableProperties.includes(fieldPath)) {
-                                        return true;
-                                      }
-
-                                      const pattern = withoutIndices(fieldPath);
-                                      if (editablePatterns.has(pattern)) {
-                                        return true;
-                                      }
-
-                                      // Check if any property starts with this path (has children)
-                                      return editableProperties.some(
-                                        (prop: string) =>
-                                          prop.startsWith(fieldPath + '.') ||
-                                          withoutIndices(prop).startsWith(pattern + '.')
-                                      );
-                                    };
-
-                                    const isFieldEditable = (fieldPath: string): boolean => {
-                                      if (editableProperties.length === 0) {
-                                        return true;
-                                      }
-                                      return (
-                                        editableProperties.includes(fieldPath) ||
-                                        editablePatterns.has(withoutIndices(fieldPath))
-                                      );
-                                    };
-
-                                    // Recursive function to render fields
-                                    const renderField = (
-                                      field: any,
-                                      path: string,
-                                      depth: number = 0
-                                    ): React.ReactNode => {
-                                      const typeInfo = getFieldTypeInfo(field, selectedAction.template?.idl);
-                                      const fieldPath = path ? `${path}.${field.name}` : field.name;
-
-                                      logger.log(
-                                        '🔍 Rendering field:',
-                                        fieldPath,
-                                        'type:',
-                                        typeInfo.type,
-                                        'isNested:',
-                                        typeInfo.isNested,
-                                        'shouldRender:',
-                                        shouldRenderField(fieldPath),
-                                        'isEditable:',
-                                        isFieldEditable(fieldPath)
-                                      );
-
-                                      // Skip this field if it's not in the editable properties and has no children that are
-                                      if (!shouldRenderField(fieldPath)) {
-                                        logger.log('❌ Skipping field:', fieldPath);
-                                        return null;
-                                      }
-
-                                      if (typeInfo.elementType !== undefined && !isFieldEditable(fieldPath)) {
-                                        const declaredIndices: string[] = Array.from(
-                                          new Set<string>(
-                                            editableProperties
-                                              .filter((prop: string) => prop.startsWith(fieldPath + '.'))
-                                              .map((prop: string) => prop.slice(fieldPath.length + 1).split('.')[0])
-                                              .filter((segment: string) => /^\d+$/.test(segment))
-                                          )
+                                      // Helper to check if a field is a constant_ref
+                                      // Note: Backend serializes PropertyKind as "type" field (not "kind")
+                                      const getConstantRefInfo = (
+                                        fieldPath: string
+                                      ): {
+                                        isConstantRef: boolean;
+                                        constantDef?: any;
+                                        label?: string;
+                                        description?: string;
+                                      } => {
+                                        // Find the property by path in the new unified format
+                                        const prop = rawProperties.find(
+                                          (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
                                         );
+                                        // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
+                                        if (
+                                          prop &&
+                                          typeof prop !== 'string' &&
+                                          prop.type === 'constant_ref' &&
+                                          prop.constant &&
+                                          constants[prop.constant]
+                                        ) {
+                                          return {
+                                            isConstantRef: true,
+                                            constantDef: constants[prop.constant],
+                                            label: prop.label,
+                                            description: prop.description,
+                                          };
+                                        }
+                                        return { isConstantRef: false };
+                                      };
 
-                                        const activeIndex = arrayEntryIndex[fieldPath] ?? declaredIndices[0] ?? '0';
-                                        const indexChildren = [
-                                          renderField(
-                                            { name: activeIndex, type: typeInfo.elementType },
-                                            fieldPath,
-                                            depth + 1
-                                          ),
-                                        ].filter(Boolean);
+                                      // Helper to get property metadata (label, description)
+                                      const getPropertyMeta = (
+                                        fieldPath: string
+                                      ): { label?: string; description?: string } => {
+                                        const prop = rawProperties.find(
+                                          (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                        );
+                                        if (prop && typeof prop !== 'string') {
+                                          return { label: prop.label, description: prop.description };
+                                        }
+                                        return {};
+                                      };
 
-                                        if (indexChildren.length === 0) {
-                                          return null;
+                                      // Get the value from accountData using the path
+                                      const getValue = (path: string) => {
+                                        const keys = path.split('.');
+                                        let value: any = accountData;
+                                        for (const key of keys) {
+                                          value = value?.[key];
                                         }
 
-                                        return (
-                                          <div key={fieldPath} className="space-y-2">
-                                            <div
-                                              className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
-                                              style={{ marginLeft: `${depth * 12}px` }}
-                                            >
-                                              <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                                                {String(field.name)}
-                                                <span className="text-xs font-normal text-zinc-500">
-                                                  ({String(typeInfo.type)})
-                                                </span>
-                                                <span className="ml-auto flex items-center gap-1 text-xs font-normal text-zinc-400">
-                                                  entry
-                                                  <input
-                                                    type="number"
-                                                    min={0}
-                                                    value={activeIndex}
-                                                    onChange={(e) =>
-                                                      setArrayEntryIndex((prev) => ({
-                                                        ...prev,
-                                                        [fieldPath]: e.target.value.replace(/[^0-9]/g, '') || '0',
-                                                      }))
-                                                    }
-                                                    className="w-20 rounded border border-zinc-600/50 bg-zinc-900/60 px-2 py-1 text-right text-zinc-200 focus:border-yellow-500 focus:outline-none"
-                                                  />
-                                                </span>
-                                              </label>
-                                              <div className="space-y-3 pl-3">{indexChildren}</div>
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-
-                                      // Nested struct - render recursively
-                                      if (typeInfo.isNested && typeInfo.nestedFields) {
-                                        logger.log(
-                                          '🔍 Nested struct:',
-                                          fieldPath,
-                                          'has',
-                                          typeInfo.nestedFields.length,
-                                          'nested fields'
-                                        );
-                                        logger.log(
-                                          '🔍 Nested fields:',
-                                          typeInfo.nestedFields.map((f: any) => f.name)
-                                        );
-
-                                        const childFields = typeInfo.nestedFields
-                                          .map((nestedField: any) => renderField(nestedField, fieldPath, depth + 1))
-                                          .filter(Boolean); // Remove null entries
-
-                                        logger.log('🔍 After filtering, childFields count:', childFields.length);
-
-                                        // Only render the struct if it has visible children
-                                        if (childFields.length === 0) {
-                                          logger.log('❌ No visible children for nested struct:', fieldPath);
-                                          return null;
+                                        // Handle undefined/null
+                                        if (value === undefined || value === null) {
+                                          return '';
                                         }
 
-                                        return (
-                                          <div key={fieldPath} className="space-y-2">
-                                            <div
-                                              className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
-                                              style={{ marginLeft: `${depth * 12}px` }}
-                                            >
-                                              <label className="mb-2 block text-sm font-semibold text-zinc-200">
-                                                {String(field.name)}
-                                                <span className="ml-2 text-xs font-normal text-zinc-500">
-                                                  ({String(typeInfo.type)})
-                                                </span>
-                                              </label>
-                                              <div className="space-y-3 pl-3">{childFields}</div>
-                                            </div>
-                                          </div>
-                                        );
-                                      }
+                                        // Convert objects/arrays to JSON string for display
+                                        if (typeof value === 'object') {
+                                          return JSON.stringify(value);
+                                        }
 
-                                      // Regular field - only render if it's editable
-                                      if (!isFieldEditable(fieldPath)) {
-                                        return null;
-                                      }
+                                        return value;
+                                      };
 
-                                      // Regular field - render input based on type
-                                      const typeString = String(typeInfo.type);
-                                      const inputType =
-                                        typeString.startsWith('i') || typeString.startsWith('u')
-                                          ? 'number'
-                                          : typeString === 'bool'
-                                            ? 'checkbox'
-                                            : 'text';
-
-                                      // Check if this field has been explicitly modified by the user
-                                      const isModified = modifiedFields.has(fieldPath);
-
-                                      // Determine field state: OVERRIDE > STREAMED > CACHED
-                                      const fieldState = isModified
-                                        ? 'override'
-                                        : fetchBeforeUse
-                                          ? 'streamed'
-                                          : 'cached';
-
-                                      // Function to reset/clear the field
-                                      const resetField = () => {
-                                        const keys = fieldPath.split('.');
+                                      // Set the value in accountData using the path
+                                      const setValue = (path: string, newValue: any) => {
+                                        const keys = path.split('.');
                                         const newData = { ...accountData };
-                                        let current = newData;
+                                        let current: any = newData;
 
                                         for (let i = 0; i < keys.length - 1; i++) {
-                                          if (!current[keys[i]]) return;
+                                          if (!current[keys[i]]) {
+                                            current[keys[i]] = {};
+                                          }
                                           current = current[keys[i]];
                                         }
 
-                                        delete current[keys[keys.length - 1]];
+                                        current[keys[keys.length - 1]] = newValue;
                                         setAccountData(newData);
 
-                                        // Remove from modified fields
-                                        setModifiedFields((prev) => {
-                                          const newSet = new Set(prev);
-                                          newSet.delete(fieldPath);
-                                          return newSet;
-                                        });
+                                        // Mark this field as modified
+                                        setModifiedFields((prev) => new Set(prev).add(path));
                                       };
 
-                                      // Get label and description from property metadata
-                                      const propertyMeta = getPropertyMeta(fieldPath);
-                                      const displayLabel = propertyMeta.label || String(field.name);
-                                      const displayDescription = propertyMeta.description;
+                                      // Helper to check if a property is a constant_ref (rendered separately as Combobox)
+                                      const isConstantRefProperty = (fieldPath: string): boolean => {
+                                        const prop = rawProperties.find(
+                                          (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                        );
+                                        return prop && typeof prop !== 'string' && prop.type === 'constant_ref';
+                                      };
 
-                                      return (
-                                        <div
-                                          key={fieldPath}
-                                          className="space-y-2"
-                                          style={{ marginLeft: `${depth * 12}px` }}
-                                        >
-                                          <div className="flex items-start justify-between">
-                                            <div className="flex-1">
-                                              <label className="block text-sm font-medium text-zinc-300">
-                                                {displayLabel}
-                                                <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
-                                              </label>
-                                              {displayDescription && (
-                                                <p className="mt-0.5 text-xs text-zinc-500">{displayDescription}</p>
-                                              )}
-                                            </div>
-                                            <div className="ml-2 flex items-center gap-2">
-                                              {fieldState === 'override' && (
-                                                <>
-                                                  <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
-                                                    OVERRIDE VALUE
-                                                  </span>
-                                                  <button
-                                                    onClick={resetField}
-                                                    className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                                                    title="Reset to default"
-                                                  >
-                                                    <ArrowUturnLeftIcon className="h-3 w-3" />
-                                                    Reset
-                                                  </button>
-                                                </>
-                                              )}
-                                              {fieldState === 'streamed' && (
-                                                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-500">
-                                                  FETCH BEFORE USE
-                                                </span>
-                                              )}
-                                              {fieldState === 'cached' && (
-                                                <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs font-medium text-zinc-500">
-                                                  USE CACHED VALUE
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                          {inputType === 'checkbox' ? (
-                                            <input
-                                              type="checkbox"
-                                              checked={!!getValue(fieldPath)}
-                                              onChange={(e) => setValue(fieldPath, e.target.checked)}
-                                              className="h-4 w-4 rounded border-zinc-700/50 bg-zinc-800/40 text-yellow-500 focus:ring-1 focus:ring-zinc-500"
-                                            />
-                                          ) : (
-                                            <input
-                                              type={inputType}
-                                              // Scrolling over a focused number input silently changes its value
-                                              onWheel={
-                                                inputType === 'number' ? (e) => e.currentTarget.blur() : undefined
-                                              }
-                                              value={getValue(fieldPath)}
-                                              onChange={(e) => {
-                                                let newValue: any = e.target.value;
-
-                                                // Parse based on type
-                                                if (inputType === 'number') {
-                                                  newValue = Number(e.target.value);
-                                                } else if (
-                                                  typeString.includes('array') ||
-                                                  typeString.includes('vec') ||
-                                                  typeString === 'object'
-                                                ) {
-                                                  // Try to parse JSON for complex types
-                                                  try {
-                                                    newValue = e.target.value
-                                                      ? JSON.parse(e.target.value)
-                                                      : e.target.value;
-                                                  } catch {
-                                                    // Keep as string if not valid JSON
-                                                    newValue = e.target.value;
-                                                  }
-                                                }
-
-                                                setValue(fieldPath, newValue);
-                                              }}
-                                              placeholder={`Enter ${String(field.name)}...`}
-                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 ${
-                                                fieldState === 'override'
-                                                  ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
-                                                  : fieldState === 'streamed'
-                                                    ? 'border-purple-500 bg-purple-500/5 focus:border-purple-400 focus:ring-purple-500/50'
-                                                    : 'border-zinc-500 bg-zinc-500/5 focus:border-zinc-400 focus:ring-zinc-500/50'
-                                              }`}
-                                            />
-                                          )}
-                                        </div>
+                                      // Helper to check if a field or any of its children should be rendered
+                                      // A declared path names one example entry of an array. Compare with
+                                      // numeric segments wildcarded so choosing a different entry stays
+                                      // editable - otherwise picking SOL (index 3) would render nothing,
+                                      // because only `prices.0.*` is declared.
+                                      const withoutIndices = (path: string) => path.replace(/\.\d+(?=\.|$)/g, '.#');
+                                      const editablePatterns = new Set(
+                                        editableProperties.map((prop: string) => withoutIndices(prop))
                                       );
-                                    };
 
-                                    // Render constant_ref properties as comboboxes or selects
-                                    const renderConstantRefFields = () => {
-                                      // Filter for constant_ref properties from the new unified format
-                                      // Note: Backend serializes PropertyKind as "type" field
-                                      const constantRefProps = rawProperties
-                                        .filter(
-                                          (prop: any) =>
-                                            typeof prop !== 'string' &&
-                                            prop.type === 'constant_ref' &&
-                                            prop.constant &&
-                                            constants[prop.constant]
-                                        )
-                                        .map((prop: any) => ({
-                                          // Map to the old format for compatibility with existing rendering logic
-                                          name: prop.path,
-                                          type: 'constant_ref',
-                                          constant: prop.constant,
-                                          label: prop.label,
-                                          description: prop.description,
-                                        }));
+                                      const shouldRenderField = (fieldPath: string): boolean => {
+                                        // Skip constant_ref properties - they're rendered as Comboboxes in PDA Configuration
+                                        if (isConstantRefProperty(fieldPath)) {
+                                          return false;
+                                        }
 
-                                      if (constantRefProps.length === 0) return null;
+                                        if (editableProperties.length === 0) {
+                                          // If no properties specified, show all fields
+                                          return true;
+                                        }
 
-                                      // Token selector component using Catalyst Combobox
-                                      const TokenSelector = ({
-                                        constantDef,
-                                        fieldPath,
-                                        currentValue,
-                                        isModified,
-                                      }: {
-                                        constantDef: any;
-                                        fieldPath: string;
-                                        currentValue: string | number | undefined;
-                                        isModified: boolean;
-                                      }) => {
-                                        // Convert currentValue to string for comparison (handles numbers like config_index)
-                                        const currentValueStr = currentValue != null ? String(currentValue) : '';
+                                        // Check if this exact path is in properties
+                                        if (editableProperties.includes(fieldPath)) {
+                                          return true;
+                                        }
 
-                                        // Find the currently selected option (case-insensitive for hex values)
-                                        const selectedOption =
-                                          constantDef.options.find((opt: any) =>
-                                            currentValueStr.startsWith('0x')
-                                              ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
-                                              : opt.value === currentValueStr
-                                          ) || null;
+                                        const pattern = withoutIndices(fieldPath);
+                                        if (editablePatterns.has(pattern)) {
+                                          return true;
+                                        }
+
+                                        // Check if any property starts with this path (has children)
+                                        return editableProperties.some(
+                                          (prop: string) =>
+                                            prop.startsWith(fieldPath + '.') ||
+                                            withoutIndices(prop).startsWith(pattern + '.')
+                                        );
+                                      };
+
+                                      const isFieldEditable = (fieldPath: string): boolean => {
+                                        if (editableProperties.length === 0) {
+                                          return true;
+                                        }
+                                        return (
+                                          editableProperties.includes(fieldPath) ||
+                                          editablePatterns.has(withoutIndices(fieldPath))
+                                        );
+                                      };
+
+                                      // Recursive function to render fields
+                                      const renderField = (
+                                        field: any,
+                                        path: string,
+                                        depth: number = 0
+                                      ): React.ReactNode => {
+                                        const typeInfo = getFieldTypeInfo(field, selectedAction.template?.idl);
+                                        const fieldPath = path ? `${path}.${field.name}` : field.name;
+
+                                        logger.log(
+                                          '🔍 Rendering field:',
+                                          fieldPath,
+                                          'type:',
+                                          typeInfo.type,
+                                          'isNested:',
+                                          typeInfo.isNested,
+                                          'shouldRender:',
+                                          shouldRenderField(fieldPath),
+                                          'isEditable:',
+                                          isFieldEditable(fieldPath)
+                                        );
+
+                                        // Skip this field if it's not in the editable properties and has no children that are
+                                        if (!shouldRenderField(fieldPath)) {
+                                          logger.log('❌ Skipping field:', fieldPath);
+                                          return null;
+                                        }
+
+                                        if (typeInfo.elementType !== undefined && !isFieldEditable(fieldPath)) {
+                                          const declaredIndices: string[] = Array.from(
+                                            new Set<string>(
+                                              editableProperties
+                                                .filter((prop: string) => prop.startsWith(fieldPath + '.'))
+                                                .map((prop: string) => prop.slice(fieldPath.length + 1).split('.')[0])
+                                                .filter((segment: string) => /^\d+$/.test(segment))
+                                            )
+                                          );
+
+                                          const activeIndex = arrayEntryIndex[fieldPath] ?? declaredIndices[0] ?? '0';
+                                          const indexChildren = [
+                                            renderField(
+                                              { name: activeIndex, type: typeInfo.elementType },
+                                              fieldPath,
+                                              depth + 1
+                                            ),
+                                          ].filter(Boolean);
+
+                                          if (indexChildren.length === 0) {
+                                            return null;
+                                          }
+
+                                          return (
+                                            <div key={fieldPath} className="space-y-2">
+                                              <div
+                                                className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
+                                                style={{ marginLeft: `${depth * 12}px` }}
+                                              >
+                                                <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                                                  {String(field.name)}
+                                                  <span className="text-xs font-normal text-zinc-500">
+                                                    ({String(typeInfo.type)})
+                                                  </span>
+                                                  <span className="ml-auto flex items-center gap-1 text-xs font-normal text-zinc-400">
+                                                    entry
+                                                    <input
+                                                      type="number"
+                                                      min={0}
+                                                      value={activeIndex}
+                                                      onChange={(e) =>
+                                                        setArrayEntryIndex((prev) => ({
+                                                          ...prev,
+                                                          [fieldPath]: e.target.value.replace(/[^0-9]/g, '') || '0',
+                                                        }))
+                                                      }
+                                                      className="w-20 rounded border border-zinc-600/50 bg-zinc-900/60 px-2 py-1 text-right text-zinc-200 focus:border-yellow-500 focus:outline-none"
+                                                    />
+                                                  </span>
+                                                </label>
+                                                <div className="space-y-3 pl-3">{indexChildren}</div>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
+                                        // Nested struct - render recursively
+                                        if (typeInfo.isNested && typeInfo.nestedFields) {
+                                          logger.log(
+                                            '🔍 Nested struct:',
+                                            fieldPath,
+                                            'has',
+                                            typeInfo.nestedFields.length,
+                                            'nested fields'
+                                          );
+                                          logger.log(
+                                            '🔍 Nested fields:',
+                                            typeInfo.nestedFields.map((f: any) => f.name)
+                                          );
+
+                                          const childFields = typeInfo.nestedFields
+                                            .map((nestedField: any) => renderField(nestedField, fieldPath, depth + 1))
+                                            .filter(Boolean); // Remove null entries
+
+                                          logger.log('🔍 After filtering, childFields count:', childFields.length);
+
+                                          // Only render the struct if it has visible children
+                                          if (childFields.length === 0) {
+                                            logger.log('❌ No visible children for nested struct:', fieldPath);
+                                            return null;
+                                          }
+
+                                          return (
+                                            <div key={fieldPath} className="space-y-2">
+                                              <div
+                                                className="rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-3"
+                                                style={{ marginLeft: `${depth * 12}px` }}
+                                              >
+                                                <label className="mb-2 block text-sm font-semibold text-zinc-200">
+                                                  {String(field.name)}
+                                                  <span className="ml-2 text-xs font-normal text-zinc-500">
+                                                    ({String(typeInfo.type)})
+                                                  </span>
+                                                </label>
+                                                <div className="space-y-3 pl-3">{childFields}</div>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
+                                        // Regular field - only render if it's editable
+                                        if (!isFieldEditable(fieldPath)) {
+                                          return null;
+                                        }
+
+                                        // Regular field - render input based on type
+                                        const typeString = String(typeInfo.type);
+                                        const inputType =
+                                          typeString.startsWith('i') || typeString.startsWith('u')
+                                            ? 'number'
+                                            : typeString === 'bool'
+                                              ? 'checkbox'
+                                              : 'text';
+
+                                        // Check if this field has been explicitly modified by the user
+                                        const isModified = modifiedFields.has(fieldPath);
+
+                                        // Determine field state: OVERRIDE > STREAMED > CACHED
+                                        const fieldState = isModified
+                                          ? 'override'
+                                          : fetchBeforeUse
+                                            ? 'streamed'
+                                            : 'cached';
+
+                                        // Function to reset/clear the field
+                                        const resetField = () => {
+                                          const keys = fieldPath.split('.');
+                                          const newData = { ...accountData };
+                                          let current = newData;
+
+                                          for (let i = 0; i < keys.length - 1; i++) {
+                                            if (!current[keys[i]]) return;
+                                            current = current[keys[i]];
+                                          }
+
+                                          delete current[keys[keys.length - 1]];
+                                          setAccountData(newData);
+
+                                          // Remove from modified fields
+                                          setModifiedFields((prev) => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(fieldPath);
+                                            return newSet;
+                                          });
+                                        };
+
+                                        // Get label and description from property metadata
+                                        const propertyMeta = getPropertyMeta(fieldPath);
+                                        const displayLabel = propertyMeta.label || String(field.name);
+                                        const displayDescription = propertyMeta.description;
 
                                         return (
-                                          <Combobox
-                                            value={selectedOption}
-                                            onChange={(option: any) => {
-                                              if (option) {
-                                                setValue(fieldPath, option.value);
-                                              }
-                                            }}
-                                            options={constantDef.options}
-                                            displayValue={(option: any) => {
-                                              if (!option) return '';
-                                              // Display symbol from metadata if available
-                                              const symbol = option.metadata?.symbol || option.id?.toUpperCase();
-                                              return symbol;
-                                            }}
-                                            filter={(option: any, query: string) => {
-                                              const q = query.toLowerCase();
-                                              const symbol = (option.metadata?.symbol || option.id || '').toLowerCase();
-                                              const label = (option.label || '').toLowerCase();
-                                              const description = (option.description || '').toLowerCase();
-                                              return symbol.includes(q) || label.includes(q) || description.includes(q);
-                                            }}
-                                            placeholder={`Search ${constantDef.label.toLowerCase()}...`}
-                                            aria-label={constantDef.label}
-                                            className={isModified ? '[&_[data-slot=control]]:border-yellow-500' : ''}
+                                          <div
+                                            key={fieldPath}
+                                            className="space-y-2"
+                                            style={{ marginLeft: `${depth * 12}px` }}
                                           >
-                                            {(option: any) => (
-                                              <ComboboxOption key={option.id} value={option}>
-                                                <div className="flex items-center gap-3">
-                                                  {/* Token logo if available */}
-                                                  {option.metadata?.logo_uri && (
-                                                    <img
-                                                      src={option.metadata.logo_uri}
-                                                      alt={option.metadata?.symbol || option.id}
-                                                      className="h-5 w-5 rounded-full"
-                                                      onError={(e) => {
-                                                        // Hide broken images
-                                                        (e.target as HTMLImageElement).style.display = 'none';
-                                                      }}
-                                                    />
-                                                  )}
-                                                  <ComboboxLabel>
-                                                    <span className="font-medium">
-                                                      {option.metadata?.symbol || option.id?.toUpperCase()}
+                                            <div className="flex items-start justify-between">
+                                              <div className="flex-1">
+                                                <label className="block text-sm font-medium text-zinc-300">
+                                                  {displayLabel}
+                                                  <span className="ml-2 text-xs text-zinc-500">({typeString})</span>
+                                                </label>
+                                                {displayDescription && (
+                                                  <p className="mt-0.5 text-xs text-zinc-500">{displayDescription}</p>
+                                                )}
+                                              </div>
+                                              <div className="ml-2 flex items-center gap-2">
+                                                {fieldState === 'override' && (
+                                                  <>
+                                                    <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
+                                                      OVERRIDE VALUE
                                                     </span>
-                                                    {option.description && (
-                                                      <span className="ml-2 text-zinc-400">{option.description}</span>
-                                                    )}
-                                                  </ComboboxLabel>
-                                                </div>
-                                              </ComboboxOption>
+                                                    <button
+                                                      onClick={resetField}
+                                                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                                                      title="Reset to default"
+                                                    >
+                                                      <ArrowUturnLeftIcon className="h-3 w-3" />
+                                                      Reset
+                                                    </button>
+                                                  </>
+                                                )}
+                                                {fieldState === 'streamed' && (
+                                                  <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-500">
+                                                    FETCH BEFORE USE
+                                                  </span>
+                                                )}
+                                                {fieldState === 'cached' && (
+                                                  <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-xs font-medium text-zinc-500">
+                                                    USE CACHED VALUE
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                            {inputType === 'checkbox' ? (
+                                              <input
+                                                type="checkbox"
+                                                checked={!!getValue(fieldPath)}
+                                                onChange={(e) => setValue(fieldPath, e.target.checked)}
+                                                className="h-4 w-4 rounded border-zinc-700/50 bg-zinc-800/40 text-yellow-500 focus:ring-1 focus:ring-zinc-500"
+                                              />
+                                            ) : (
+                                              <input
+                                                type={inputType}
+                                                // Scrolling over a focused number input silently changes its value
+                                                onWheel={
+                                                  inputType === 'number' ? (e) => e.currentTarget.blur() : undefined
+                                                }
+                                                value={getValue(fieldPath)}
+                                                onChange={(e) => {
+                                                  let newValue: any = e.target.value;
+
+                                                  // Parse based on type
+                                                  if (inputType === 'number') {
+                                                    newValue = Number(e.target.value);
+                                                  } else if (
+                                                    typeString.includes('array') ||
+                                                    typeString.includes('vec') ||
+                                                    typeString === 'object'
+                                                  ) {
+                                                    // Try to parse JSON for complex types
+                                                    try {
+                                                      newValue = e.target.value
+                                                        ? JSON.parse(e.target.value)
+                                                        : e.target.value;
+                                                    } catch {
+                                                      // Keep as string if not valid JSON
+                                                      newValue = e.target.value;
+                                                    }
+                                                  }
+
+                                                  setValue(fieldPath, newValue);
+                                                }}
+                                                placeholder={`Enter ${String(field.name)}...`}
+                                                className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 ${
+                                                  fieldState === 'override'
+                                                    ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
+                                                    : fieldState === 'streamed'
+                                                      ? 'border-purple-500 bg-purple-500/5 focus:border-purple-400 focus:ring-purple-500/50'
+                                                      : 'border-zinc-500 bg-zinc-500/5 focus:border-zinc-400 focus:ring-zinc-500/50'
+                                                }`}
+                                              />
                                             )}
-                                          </Combobox>
+                                          </div>
+                                        );
+                                      };
+
+                                      // Render constant_ref properties as comboboxes or selects
+                                      const renderConstantRefFields = () => {
+                                        // Filter for constant_ref properties from the new unified format
+                                        // Note: Backend serializes PropertyKind as "type" field
+                                        const constantRefProps = rawProperties
+                                          .filter(
+                                            (prop: any) =>
+                                              typeof prop !== 'string' &&
+                                              prop.type === 'constant_ref' &&
+                                              prop.constant &&
+                                              constants[prop.constant]
+                                          )
+                                          .map((prop: any) => ({
+                                            // Map to the old format for compatibility with existing rendering logic
+                                            name: prop.path,
+                                            type: 'constant_ref',
+                                            constant: prop.constant,
+                                            label: prop.label,
+                                            description: prop.description,
+                                          }));
+
+                                        if (constantRefProps.length === 0) return null;
+
+                                        // Token selector component using Catalyst Combobox
+                                        const TokenSelector = ({
+                                          constantDef,
+                                          fieldPath,
+                                          currentValue,
+                                          isModified,
+                                        }: {
+                                          constantDef: any;
+                                          fieldPath: string;
+                                          currentValue: string | number | undefined;
+                                          isModified: boolean;
+                                        }) => {
+                                          // Convert currentValue to string for comparison (handles numbers like config_index)
+                                          const currentValueStr = currentValue != null ? String(currentValue) : '';
+
+                                          // Find the currently selected option (case-insensitive for hex values)
+                                          const selectedOption =
+                                            constantDef.options.find((opt: any) =>
+                                              currentValueStr.startsWith('0x')
+                                                ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
+                                                : opt.value === currentValueStr
+                                            ) || null;
+
+                                          return (
+                                            <Combobox
+                                              value={selectedOption}
+                                              onChange={(option: any) => {
+                                                if (option) {
+                                                  setValue(fieldPath, option.value);
+                                                }
+                                              }}
+                                              options={constantDef.options}
+                                              displayValue={(option: any) => {
+                                                if (!option) return '';
+                                                // Display symbol from metadata if available
+                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                                return symbol;
+                                              }}
+                                              filter={(option: any, query: string) => {
+                                                const q = query.toLowerCase();
+                                                const symbol = (
+                                                  option.metadata?.symbol ||
+                                                  option.id ||
+                                                  ''
+                                                ).toLowerCase();
+                                                const label = (option.label || '').toLowerCase();
+                                                const description = (option.description || '').toLowerCase();
+                                                return (
+                                                  symbol.includes(q) || label.includes(q) || description.includes(q)
+                                                );
+                                              }}
+                                              placeholder={`Search ${constantDef.label.toLowerCase()}...`}
+                                              aria-label={constantDef.label}
+                                              className={isModified ? '[&_[data-slot=control]]:border-yellow-500' : ''}
+                                            >
+                                              {(option: any) => (
+                                                <ComboboxOption key={option.id} value={option}>
+                                                  <div className="flex items-center gap-3">
+                                                    {/* Token logo if available */}
+                                                    {option.metadata?.logo_uri && (
+                                                      <img
+                                                        src={option.metadata.logo_uri}
+                                                        alt={option.metadata?.symbol || option.id}
+                                                        className="h-5 w-5 rounded-full"
+                                                        onError={(e) => {
+                                                          // Hide broken images
+                                                          (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                      />
+                                                    )}
+                                                    <ComboboxLabel>
+                                                      <span className="font-medium">
+                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                      </span>
+                                                      {option.description && (
+                                                        <span className="ml-2 text-zinc-400">{option.description}</span>
+                                                      )}
+                                                    </ComboboxLabel>
+                                                  </div>
+                                                </ComboboxOption>
+                                              )}
+                                            </Combobox>
+                                          );
+                                        };
+
+                                        return (
+                                          <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                            <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                              PDA Configuration
+                                            </h5>
+                                            {constantRefProps.map((prop: any) => {
+                                              const constantDef = constants[prop.constant];
+                                              const fieldPath = prop.name;
+                                              const rawValue = getValue(fieldPath);
+                                              // Convert to string for comparison (handles numbers like config_index)
+                                              const currentValue = rawValue != null ? String(rawValue) : '';
+                                              const isModified = modifiedFields.has(fieldPath);
+
+                                              // Use searchable Combobox for constants with many options (e.g., verified tokens)
+                                              const useCombobox = constantDef.options.length > 20;
+
+                                              return (
+                                                <div key={fieldPath} className="space-y-2">
+                                                  <div className="flex items-center justify-between">
+                                                    <label className="block text-sm font-medium text-zinc-300">
+                                                      {constantDef.label}
+                                                      {isModified && (
+                                                        <span className="ml-2 rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
+                                                          SELECTED
+                                                        </span>
+                                                      )}
+                                                    </label>
+                                                  </div>
+                                                  {constantDef.description && (
+                                                    <p className="text-xs text-zinc-500">{constantDef.description}</p>
+                                                  )}
+
+                                                  {useCombobox ? (
+                                                    <TokenSelector
+                                                      constantDef={constantDef}
+                                                      fieldPath={fieldPath}
+                                                      currentValue={currentValue}
+                                                      isModified={isModified}
+                                                    />
+                                                  ) : (
+                                                    <Select
+                                                      value={
+                                                        // For hex values (like Pyth feed IDs), find matching option case-insensitively
+                                                        currentValue.startsWith('0x')
+                                                          ? constantDef.options.find(
+                                                              (opt: any) =>
+                                                                opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                            )?.value ||
+                                                            currentValue ||
+                                                            ''
+                                                          : currentValue || ''
+                                                      }
+                                                      onChange={(e) => {
+                                                        setValue(fieldPath, e.target.value);
+                                                      }}
+                                                      className={
+                                                        isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
+                                                      }
+                                                    >
+                                                      <option value="">
+                                                        Select {constantDef.label.toLowerCase()}...
+                                                      </option>
+                                                      {constantDef.options.map((option: any) => (
+                                                        <option key={option.id} value={option.value}>
+                                                          {option.label}
+                                                        </option>
+                                                      ))}
+                                                    </Select>
+                                                  )}
+
+                                                  {/* Show selected token details */}
+                                                  {currentValue &&
+                                                    (() => {
+                                                      // Use case-insensitive comparison for hex values (like Pyth feed IDs)
+                                                      const selectedOption = constantDef.options.find((opt: any) =>
+                                                        currentValue.startsWith('0x')
+                                                          ? opt.value?.toLowerCase() === currentValue.toLowerCase()
+                                                          : opt.value === currentValue
+                                                      );
+                                                      if (!selectedOption) return null;
+
+                                                      return (
+                                                        <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-3 py-2">
+                                                          {selectedOption.metadata?.logo_uri && (
+                                                            <img
+                                                              src={selectedOption.metadata.logo_uri}
+                                                              alt={selectedOption.metadata?.symbol || selectedOption.id}
+                                                              className="h-6 w-6 rounded-full"
+                                                              onError={(e) => {
+                                                                (e.target as HTMLImageElement).style.display = 'none';
+                                                              }}
+                                                            />
+                                                          )}
+                                                          <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                              <span className="font-medium text-zinc-200">
+                                                                {selectedOption.metadata?.symbol ||
+                                                                  selectedOption.id?.toUpperCase()}
+                                                              </span>
+                                                              {selectedOption.metadata?.decimals !== undefined && (
+                                                                <span className="text-xs text-zinc-500">
+                                                                  ({selectedOption.metadata.decimals} decimals)
+                                                                </span>
+                                                              )}
+                                                            </div>
+                                                            <div className="truncate font-mono text-xs text-zinc-500">
+                                                              {selectedOption.value}
+                                                            </div>
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    })()}
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
                                         );
                                       };
 
                                       return (
-                                        <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
-                                          <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                            PDA Configuration
-                                          </h5>
-                                          {constantRefProps.map((prop: any) => {
-                                            const constantDef = constants[prop.constant];
-                                            const fieldPath = prop.name;
-                                            const rawValue = getValue(fieldPath);
-                                            // Convert to string for comparison (handles numbers like config_index)
-                                            const currentValue = rawValue != null ? String(rawValue) : '';
-                                            const isModified = modifiedFields.has(fieldPath);
-
-                                            // Use searchable Combobox for constants with many options (e.g., verified tokens)
-                                            const useCombobox = constantDef.options.length > 20;
-
-                                            return (
-                                              <div key={fieldPath} className="space-y-2">
-                                                <div className="flex items-center justify-between">
-                                                  <label className="block text-sm font-medium text-zinc-300">
-                                                    {constantDef.label}
-                                                    {isModified && (
-                                                      <span className="ml-2 rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-500">
-                                                        SELECTED
-                                                      </span>
-                                                    )}
-                                                  </label>
-                                                </div>
-                                                {constantDef.description && (
-                                                  <p className="text-xs text-zinc-500">{constantDef.description}</p>
-                                                )}
-
-                                                {useCombobox ? (
-                                                  <TokenSelector
-                                                    constantDef={constantDef}
-                                                    fieldPath={fieldPath}
-                                                    currentValue={currentValue}
-                                                    isModified={isModified}
-                                                  />
-                                                ) : (
-                                                  <Select
-                                                    value={
-                                                      // For hex values (like Pyth feed IDs), find matching option case-insensitively
-                                                      currentValue.startsWith('0x')
-                                                        ? constantDef.options.find(
-                                                            (opt: any) =>
-                                                              opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                          )?.value ||
-                                                          currentValue ||
-                                                          ''
-                                                        : currentValue || ''
-                                                    }
-                                                    onChange={(e) => {
-                                                      setValue(fieldPath, e.target.value);
-                                                    }}
-                                                    className={isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''}
-                                                  >
-                                                    <option value="">
-                                                      Select {constantDef.label.toLowerCase()}...
-                                                    </option>
-                                                    {constantDef.options.map((option: any) => (
-                                                      <option key={option.id} value={option.value}>
-                                                        {option.label}
-                                                      </option>
-                                                    ))}
-                                                  </Select>
-                                                )}
-
-                                                {/* Show selected token details */}
-                                                {currentValue &&
-                                                  (() => {
-                                                    // Use case-insensitive comparison for hex values (like Pyth feed IDs)
-                                                    const selectedOption = constantDef.options.find((opt: any) =>
-                                                      currentValue.startsWith('0x')
-                                                        ? opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                        : opt.value === currentValue
-                                                    );
-                                                    if (!selectedOption) return null;
-
-                                                    return (
-                                                      <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-3 py-2">
-                                                        {selectedOption.metadata?.logo_uri && (
-                                                          <img
-                                                            src={selectedOption.metadata.logo_uri}
-                                                            alt={selectedOption.metadata?.symbol || selectedOption.id}
-                                                            className="h-6 w-6 rounded-full"
-                                                            onError={(e) => {
-                                                              (e.target as HTMLImageElement).style.display = 'none';
-                                                            }}
-                                                          />
-                                                        )}
-                                                        <div className="min-w-0 flex-1">
-                                                          <div className="flex items-center gap-2">
-                                                            <span className="font-medium text-zinc-200">
-                                                              {selectedOption.metadata?.symbol ||
-                                                                selectedOption.id?.toUpperCase()}
-                                                            </span>
-                                                            {selectedOption.metadata?.decimals !== undefined && (
-                                                              <span className="text-xs text-zinc-500">
-                                                                ({selectedOption.metadata.decimals} decimals)
-                                                              </span>
-                                                            )}
-                                                          </div>
-                                                          <div className="truncate font-mono text-xs text-zinc-500">
-                                                            {selectedOption.value}
-                                                          </div>
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })()}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
+                                        <>
+                                          {renderConstantRefFields()}
+                                          {fields.map((field: any) => renderField(field, '', 0))}
+                                        </>
                                       );
-                                    };
+                                    })()}
+                                  </div>
+                                )}
 
-                                    return (
-                                      <>
-                                        {renderConstantRefFields()}
-                                        {fields.map((field: any) => renderField(field, '', 0))}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-
-                              {/* Add/Update Action Button - Right Aligned */}
-                              {!loadingAccountData && (
-                                <div className="flex justify-end">
-                                  <button
-                                    onClick={() => {
-                                      if (selectedSlotId && selectedProtocol && selectedAction) {
-                                        if (editingAction) {
-                                          // Update existing action
-                                          updateActionInSlot(
-                                            editingAction.slotId,
-                                            editingAction.actionIndex,
-                                            selectedProtocol,
-                                            selectedAction
-                                          );
-                                          setEditingAction(null);
-                                        } else {
-                                          // Add new action
-                                          addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
+                                {/* Add/Update Action Button - Right Aligned */}
+                                {!loadingAccountData && (
+                                  <div className="flex justify-end">
+                                    <button
+                                      onClick={() => {
+                                        if (selectedSlotId && selectedProtocol && selectedAction) {
+                                          if (editingAction) {
+                                            // Update existing action
+                                            updateActionInSlot(
+                                              editingAction.slotId,
+                                              editingAction.actionIndex,
+                                              selectedProtocol,
+                                              selectedAction
+                                            );
+                                            setEditingAction(null);
+                                          } else {
+                                            // Add new action
+                                            addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
+                                          }
+                                          setShowProtocolPanel(false);
+                                          setSelectedProduct(null);
+                                          setSelectedAction(null);
+                                          setAccountData({});
+                                          setModifiedFields(new Set());
+                                          setFetchBeforeUse(false);
                                         }
-                                        setShowProtocolPanel(false);
-                                        setSelectedProduct(null);
-                                        setSelectedAction(null);
-                                        setAccountData({});
-                                        setModifiedFields(new Set());
-                                        setFetchBeforeUse(false);
-                                      }
-                                    }}
-                                    disabled={!selectedSlotId || !selectedAction}
-                                    className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {editingAction
-                                      ? 'Update Action'
-                                      : selectedSlotId
-                                        ? 'Add to Selected Slot'
-                                        : 'Select a slot first'}
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-zinc-500">
-                              Select an override to edit account data
-                            </div>
-                          )}
+                                      }}
+                                      disabled={!selectedSlotId || !selectedAction}
+                                      className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {editingAction
+                                        ? 'Update Action'
+                                        : selectedSlotId
+                                          ? 'Add to Selected Slot'
+                                          : 'Select a slot first'}
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-zinc-500">
+                                Select an override to edit account data
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
                       )}
                     </div>
                   </div>
