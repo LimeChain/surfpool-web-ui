@@ -85,7 +85,7 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'PumpSwap Price Shock',
     prompt:
-      'Create an editable PumpSwap price shock for token mint <PASTE_TOKEN_MINT_HERE> using the specialized PumpSwap price shock tool with virtualQuoteReserves set to "15000000000000". Call the tool exactly once with both values. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+      'Create an editable PumpSwap price shock for token mint <PASTE_TOKEN_MINT_HERE>. Fetch the existing override templates, then call create_scenario once with the pump-amm-canonical-pool template, base_mint set to that mint, virtual_quote_reserves set to 15000000000000, slot 1, and fetchBeforeUse enabled. Prepare state only; do not build or execute a swap.',
     icon: '⚡',
     protocols: ['pumpswap'],
   },

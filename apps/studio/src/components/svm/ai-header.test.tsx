@@ -120,7 +120,8 @@ describe('AIHeader', () => {
 
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_TOKEN_MINT_HERE>');
-    expect(prompt).toContain('virtualQuoteReserves');
+    expect(prompt).toContain('pump-amm-canonical-pool');
+    expect(prompt).toContain('create_scenario');
     expect(prompt).toContain('do not build or execute a swap');
   });
 

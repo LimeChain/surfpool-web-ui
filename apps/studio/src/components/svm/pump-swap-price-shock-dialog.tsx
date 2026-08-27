@@ -69,8 +69,8 @@ export default function PumpSwapPriceShockDialog({
       <form onSubmit={handleSubmit}>
         <DialogTitle>Create PumpSwap price shock</DialogTitle>
         <DialogDescription>
-          Enter a migrated pump.fun mint and a positive raw virtual quote reserve amount. Surfpool validates its
-          canonical WSOL pool before creating the scenario.
+          Enter a migrated pump.fun mint and a positive raw virtual quote reserve amount. Surfpool derives its
+          canonical WSOL pool from the existing PumpSwap template.
         </DialogDescription>
         <div className="mt-5 space-y-4">
           <div>
@@ -108,7 +108,7 @@ export default function PumpSwapPriceShockDialog({
             Cancel
           </Button>
           <Button type="submit" color="pink" disabled={!canCreate}>
-            {isCreating ? 'Validating…' : 'Create scenario'}
+            {isCreating ? 'Creating…' : 'Create scenario'}
           </Button>
         </DialogActions>
       </form>

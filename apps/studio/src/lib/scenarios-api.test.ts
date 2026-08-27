@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
@@ -16,6 +17,22 @@ import {
   toScenarioNumber,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
+
+vi.mock('./ai-client', () => ({
+  callMCPTool: vi.fn(),
+  fetchMCPTools: vi.fn(),
+}));
+
+const callMcpToolMock = vi.mocked(callMCPTool);
+const fetchMcpToolsMock = vi.mocked(fetchMCPTools);
+const fetchMock = vi.fn();
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 const baseScenario: Scenario = {
   id: 'test-123',
@@ -44,34 +61,37 @@ const baseScenario: Scenario = {
 };
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('createPumpGraduationScenario', () => {
-  it('posts the trimmed mint to the specialized scenario endpoint', async () => {
-    const payload = {
-      id: 'scenario-id',
-      tokenMint: 'mint',
-      completingBuyAmount: 10,
-      migrationReserve: 20,
-      addresses: { bondingCurve: 'curve', curveVault: 'vault', canonicalPool: 'pool' },
-    };
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      );
-
-    await expect(createPumpGraduationScenario('http://studio', ' mint ')).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/pump-graduation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tokenMint: 'mint' }),
+  it('calls the specialized MCP tool without an LLM', async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    callMcpToolMock.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: null, url: 'http://studio/scenarios?id=scenario-id&tab=editor' }),
+        },
+      ],
     });
+
+    await expect(createPumpGraduationScenario('http://studio', ' mint ')).resolves.toEqual({ id: 'scenario-id' });
+    expect(callMcpToolMock).toHaveBeenCalledWith(
+      'http://studio',
+      'create_pump_graduation_scenario',
+      { tokenMint: 'mint' },
+      'session-id'
+    );
   });
 
-  it('surfaces backend validation failures', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Bonding curve is already complete', { status: 400 }));
+  it('surfaces MCP validation failures', async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    callMcpToolMock.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'Bonding curve is already complete', url: null }) }],
+    });
 
     await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
       'Bonding curve is already complete'
@@ -80,35 +100,69 @@ describe('createPumpGraduationScenario', () => {
 });
 
 describe('createPumpSwapPriceShockScenario', () => {
-  it('posts trimmed inputs to the specialized scenario endpoint', async () => {
-    const payload = {
-      id: 'scenario-id',
-      tokenMint: 'mint',
-      canonicalPool: 'pool',
-      virtualQuoteReserves: '15000000000000',
-    };
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      );
+  it('creates a generic scenario from the existing PumpSwap template', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+      .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      payload
+      { id: '11111111-1111-4111-8111-111111111111' }
     );
-    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/pump-swap-price-shock', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tokenMint: 'mint', virtualQuoteReserves: '15000000000000' }),
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
+
+    const postRequest = fetchMock.mock.calls[1];
+    expect(postRequest[0]).toBe('http://studio/v1/scenarios');
+    const init = postRequest[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'PumpSwap Price Shock',
+      description: 'Shift a canonical PumpSwap pool price through its virtual quote reserves.',
+      overrides: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          templateId: 'pump-amm-canonical-pool',
+          values: { base_mint: 'mint', virtual_quote_reserves: 15000000000000 },
+          scenarioRelativeSlot: 1,
+          label: 'PumpSwap virtual quote reserve shock',
+          enabled: true,
+          fetchBeforeUse: true,
+          account: { pda: { programId: 'pump', seeds: [] } },
+        },
+      ],
+      tags: ['pumpswap', 'price-shock'],
     });
   });
 
-  it('surfaces backend validation failures', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Canonical PumpSwap pool not found', { status: 400 }));
+  it('preserves the full u64 value in the scenario JSON', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
-      'Canonical PumpSwap pool not found'
-    );
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615');
+
+    const init = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(init.body).toContain('"virtual_quote_reserves":18446744073709551615');
+  });
+
+  it('surfaces generic scenario API failures', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
+
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
   });
 });
 
