@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe('PumpSwapPriceShockDialog', () => {
-  it('creates a validated price shock scenario', async () => {
+  it('creates a declarative price shock scenario', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({
       id: 'scenario-id',
