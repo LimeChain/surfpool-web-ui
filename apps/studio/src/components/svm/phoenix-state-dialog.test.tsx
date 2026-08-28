@@ -35,10 +35,10 @@ vi.mock('@surfpool/ui', () => ({
 }));
 
 const createReferencePriceMock = vi.mocked(createPhoenixReferencePriceScenario);
-const fetchMarketsMock = vi.mocked(fetchPhoenixMarketSymbols);
+const fetchSymbolsMock = vi.mocked(fetchPhoenixMarketSymbols);
 
 beforeEach(() => {
-  fetchMarketsMock.mockResolvedValue(['BTC', 'ETH', 'SOL']);
+  fetchSymbolsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -53,7 +53,6 @@ describe('PhoenixStateDialog', () => {
 
     fireEvent.change(screen.getByLabelText('Spot reference ticks'), { target: { value: '80000' } });
     fireEvent.change(screen.getByLabelText('Perp reference ticks'), { target: { value: '120000' } });
-    await waitFor(() => expect(screen.getByLabelText('Phoenix market')).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'SOL' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
@@ -66,7 +65,6 @@ describe('PhoenixStateDialog', () => {
   it('keeps invalid exact tick inputs out of the backend', async () => {
     render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByLabelText('Phoenix market')).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Spot reference ticks'), { target: { value: '80.5' } });
     fireEvent.change(screen.getByLabelText('Perp reference ticks'), { target: { value: '120000' } });
 
@@ -76,12 +74,38 @@ describe('PhoenixStateDialog', () => {
     expect(createReferencePriceMock).not.toHaveBeenCalled();
   });
 
-  it('shows market discovery failures and keeps market scenarios disabled', async () => {
-    fetchMarketsMock.mockRejectedValue(new Error('Phoenix PerpAssetMap account not found'));
+  it('surfaces backend validation failures', async () => {
+    createReferencePriceMock.mockRejectedValue(new Error('Phoenix PerpAssetMap account not found'));
     render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
 
+    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'SOL' } });
+    fireEvent.change(screen.getByLabelText('Spot reference ticks'), { target: { value: '80000' } });
+    fireEvent.change(screen.getByLabelText('Perp reference ticks'), { target: { value: '120000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
     expect(await screen.findByText('Phoenix PerpAssetMap account not found')).toBeInTheDocument();
-    expect(screen.getByLabelText('Phoenix market')).toBeDisabled();
+  });
+
+  it('rejects a market symbol outside the loaded catalog but accepts one inside it', async () => {
+    fetchSymbolsMock.mockResolvedValue(['BTC', 'ETH']);
+    createReferencePriceMock.mockResolvedValue({ id: 'phoenix-scenario' });
+    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    await waitFor(() => expect(fetchSymbolsMock).toHaveBeenCalledWith('http://studio'));
+
+    fireEvent.change(screen.getByLabelText('Spot reference ticks'), { target: { value: '80000' } });
+    fireEvent.change(screen.getByLabelText('Perp reference ticks'), { target: { value: '120000' } });
+
+    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'BTCC' } });
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    expect(createReferencePriceMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'ETH' } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => {
+      expect(createReferencePriceMock).toHaveBeenCalledWith('http://studio', 'ETH', '80000', '120000');
+    });
   });
 });

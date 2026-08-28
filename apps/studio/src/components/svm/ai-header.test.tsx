@@ -133,8 +133,11 @@ describe('AIHeader', () => {
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_PHOENIX_TRADER_ACCOUNT>');
     expect(prompt).toContain('<PASTE_MARKET_SYMBOL>');
-    expect(prompt).toContain('targetQuoteLots to "1" at slot 0');
-    expect(prompt).toContain('targetTicks to "1" at slot 1');
+    expect(prompt).toContain('create_scenario');
+    expect(prompt).toContain('phoenix-trader-collateral-stress');
+    expect(prompt).toContain('phoenix-direct-mark-risk-shock');
+    expect(prompt).toContain('slot 0');
+    expect(prompt).toContain('slot 1');
     expect(prompt).toContain('do not build or execute a liquidation transaction');
   });
 

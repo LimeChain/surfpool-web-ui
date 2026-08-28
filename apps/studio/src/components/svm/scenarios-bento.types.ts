@@ -92,7 +92,7 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'Phoenix Liquidation Cascade',
     prompt:
-      'Create an editable Phoenix Liquidation Cascade scenario for Trader <PASTE_PHOENIX_TRADER_ACCOUNT> on market <PASTE_MARKET_SYMBOL> using the specialized Phoenix liquidation cascade tool. Set targetQuoteLots to "1" at slot 0 and targetTicks to "1" at slot 1. Call the tool exactly once with all four values. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a liquidation transaction.',
+      'Create one editable Phoenix Liquidation Cascade scenario for Trader <PASTE_PHOENIX_TRADER_ACCOUNT> on market <PASTE_MARKET_SYMBOL>. Fetch the existing override templates, then call create_scenario once with two overrides: the phoenix-trader-collateral-stress template with quote_lot_collateral "1" at slot 0, and the phoenix-direct-mark-risk-shock template with target_ticks "1" at slot 1, both with fetchBeforeUse enabled. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a liquidation transaction.',
     icon: '🔥',
     protocols: ['phoenix-eternal'],
   },
