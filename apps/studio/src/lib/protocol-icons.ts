@@ -16,11 +16,12 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'meteora', name: 'Meteora', icon: '/assets/meteora.svg' },
   { id: 'pump', name: 'Pump', icon: '/assets/pump.svg' },
   { id: 'pumpswap', name: 'PumpSwap', icon: '/assets/pumpswap.svg' },
+  { id: 'phoenix-eternal', name: 'Phoenix Eternal', icon: '/assets/phoenix.svg' },
 ];
 
 // Shared protocol icon mappings (derived from PROTOCOLS for backwards compatibility)
 export const PROTOCOL_ICONS: Record<string, string> = Object.fromEntries(PROTOCOLS.map((p) => [p.id, p.icon]));
 
 export function getProtocolIcon(protocolId: string, fallback = '/assets/surfpool.svg'): string {
-  return PROTOCOL_ICONS[protocolId] || fallback;
+  return PROTOCOL_ICONS[protocolId] || fallback || '/assets/surfpool.svg';
 }

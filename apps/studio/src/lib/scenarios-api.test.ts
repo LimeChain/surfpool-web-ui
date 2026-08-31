@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { callMCPTool } from './ai-client';
 import {
   buildAiPrompt,
+  createPhoenixCollateralScenario,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
@@ -101,6 +103,64 @@ describe('createPumpSwapPriceShockScenario', () => {
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
       'Canonical PumpSwap pool not found'
+    );
+  });
+});
+
+vi.mock('./ai-client', () => ({
+  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
+  callMCPTool: vi.fn(),
+}));
+
+describe('createPhoenixCollateralScenario', () => {
+  it('creates the scenario through the Phoenix MCP tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ url: 'http://studio/scenarios?id=phoenix-1&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', ' trader ', ' -5 ')).resolves.toEqual({
+      id: 'phoenix-1',
+    });
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'create_phoenix_collateral_scenario',
+      { trader: 'trader', targetQuoteLots: '-5' },
+      'session'
+    );
+  });
+
+  it('accepts a relative scenario URL from the tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ url: '/scenarios?id=rel-1&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '1')).resolves.toEqual({
+      id: 'rel-1',
+    });
+  });
+
+  it('surfaces tool validation failures', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: 'Phoenix collateral stress can only lower collateral' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
+      'Phoenix collateral stress can only lower collateral'
     );
   });
 });

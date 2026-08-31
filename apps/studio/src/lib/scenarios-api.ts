@@ -1,4 +1,6 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { stringify } from 'lossless-json';
+import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 
@@ -59,6 +61,182 @@ export async function createPumpSwapPriceShockScenario(
   }
 
   return response.json();
+}
+
+export type PhoenixScenarioResult = {
+  id: string;
+};
+
+export async function createPhoenixCollateralScenario(
+  studioUrl: string,
+  trader: string,
+  targetQuoteLots: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
+    trader: trader.trim(),
+    targetQuoteLots: targetQuoteLots.trim(),
+  });
+}
+
+type ScenarioTemplateConstantOption = {
+  id: string;
+  label: string;
+  value: string;
+};
+
+type ScenarioTemplateConstant = {
+  label: string;
+  description: string;
+  options: ScenarioTemplateConstantOption[];
+};
+
+type ScenarioTemplate = {
+  id: string;
+  address: unknown;
+  constants?: Record<string, ScenarioTemplateConstant>;
+};
+
+async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  const templates = (await response.json()) as ScenarioTemplate[];
+  const template = templates.find((candidate) => candidate.id === templateId);
+  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+
+  return template;
+}
+
+/**
+ * Phoenix market symbols come from the direct-mark template's constant catalog. Returns []
+ * on any failure so callers can fall back to free-text input.
+ */
+export async function fetchPhoenixMarketSymbols(studioUrl: string): Promise<string[]> {
+  try {
+    const template = await phoenixMarketTemplate(studioUrl, 'phoenix-direct-mark-risk-shock');
+    const options = template.constants?.market_symbol?.options ?? [];
+    return options.map((option) => option.value);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The market templates carry the perp asset map address, so these scenarios are built here and
+ * posted to the generic API; only collateral stress needs a tool, for its vault-backing check.
+ */
+async function createPhoenixMarketScenario(
+  studioUrl: string,
+  templateId: string,
+  name: string,
+  description: string,
+  label: string,
+  tags: string[],
+  values: Record<string, string>
+): Promise<PhoenixScenarioResult> {
+  const template = await phoenixMarketTemplate(studioUrl, templateId);
+  const scenario = {
+    id: crypto.randomUUID(),
+    name,
+    description,
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        // The Phoenix writers take tick values as decimal strings, exactly as typed.
+        templateId: template.id,
+        values,
+        scenarioRelativeSlot: 0,
+        label,
+        enabled: true,
+        fetchBeforeUse: false,
+        account: template.address,
+      },
+    ],
+    tags,
+  };
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize Phoenix scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create Phoenix scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+
+  return { id: result.id };
+}
+
+export async function createPhoenixDirectMarkScenario(
+  studioUrl: string,
+  symbol: string,
+  targetTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixMarketScenario(
+    studioUrl,
+    'phoenix-direct-mark-risk-shock',
+    `Phoenix ${symbol.trim()} Direct Mark Risk Shock`,
+    'Set exact mark-price ticks in validated Phoenix Eternal risk state.',
+    `Phoenix ${symbol.trim()} direct mark risk shock`,
+    ['phoenix-eternal', 'direct-mark', 'risk'],
+    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+  );
+}
+
+export async function createPhoenixReferencePriceScenario(
+  studioUrl: string,
+  symbol: string,
+  spotTicks: string,
+  perpTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixMarketScenario(
+    studioUrl,
+    'phoenix-reference-price-divergence',
+    `Phoenix ${symbol.trim()} Spot/Perp Reference Divergence`,
+    'Set independent spot and external-perp references while preserving the current mark.',
+    `Phoenix ${symbol.trim()} spot/perp reference divergence`,
+    ['phoenix-eternal', 'reference-divergence', 'risk'],
+    { symbol: symbol.trim(), spot_ticks: spotTicks.trim(), perp_ticks: perpTicks.trim() }
+  );
+}
+
+/**
+ * Collateral stress is the one Phoenix scenario a template cannot express: the tool refuses to
+ * raise collateral past the vault backing it, which needs the live trader account.
+ */
+async function createPhoenixScenarioWithMcp(
+  studioUrl: string,
+  toolName: string,
+  args: Record<string, string>
+): Promise<PhoenixScenarioResult> {
+  const { sessionId } = await fetchMCPTools(studioUrl);
+  const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
+    content?: Array<{ type?: string; text?: string }>;
+  };
+  let text: string | undefined;
+  for (const content of result.content ?? []) {
+    if (content.type === 'text' && content.text) {
+      text = content.text;
+      break;
+    }
+  }
+  if (!text) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
+
+  const payload = JSON.parse(text) as { error?: string | null; url?: string | null };
+  if (payload.error) throw new Error(payload.error);
+  if (!payload.url) throw new Error(`Surfpool MCP tool ${toolName} returned no scenario URL`);
+
+  const scenarioId = new URL(payload.url, studioUrl).searchParams.get('id');
+  if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
+  return { id: scenarioId };
 }
 
 /**
