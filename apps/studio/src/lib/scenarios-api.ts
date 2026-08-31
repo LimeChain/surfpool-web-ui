@@ -245,7 +245,7 @@ async function createPumpScenarioWithMcp(
   return { id: scenarioId };
 }
 
-export type PhoenixScenarioResult = {
+export type ScenarioCreationResult = {
   id: string;
 };
 
@@ -253,8 +253,8 @@ export async function createPhoenixCollateralScenario(
   studioUrl: string,
   trader: string,
   targetQuoteLots: string
-): Promise<PhoenixScenarioResult> {
-  return createPhoenixScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
+): Promise<ScenarioCreationResult> {
+  return createScenarioWithMcpTool(studioUrl, 'create_phoenix_collateral_scenario', {
     trader: trader.trim(),
     targetQuoteLots: targetQuoteLots.trim(),
   });
@@ -304,6 +304,42 @@ export async function fetchPhoenixMarketSymbols(
   }
 }
 
+export type TesseraMarketOption = {
+  label: string;
+  value: string;
+};
+
+/**
+ * Tessera's live markets come from the fair-value template's constant catalog. Returns [] on any
+ * failure so the dialog falls back to a free-text pubkey.
+ */
+export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMarketOption[]> {
+  try {
+    const template = await phoenixMarketTemplate(studioUrl, 'tessera-fair-value');
+    const options = template.constants?.market?.options ?? [];
+    return options.map((option) => ({ label: option.label, value: option.value }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The market is optional: omitting it lets the backend use its default market, which is the same
+ * address the template carries. The price is a human decimal string; every atomic ratio is derived
+ * backend-side from the two mints' decimals.
+ */
+export async function createTesseraFairValueScenario(
+  studioUrl: string,
+  market: string,
+  price: string
+): Promise<ScenarioCreationResult> {
+  const trimmedMarket = market.trim();
+  return createScenarioWithMcpTool(studioUrl, 'create_tessera_fair_value_scenario', {
+    ...(trimmedMarket ? { market: trimmedMarket } : {}),
+    price: price.trim(),
+  });
+}
+
 /**
  * The market templates carry the perp asset map address, so these scenarios are built here and
  * posted to the generic API; only collateral stress needs a tool, for its vault-backing check.
@@ -316,7 +352,7 @@ async function createPhoenixMarketScenario(
   label: string,
   tags: string[],
   values: Record<string, string>
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   const template = await phoenixMarketTemplate(studioUrl, templateId);
   const scenario = {
     id: crypto.randomUUID(),
@@ -360,7 +396,7 @@ export async function createPhoenixDirectMarkScenario(
   studioUrl: string,
   symbol: string,
   targetTicks: string
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   return createPhoenixMarketScenario(
     studioUrl,
     'phoenix-direct-mark-risk-shock',
@@ -377,7 +413,7 @@ export async function createPhoenixReferencePriceScenario(
   symbol: string,
   spotTicks: string,
   perpTicks: string
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   return createPhoenixMarketScenario(
     studioUrl,
     'phoenix-reference-price-divergence',
@@ -390,14 +426,15 @@ export async function createPhoenixReferencePriceScenario(
 }
 
 /**
- * Collateral stress is the one Phoenix scenario a template cannot express: the tool refuses to
- * raise collateral past the vault backing it, which needs the live trader account.
+ * The seam for scenarios a template cannot express, where the backend must read live accounts to
+ * compute the values: Phoenix collateral stress against its vault backing, Tessera fair value
+ * against both mints' decimals.
  */
-async function createPhoenixScenarioWithMcp(
+async function createScenarioWithMcpTool(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;

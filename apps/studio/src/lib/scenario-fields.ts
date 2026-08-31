@@ -5,7 +5,8 @@ type ScenarioTemplate = {
     accounts?: { name: string; type?: { fields?: ScenarioField[] } }[];
     types?: { name: string; type?: { kind?: string; fields?: ScenarioField[] } }[];
   };
-  properties?: { path: string; value_type?: unknown }[];
+  rawLayout?: unknown;
+  properties?: { path: string; value_type?: unknown; encoding?: unknown }[];
 };
 
 function getIdlFields(template: ScenarioTemplate): ScenarioField[] {
@@ -40,9 +41,24 @@ function getIdlFields(template: ScenarioTemplate): ScenarioField[] {
   return [];
 }
 
+// Raw-layout templates describe an IDL-less program; each property carries its own encoding.
+function getRawLayoutFields(template: ScenarioTemplate): ScenarioField[] {
+  if (!template?.rawLayout || !Array.isArray(template.properties)) return [];
+
+  return template.properties.map((property) => ({
+    name: property.path,
+    type:
+      typeof property.encoding === 'string'
+        ? property.encoding
+        : Object.keys((property.encoding as Record<string, unknown> | undefined) ?? {})[0]?.replace(/_strided$/, '') ||
+          'u64',
+  }));
+}
+
 export function getScenarioFields(template: ScenarioTemplate): ScenarioField[] {
   const fields = new Map<string, ScenarioField>();
-  for (const field of getIdlFields(template)) {
+  const baseFields = template?.idl && template?.accountType ? getIdlFields(template) : getRawLayoutFields(template);
+  for (const field of baseFields) {
     fields.set(field.name, field);
   }
   for (const property of template.properties ?? []) {
