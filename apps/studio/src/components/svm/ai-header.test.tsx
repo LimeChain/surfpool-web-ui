@@ -89,6 +89,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Liquidation Cascade')).toBeInTheDocument();
+    expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -139,6 +140,21 @@ describe('AIHeader', () => {
     expect(prompt).toContain('slot 0');
     expect(prompt).toContain('slot 1');
     expect(prompt).toContain('do not build or execute a liquidation transaction');
+  });
+
+  it('loads a Tessera staleness prompt that reads the limit per market instead of hardcoding one', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Tessera Stale Quote'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('rejection boundary');
+    expect(prompt).toContain('do not build or execute a swap');
+    expect(prompt).not.toContain('create_scenario');
+    expect(prompt).not.toContain('fetchBeforeUse');
+    expect(prompt).not.toContain('specialized');
+    expect(prompt).not.toMatch(/\b(20|25|55)[- ]slot/);
+    expect(prompt).not.toContain('fair-value');
   });
 
   it('renders the model selector button', () => {

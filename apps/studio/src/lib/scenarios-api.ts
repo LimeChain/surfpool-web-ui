@@ -63,7 +63,7 @@ export async function createPumpSwapPriceShockScenario(
   return response.json();
 }
 
-export type PhoenixScenarioResult = {
+export type ScenarioCreationResult = {
   id: string;
 };
 
@@ -71,8 +71,8 @@ export async function createPhoenixCollateralScenario(
   studioUrl: string,
   trader: string,
   targetQuoteLots: string
-): Promise<PhoenixScenarioResult> {
-  return createPhoenixScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
+): Promise<ScenarioCreationResult> {
+  return createScenarioWithMcpTool(studioUrl, 'create_phoenix_collateral_scenario', {
     trader: trader.trim(),
     targetQuoteLots: targetQuoteLots.trim(),
   });
@@ -96,7 +96,7 @@ type ScenarioTemplate = {
   constants?: Record<string, ScenarioTemplateConstant>;
 };
 
-async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+async function scenarioTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
   const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!response.ok) {
     throw new Error(`Failed to load scenario templates: ${response.status}`);
@@ -104,7 +104,7 @@ async function phoenixMarketTemplate(studioUrl: string, templateId: string): Pro
 
   const templates = (await response.json()) as ScenarioTemplate[];
   const template = templates.find((candidate) => candidate.id === templateId);
-  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+  if (!template) throw new Error(`Scenario template ${templateId} is unavailable`);
 
   return template;
 }
@@ -115,12 +115,48 @@ async function phoenixMarketTemplate(studioUrl: string, templateId: string): Pro
  */
 export async function fetchPhoenixMarketSymbols(studioUrl: string): Promise<string[]> {
   try {
-    const template = await phoenixMarketTemplate(studioUrl, 'phoenix-direct-mark-risk-shock');
+    const template = await scenarioTemplate(studioUrl, 'phoenix-direct-mark-risk-shock');
     const options = template.constants?.market_symbol?.options ?? [];
     return options.map((option) => option.value);
   } catch {
     return [];
   }
+}
+
+export type TesseraMarketOption = {
+  label: string;
+  value: string;
+};
+
+/**
+ * Tessera's live markets come from the fair-value template's constant catalog. Returns [] on any
+ * failure so the dialog falls back to a free-text pubkey.
+ */
+export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMarketOption[]> {
+  try {
+    const template = await scenarioTemplate(studioUrl, 'tessera-fair-value');
+    const options = template.constants?.market?.options ?? [];
+    return options.map((option) => ({ label: option.label, value: option.value }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The market is optional: omitting it lets the backend use its default market, which is the same
+ * address the template carries. The price is a human decimal string; every atomic ratio is derived
+ * backend-side from the two mints' decimals.
+ */
+export async function createTesseraFairValueScenario(
+  studioUrl: string,
+  market: string,
+  price: string
+): Promise<ScenarioCreationResult> {
+  const trimmedMarket = market.trim();
+  return createScenarioWithMcpTool(studioUrl, 'create_tessera_fair_value_scenario', {
+    ...(trimmedMarket ? { market: trimmedMarket } : {}),
+    price: price.trim(),
+  });
 }
 
 /**
@@ -135,8 +171,8 @@ async function createPhoenixMarketScenario(
   label: string,
   tags: string[],
   values: Record<string, string>
-): Promise<PhoenixScenarioResult> {
-  const template = await phoenixMarketTemplate(studioUrl, templateId);
+): Promise<ScenarioCreationResult> {
+  const template = await scenarioTemplate(studioUrl, templateId);
   const scenario = {
     id: crypto.randomUUID(),
     name,
@@ -179,7 +215,7 @@ export async function createPhoenixDirectMarkScenario(
   studioUrl: string,
   symbol: string,
   targetTicks: string
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   return createPhoenixMarketScenario(
     studioUrl,
     'phoenix-direct-mark-risk-shock',
@@ -196,7 +232,7 @@ export async function createPhoenixReferencePriceScenario(
   symbol: string,
   spotTicks: string,
   perpTicks: string
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   return createPhoenixMarketScenario(
     studioUrl,
     'phoenix-reference-price-divergence',
@@ -209,14 +245,15 @@ export async function createPhoenixReferencePriceScenario(
 }
 
 /**
- * Collateral stress is the one Phoenix scenario a template cannot express: the tool refuses to
- * raise collateral past the vault backing it, which needs the live trader account.
+ * The seam for scenarios a template cannot express, where the backend must read live accounts to
+ * compute the values: Phoenix collateral stress against its vault backing, Tessera fair value
+ * against both mints' decimals.
  */
-async function createPhoenixScenarioWithMcp(
+async function createScenarioWithMcpTool(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PhoenixScenarioResult> {
+): Promise<ScenarioCreationResult> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;

@@ -318,7 +318,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal', 'Tessera'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -384,9 +384,23 @@ export default function ScenarioEditor({
     );
   });
 
+  // IDL-less protocols (raw byte-layout, e.g. Tessera/BisonFi) carry the editable fields in the
+  // template's rawLayout properties instead of an IDL account struct.
+  const getFieldsFromRawLayout = (template: any) => {
+    if (!template?.rawLayout || !Array.isArray(template?.properties)) return [];
+
+    return template.properties.map((prop: any) => ({
+      name: prop.path,
+      type:
+        typeof prop.encoding === 'string'
+          ? prop.encoding
+          : Object.keys(prop.encoding ?? {})[0]?.replace(/_strided$/, '') || 'u64',
+    }));
+  };
+
   // Helper function to extract fields from IDL using accountType
   const getFieldsFromIDL = (template: any) => {
-    if (!template?.idl || !template?.accountType) return [];
+    if (!template?.idl || !template?.accountType) return getFieldsFromRawLayout(template);
 
     // First, try to find the account in the accounts array
     if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
