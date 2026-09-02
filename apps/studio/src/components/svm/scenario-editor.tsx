@@ -335,6 +335,7 @@ export default function ScenarioEditor({
           setSelectedAction(null);
           setEditingAction(null);
           setModifiedFields(new Set());
+          setArrayEntryIndex({});
           setFetchBeforeUse(false);
         } else {
           // Check if the selected slot has more than 1 override
@@ -591,6 +592,7 @@ export default function ScenarioEditor({
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
+    setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
 
     if (!action.template?.idl || !action.template?.address) {
@@ -1657,6 +1659,7 @@ export default function ScenarioEditor({
                                 setSelectedAction(null);
                                 setActionSearchQuery('');
                                 setModifiedFields(new Set());
+                                setArrayEntryIndex({});
                                 setFetchBeforeUse(false);
                               }}
                               title="Back to Kamino products"
@@ -1687,6 +1690,7 @@ export default function ScenarioEditor({
                             setSelectedAction(null);
                             setEditingAction(null);
                             setModifiedFields(new Set());
+                            setArrayEntryIndex({});
                             setFetchBeforeUse(false);
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
@@ -1998,7 +2002,16 @@ export default function ScenarioEditor({
                                             )
                                           );
 
-                                          const activeIndex = arrayEntryIndex[fieldPath] ?? declaredIndices[0] ?? '0';
+                                          const indexFromValues: string | undefined = [
+                                            ...modifiedFields,
+                                            ...Object.keys(accountData),
+                                          ]
+                                            .filter((prop: string) => prop.startsWith(fieldPath + '.'))
+                                            .map((prop: string) => prop.slice(fieldPath.length + 1).split('.')[0])
+                                            .find((segment: string) => /^\d+$/.test(segment));
+
+                                          const activeIndex =
+                                            arrayEntryIndex[fieldPath] ?? indexFromValues ?? declaredIndices[0] ?? '0';
                                           const indexChildren = [
                                             renderField(
                                               { name: activeIndex, type: typeInfo.elementType },
@@ -2497,6 +2510,7 @@ export default function ScenarioEditor({
                                           setSelectedAction(null);
                                           setAccountData({});
                                           setModifiedFields(new Set());
+                                          setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
                                         }
                                       }}
