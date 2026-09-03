@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAiPrompt,
   buildPersistenceCancellation,
+  buildScenarioPersistenceCancellations,
+  buildStopPersistenceRpcRequest,
   buildUpdatePayload,
+  createOverrideId,
   createScenarioPayload,
   flattenOverrideValues,
   isValidPersistSlotCount,
@@ -268,8 +271,17 @@ describe('isValidPersistSlotCount', () => {
   });
 });
 
+describe('createOverrideId', () => {
+  it('creates stable backend-compatible unique identities for new actions', () => {
+    const first = createOverrideId();
+    const second = createOverrideId();
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(second).not.toBe(first);
+  });
+});
+
 describe('buildPersistenceCancellation', () => {
-  it('keeps the backend identity and replaces persistence with a current-slot one-shot', () => {
+  it('keeps only the scheduler identity and cannot reapply account values', () => {
     const cancellation = buildPersistenceCancellation(
       {
         protocolId: 'kamino',
@@ -287,16 +299,10 @@ describe('buildPersistenceCancellation', () => {
       7
     );
 
-    expect(cancellation).toMatchObject({
+    expect(cancellation).toEqual({
       id: 'scope-crash-popcat',
       templateId: 'kamino-scope-price',
       account: { pubkey: 'scope-account' },
-      values: { 'prices.492.price.value': 2_124_828 },
-      scenarioRelativeSlot: 0,
-      enabled: true,
-      fetchBeforeUse: false,
-      persist: false,
-      futureBackendField: 'preserved',
     });
   });
 
@@ -307,7 +313,89 @@ describe('buildPersistenceCancellation', () => {
       protocol: 'Pyth',
       action: 'Price',
     };
-    expect(buildPersistenceCancellation(action, 3).id).toBe('pyth-price-feed-v2_3');
+    expect(buildPersistenceCancellation({ ...action, account: { pubkey: 'feed' } }, 3)?.id).toBe(
+      'pyth-price-feed-v2_3'
+    );
+  });
+
+  it('refuses to construct an unsafe cancellation without an account identity', () => {
+    expect(
+      buildPersistenceCancellation(
+        {
+          protocolId: 'pyth',
+          actionId: 'pyth-price-feed-v2',
+          protocol: 'Pyth',
+          action: 'Price',
+        },
+        3
+      )
+    ).toBeNull();
+  });
+});
+
+describe('buildScenarioPersistenceCancellations', () => {
+  it('collects bounded and indefinite actions while excluding one-shot actions', () => {
+    const scenario: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-4',
+          name: 'Slot 4',
+          type: 'slot',
+          slotNumber: 4,
+          actions: [
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-a',
+              protocol: 'Kamino',
+              action: 'A',
+              overrideId: 'a',
+              account: { pubkey: 'account-a' },
+              persist: true,
+            },
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-b',
+              protocol: 'Kamino',
+              action: 'B',
+              overrideId: 'b',
+              account: { pubkey: 'account-b' },
+              persist: { slots: 5 },
+            },
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-c',
+              protocol: 'Kamino',
+              action: 'C',
+              account: { pubkey: 'account-c' },
+              persist: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildScenarioPersistenceCancellations(scenario)).toEqual([
+      { id: 'a', templateId: 'kamino-a', account: { pubkey: 'account-a' } },
+      { id: 'b', templateId: 'kamino-b', account: { pubkey: 'account-b' } },
+    ]);
+  });
+});
+
+describe('buildStopPersistenceRpcRequest', () => {
+  it('uses the cancellation-only RPC and exact scheduler identity', () => {
+    expect(
+      buildStopPersistenceRpcRequest({
+        id: 'override-a',
+        account: { pubkey: 'account-a' },
+        templateId: 'kamino-a',
+      })
+    ).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'surfnet_stopPersistingOverride',
+      params: ['override-a', { pubkey: 'account-a' }, 'kamino-a'],
+    });
   });
 });
 

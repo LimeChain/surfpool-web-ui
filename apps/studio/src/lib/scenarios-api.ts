@@ -47,6 +47,11 @@ export function isValidPersistSlotCount(input: string): boolean {
   return slots >= MIN_PERSIST_SLOTS && slots <= MAX_U64;
 }
 
+/** Assign a stable scheduler identity as soon as an override is created in the editor. */
+export function createOverrideId(): string {
+  return globalThis.crypto.randomUUID();
+}
+
 /**
  * Turn the contents of a downloaded scenario file into a POST /v1/scenarios body.
  * The id is replaced so importing never collides with the scenario it came from,
@@ -152,6 +157,16 @@ export type OverridePayload = {
   [passthrough: string]: unknown;
 };
 
+export type PersistenceCancellation = {
+  id: string;
+  templateId: string;
+  account: unknown;
+};
+
+export function isPersistenceEnabled(persist: PersistSetting | undefined): boolean {
+  return persist === true || (persist !== null && typeof persist === 'object' && 'slots' in persist);
+}
+
 /**
  * Convert a scenario's steps/actions into the backend "overrides" format
  * and return the full PATCH payload. Mirrors the scenario editor's sync
@@ -192,24 +207,41 @@ export function buildUpdatePayload(scenario: Scenario) {
 }
 
 /**
- * Build the one-shot replacement the scheduler uses to stop a persisted override.
- * Cancellation is identity-based, so the id, account, and template must be unchanged.
+ * Build the identity consumed by the scheduler's cancellation-only RPC.
  */
-export function buildPersistenceCancellation(action: ScenarioAction, originalSlot: number): OverridePayload {
-  const original = (action.original ?? {}) as Partial<OverridePayload>;
-  const cancellation: OverridePayload = {
-    ...original,
+export function buildPersistenceCancellation(
+  action: ScenarioAction,
+  originalSlot: number
+): PersistenceCancellation | null {
+  const account = action.account ?? action.original?.account;
+  if (!account) return null;
+  return {
     id: action.overrideId || `${action.actionId}_${originalSlot}`,
     templateId: action.actionId,
-    values: flattenOverrideValues(action.overrides, action.modifiedFields),
-    scenarioRelativeSlot: 0,
-    label: action.action,
-    enabled: true,
-    fetchBeforeUse: false,
-    persist: false,
+    account,
   };
-  if (action.account) cancellation.account = action.account;
-  return cancellation;
+}
+
+/** Collect every override whose persisted scheduler copy may still be active. */
+export function buildScenarioPersistenceCancellations(scenario: Scenario): PersistenceCancellation[] {
+  return (scenario.steps ?? []).flatMap((step, stepIndex) => {
+    const slot = step.slotNumber ?? stepIndex;
+    return (step.actions ?? []).flatMap((action) => {
+      const originalPersist = action.original?.persist as PersistSetting | undefined;
+      if (!isPersistenceEnabled(action.persist) && !isPersistenceEnabled(originalPersist)) return [];
+      const cancellation = buildPersistenceCancellation(action, slot);
+      return cancellation ? [cancellation] : [];
+    });
+  });
+}
+
+export function buildStopPersistenceRpcRequest(cancellation: PersistenceCancellation) {
+  return {
+    jsonrpc: '2.0' as const,
+    id: 1,
+    method: 'surfnet_stopPersistingOverride' as const,
+    params: [cancellation.id, cancellation.account, cancellation.templateId],
+  };
 }
 
 /**
