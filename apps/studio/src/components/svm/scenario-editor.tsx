@@ -105,6 +105,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'BisonFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -468,9 +469,22 @@ export default function ScenarioEditor({
     );
   });
 
+  // Helper function to extract fields from non-IDL templates
+  const getFieldsFromRawLayout = (template: any) => {
+    if (!template?.rawLayout || !Array.isArray(template?.properties)) return [];
+
+    return template.properties.map((prop: any) => ({
+      name: prop.path,
+      type:
+        typeof prop.encoding === 'string'
+          ? prop.encoding
+          : Object.keys(prop.encoding ?? {})[0]?.replace(/_strided$/, '') || 'u64',
+    }));
+  };
+
   // Helper function to extract fields from IDL using accountType
   const getFieldsFromIDL = (template: any) => {
-    if (!template?.idl || !template?.accountType) return [];
+    if (!template?.idl || !template?.accountType) return getFieldsFromRawLayout(template);
 
     // First, try to find the account in the accounts array
     if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
@@ -501,7 +515,7 @@ export default function ScenarioEditor({
       }
     }
 
-    return [];
+    return getFieldsFromRawLayout(template);
   };
 
   // Helper function to look up a type definition in the IDL
