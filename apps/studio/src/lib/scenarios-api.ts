@@ -1,5 +1,6 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
+import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 
@@ -93,11 +94,20 @@ export function scenarioDownloadFile(
   } catch {
     return null;
   }
-  if (!Array.isArray(scenarios)) return null;
-
-  const scenario = scenarios.find((entry) => (entry as { id?: unknown })?.id === scenarioId) as
-    | Record<string, unknown>
-    | undefined;
+  let scenario: Record<string, unknown> | undefined;
+  if (Array.isArray(scenarios)) {
+    scenario = scenarios.find((entry) => (entry as { id?: unknown })?.id === scenarioId) as
+      | Record<string, unknown>
+      | undefined;
+  } else if (scenarios !== null && typeof scenarios === 'object') {
+    const entry = Object.entries(scenarios as Record<string, unknown>).find(
+      ([id, value]) => id === scenarioId || (value as { id?: unknown })?.id === scenarioId
+    );
+    if (entry && entry[1] !== null && typeof entry[1] === 'object' && !Array.isArray(entry[1])) {
+      const value = entry[1] as Record<string, unknown>;
+      scenario = typeof value.id === 'string' ? value : { ...value, id: entry[0] };
+    }
+  }
   if (!scenario) return null;
 
   const name = typeof scenario.name === 'string' ? scenario.name : '';
@@ -110,6 +120,129 @@ export function scenarioDownloadFile(
     filename: `scenario-${slug || scenarioId}.json`,
     contents: stringify(scenario, null, 2) ?? '',
   };
+}
+
+export type PumpGraduationScenarioResult = {
+  id: string;
+  tokenMint?: string;
+  completingBuyAmount?: number;
+  migrationReserve?: number;
+  addresses?: {
+    bondingCurve: string;
+    curveVault: string;
+    canonicalPool: string;
+  };
+};
+
+export async function createPumpGraduationScenario(
+  studioUrl: string,
+  tokenMint: string
+): Promise<PumpGraduationScenarioResult> {
+  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+    tokenMint: tokenMint.trim(),
+  });
+}
+
+export type PumpSwapPriceShockScenarioResult = {
+  id: string;
+  tokenMint?: string;
+  canonicalPool?: string;
+  virtualQuoteReserves?: string;
+};
+
+type ScenarioTemplate = {
+  id: string;
+  address: unknown;
+};
+
+function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string): ScenarioTemplate | undefined {
+  for (const template of templates) {
+    if (template.id === templateId) return template;
+  }
+  return undefined;
+}
+
+export async function createPumpSwapPriceShockScenario(
+  studioUrl: string,
+  tokenMint: string,
+  virtualQuoteReserves: string
+): Promise<PumpSwapPriceShockScenarioResult> {
+  const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!templatesResponse.ok) {
+    throw new Error(`Failed to load scenario templates: ${templatesResponse.status}`);
+  }
+
+  const templates = (await templatesResponse.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, 'pump-amm-canonical-pool');
+  if (!template) throw new Error('PumpSwap canonical pool template is unavailable');
+
+  const scenarioId = crypto.randomUUID();
+  const normalizedMint = tokenMint.trim();
+  const normalizedReserves = virtualQuoteReserves.trim();
+  const scenario = {
+    id: scenarioId,
+    name: 'PumpSwap Price Shock',
+    description: 'Shift a canonical PumpSwap pool price through its virtual quote reserves.',
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values: {
+          base_mint: normalizedMint,
+          virtual_quote_reserves: new LosslessNumber(normalizedReserves),
+        },
+        scenarioRelativeSlot: 1,
+        label: 'PumpSwap virtual quote reserve shock',
+        enabled: true,
+        fetchBeforeUse: true,
+        account: template.address,
+      },
+    ],
+    tags: ['pumpswap', 'price-shock'],
+  };
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize PumpSwap price shock scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create PumpSwap price shock scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+async function createPumpScenarioWithMcp(
+  studioUrl: string,
+  toolName: string,
+  args: Record<string, string>
+): Promise<PumpGraduationScenarioResult> {
+  const { sessionId } = await fetchMCPTools(studioUrl);
+  const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
+    content?: Array<{ type?: string; text?: string }>;
+  };
+  let text: string | undefined;
+  for (const content of result.content ?? []) {
+    if (content.type === 'text' && content.text) {
+      text = content.text;
+      break;
+    }
+  }
+  if (!text) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
+
+  const payload = JSON.parse(text) as { error?: string | null; url?: string | null };
+  if (payload.error) throw new Error(payload.error);
+  if (!payload.url) throw new Error(`Surfpool MCP tool ${toolName} returned no scenario URL`);
+
+  const scenarioId = new URL(payload.url).searchParams.get('id');
+  if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
+  return { id: scenarioId };
 }
 
 /**
@@ -243,6 +376,7 @@ export function scenarioToBentoItem(scenario: Scenario): ScenarioBentoItem {
     created_at: scenario.created_at,
     updated_at: scenario.updated_at,
     steps: scenario.steps,
+    tags: scenario.tags,
     metadata: scenario.metadata,
   };
 }
