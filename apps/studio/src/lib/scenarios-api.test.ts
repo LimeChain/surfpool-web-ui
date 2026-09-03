@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { describe, expect, it } from 'vitest';
 import {
   buildAiPrompt,
   buildUpdatePayload,
@@ -151,10 +151,36 @@ describe('buildUpdatePayload', () => {
 
   it('generates an id and empty values for actions never saved before', () => {
     const override = buildUpdatePayload(baseScenario).overrides[0];
-    expect(override.id).toBe('price-update_0');
+    expect(override.id).toBe('price-update_0_0');
     expect(override.templateId).toBe('price-update');
     expect(override.values).toEqual({});
     expect(override).not.toHaveProperty('account');
+  });
+
+  it('generates distinct fallback ids for duplicate actions in one slot', () => {
+    const duplicateAction = {
+      protocolId: 'pyth',
+      actionId: 'price-update',
+      protocol: 'Pyth',
+      action: 'Update Price',
+    };
+    const scenario: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-450',
+          name: 'Slot 450',
+          type: 'slot',
+          slotNumber: 450,
+          actions: [duplicateAction, duplicateAction],
+        },
+      ],
+    };
+
+    expect(buildUpdatePayload(scenario).overrides.map((override) => override.id)).toEqual([
+      'price-update_450_0',
+      'price-update_450_1',
+    ]);
   });
 
   it('sets label from action name', () => {
@@ -427,8 +453,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -453,8 +478,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

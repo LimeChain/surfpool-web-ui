@@ -3,6 +3,7 @@
 import { ConfigProvider } from '@/contexts/config-context';
 import '@/styles/tailwind.css';
 import type React from 'react';
+import { Toaster } from 'sonner';
 import { Dashboard } from './dashboard';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ConfigProvider>
           <Dashboard>{children}</Dashboard>
         </ConfigProvider>
+        <Toaster theme="dark" richColors closeButton position="bottom-right" />
       </body>
     </html>
   );
