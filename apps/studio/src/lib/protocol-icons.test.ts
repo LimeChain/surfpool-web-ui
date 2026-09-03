@@ -24,6 +24,7 @@ describe('PROTOCOL_ICONS', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
+    expect(PROTOCOL_ICONS['tessera']).toBe('/assets/tessera.svg');
   });
 
   it('has the same number of entries as PROTOCOLS', () => {
@@ -35,6 +36,7 @@ describe('getProtocolIcon', () => {
   it('returns icon for known protocol', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
     expect(getProtocolIcon('phoenix-eternal')).toBe('/assets/phoenix.svg');
+    expect(getProtocolIcon('tessera')).toBe('/assets/tessera.svg');
   });
 
   it('returns default fallback for unknown protocol', () => {
