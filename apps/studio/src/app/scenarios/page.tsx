@@ -81,6 +81,7 @@ function ScenariosContent() {
                   action: override.label || 'Unknown Action',
                   account: override.account, // Preserve account data
                   fetchBeforeUse: override.fetchBeforeUse || false,
+                  persist: override.persist ?? false,
                   overrides: override.values || {}, // Preserve the values from backend
                   modifiedFields: Object.keys(override.values || {}), // Track which fields were modified
                 });
@@ -139,6 +140,7 @@ function ScenariosContent() {
                   action: override.label || 'Unknown Action',
                   account: override.account, // Preserve account data
                   fetchBeforeUse: override.fetchBeforeUse || false,
+                  persist: override.persist ?? false,
                   overrides: override.values || {}, // Preserve the values from backend
                   modifiedFields: Object.keys(override.values || {}), // Track which fields were modified
                 });

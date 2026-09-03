@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { describe, expect, it } from 'vitest';
 import {
   buildAiPrompt,
+  buildPersistenceCancellation,
   buildUpdatePayload,
   createScenarioPayload,
   flattenOverrideValues,
+  isValidPersistSlotCount,
   parseScenariosJson,
   scenarioDownloadFile,
   scenarioImportPayload,
@@ -124,6 +126,69 @@ describe('buildUpdatePayload', () => {
     expect(buildUpdatePayload(baseScenario).overrides[0].enabled).toBe(true);
   });
 
+  it('defaults persistence to a single application for new actions', () => {
+    expect(buildUpdatePayload(baseScenario).overrides[0].persist).toBe(false);
+  });
+
+  it('serializes indefinite and bounded persistence', () => {
+    const withPersistence: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-0',
+          name: 'Slot 0',
+          type: 'slot',
+          actions: [
+            {
+              ...baseScenario.steps![0].actions![0],
+              persist: true,
+            },
+            {
+              ...baseScenario.steps![0].actions![1],
+              persist: { slots: 10 },
+            },
+          ],
+        },
+      ],
+    };
+
+    const [indefinite, bounded] = buildUpdatePayload(withPersistence).overrides;
+    expect(indefinite.persist).toBe(true);
+    expect(bounded.persist).toEqual({ slots: 10 });
+  });
+
+  it('preserves loaded persistence and lets an explicit false stop it', () => {
+    const loaded: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-0',
+          name: 'Slot 0',
+          type: 'slot',
+          actions: [
+            {
+              ...baseScenario.steps![0].actions![0],
+              overrideId: 'stable-id',
+              original: { persist: { slots: 7 } },
+            },
+            {
+              ...baseScenario.steps![0].actions![1],
+              overrideId: 'stop-id',
+              persist: false,
+              original: { persist: true },
+            },
+          ],
+        },
+      ],
+    };
+
+    const [preserved, stopped] = buildUpdatePayload(loaded).overrides;
+    expect(preserved.persist).toEqual({ slots: 7 });
+    expect(preserved.id).toBe('stable-id');
+    expect(stopped.persist).toBe(false);
+    expect(stopped.id).toBe('stop-id');
+  });
+
   it('preserves the backend override id, values, account, and fetchBeforeUse', () => {
     const override = buildUpdatePayload(loadedScenario).overrides[0];
     expect(override.id).toBe('override-sol-85');
@@ -184,6 +249,65 @@ describe('buildUpdatePayload', () => {
   it('defaults description to empty string', () => {
     const result = buildUpdatePayload({ ...baseScenario, description: undefined });
     expect(result.description).toBe('');
+  });
+});
+
+describe('isValidPersistSlotCount', () => {
+  it('accepts positive u64 slot counts, including values above Number.MAX_SAFE_INTEGER', () => {
+    expect(isValidPersistSlotCount('1')).toBe(true);
+    expect(isValidPersistSlotCount('10')).toBe(true);
+    expect(isValidPersistSlotCount('18446744073709551615')).toBe(true);
+  });
+
+  it('rejects zero, non-integers, signs, and values above u64', () => {
+    expect(isValidPersistSlotCount('0')).toBe(false);
+    expect(isValidPersistSlotCount('-1')).toBe(false);
+    expect(isValidPersistSlotCount('1.5')).toBe(false);
+    expect(isValidPersistSlotCount('')).toBe(false);
+    expect(isValidPersistSlotCount('18446744073709551616')).toBe(false);
+  });
+});
+
+describe('buildPersistenceCancellation', () => {
+  it('keeps the backend identity and replaces persistence with a current-slot one-shot', () => {
+    const cancellation = buildPersistenceCancellation(
+      {
+        protocolId: 'kamino',
+        actionId: 'kamino-scope-price',
+        protocol: 'Kamino',
+        action: 'Crash POPCAT',
+        overrideId: 'scope-crash-popcat',
+        account: { pubkey: 'scope-account' },
+        overrides: { 'prices.492.price.value': 2_124_828 },
+        modifiedFields: ['prices.492.price.value'],
+        fetchBeforeUse: true,
+        persist: true,
+        original: { futureBackendField: 'preserved' },
+      },
+      7
+    );
+
+    expect(cancellation).toMatchObject({
+      id: 'scope-crash-popcat',
+      templateId: 'kamino-scope-price',
+      account: { pubkey: 'scope-account' },
+      values: { 'prices.492.price.value': 2_124_828 },
+      scenarioRelativeSlot: 0,
+      enabled: true,
+      fetchBeforeUse: false,
+      persist: false,
+      futureBackendField: 'preserved',
+    });
+  });
+
+  it('uses the same generated identity as normal scenario serialization', () => {
+    const action = {
+      protocolId: 'pyth',
+      actionId: 'pyth-price-feed-v2',
+      protocol: 'Pyth',
+      action: 'Price',
+    };
+    expect(buildPersistenceCancellation(action, 3).id).toBe('pyth-price-feed-v2_3');
   });
 });
 
@@ -405,8 +529,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -431,8 +554,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

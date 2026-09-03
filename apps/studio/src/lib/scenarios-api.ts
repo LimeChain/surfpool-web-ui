@@ -1,7 +1,7 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { PROTOCOLS } from './protocol-icons';
-import type { Scenario } from './scenarios-data';
+import type { PersistSetting, Scenario, ScenarioAction } from './scenarios-data';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -36,6 +36,15 @@ export function snapshotDownloadContents(rawResponse: string): string | null {
 export function toScenarioNumber(input: string): number | LosslessNumber {
   if (input.trim() === '' || Number.isNaN(Number(input))) return Number(input);
   return isSafeNumber(input) ? Number(input) : new LosslessNumber(input);
+}
+
+const MIN_PERSIST_SLOTS = BigInt(1);
+const MAX_U64 = BigInt('18446744073709551615');
+
+export function isValidPersistSlotCount(input: string): boolean {
+  if (!/^\d+$/.test(input)) return false;
+  const slots = BigInt(input);
+  return slots >= MIN_PERSIST_SLOTS && slots <= MAX_U64;
 }
 
 /**
@@ -138,6 +147,7 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
+  persist: PersistSetting;
   account?: unknown;
   [passthrough: string]: unknown;
 };
@@ -163,6 +173,7 @@ export function buildUpdatePayload(scenario: Scenario) {
         label: action.action,
         enabled: original.enabled ?? true,
         fetchBeforeUse: action.fetchBeforeUse || false,
+        persist: action.persist ?? (original.persist as PersistSetting | undefined) ?? false,
       };
       if (action.account) {
         override.account = action.account;
@@ -178,6 +189,27 @@ export function buildUpdatePayload(scenario: Scenario) {
     overrides,
     tags: scenario.tags || [],
   };
+}
+
+/**
+ * Build the one-shot replacement the scheduler uses to stop a persisted override.
+ * Cancellation is identity-based, so the id, account, and template must be unchanged.
+ */
+export function buildPersistenceCancellation(action: ScenarioAction, originalSlot: number): OverridePayload {
+  const original = (action.original ?? {}) as Partial<OverridePayload>;
+  const cancellation: OverridePayload = {
+    ...original,
+    id: action.overrideId || `${action.actionId}_${originalSlot}`,
+    templateId: action.actionId,
+    values: flattenOverrideValues(action.overrides, action.modifiedFields),
+    scenarioRelativeSlot: 0,
+    label: action.action,
+    enabled: true,
+    fetchBeforeUse: false,
+    persist: false,
+  };
+  if (action.account) cancellation.account = action.account;
+  return cancellation;
 }
 
 /**
