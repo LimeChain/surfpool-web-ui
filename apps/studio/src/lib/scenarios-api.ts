@@ -294,6 +294,7 @@ export type PersistenceCancellation = {
   id: string;
   templateId: string;
   account: unknown;
+  values: Record<string, unknown>;
 };
 
 export function isPersistenceEnabled(persist: PersistSetting | undefined): boolean {
@@ -340,7 +341,9 @@ export function buildUpdatePayload(scenario: Scenario) {
 }
 
 /**
- * Build the identity consumed by the scheduler's cancellation-only RPC.
+ * Build the identity consumed by the scheduler's cancellation-only RPC. Values are included only
+ * so the backend can resolve property-backed PDA seeds; the cancellation endpoint never applies
+ * them to account data.
  */
 export function buildPersistenceCancellation(
   action: ScenarioAction,
@@ -352,6 +355,7 @@ export function buildPersistenceCancellation(
     id: action.overrideId || `${action.actionId}_${originalSlot}`,
     templateId: action.actionId,
     account,
+    values: flattenOverrideValues(action.overrides, action.modifiedFields),
   };
 }
 
@@ -373,7 +377,7 @@ export function buildStopPersistenceRpcRequest(cancellation: PersistenceCancella
     jsonrpc: '2.0' as const,
     id: 1,
     method: 'surfnet_stopPersistingOverride' as const,
-    params: [cancellation.id, cancellation.account, cancellation.templateId],
+    params: [cancellation.id, cancellation.account, cancellation.templateId, cancellation.values],
   };
 }
 

@@ -406,7 +406,7 @@ describe('createOverrideId', () => {
 });
 
 describe('buildPersistenceCancellation', () => {
-  it('keeps only the scheduler identity and cannot reapply account values', () => {
+  it('includes PDA-resolution values in the cancellation-only identity', () => {
     const cancellation = buildPersistenceCancellation(
       {
         protocolId: 'kamino',
@@ -428,6 +428,7 @@ describe('buildPersistenceCancellation', () => {
       id: 'scope-crash-popcat',
       templateId: 'kamino-scope-price',
       account: { pubkey: 'scope-account' },
+      values: { 'prices.492.price.value': 2_124_828 },
     });
   });
 
@@ -501,8 +502,8 @@ describe('buildScenarioPersistenceCancellations', () => {
     };
 
     expect(buildScenarioPersistenceCancellations(scenario)).toEqual([
-      { id: 'a', templateId: 'kamino-a', account: { pubkey: 'account-a' } },
-      { id: 'b', templateId: 'kamino-b', account: { pubkey: 'account-b' } },
+      { id: 'a', templateId: 'kamino-a', account: { pubkey: 'account-a' }, values: {} },
+      { id: 'b', templateId: 'kamino-b', account: { pubkey: 'account-b' }, values: {} },
     ]);
   });
 });
@@ -514,12 +515,13 @@ describe('buildStopPersistenceRpcRequest', () => {
         id: 'override-a',
         account: { pubkey: 'account-a' },
         templateId: 'kamino-a',
+        values: {},
       })
     ).toEqual({
       jsonrpc: '2.0',
       id: 1,
       method: 'surfnet_stopPersistingOverride',
-      params: ['override-a', { pubkey: 'account-a' }, 'kamino-a'],
+      params: ['override-a', { pubkey: 'account-a' }, 'kamino-a', {}],
     });
   });
 });
