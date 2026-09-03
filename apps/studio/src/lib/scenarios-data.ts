@@ -1,3 +1,7 @@
+import type { LosslessNumber } from 'lossless-json';
+
+export type PersistSetting = boolean | { slots: number | LosslessNumber };
+
 export type ScenarioAction = {
   protocolId: string;
   actionId: string;
@@ -5,6 +9,7 @@ export type ScenarioAction = {
   action: string;
   overrideId?: string;
   fetchBeforeUse?: boolean;
+  persist?: PersistSetting;
   overrides?: Record<string, unknown>;
   modifiedFields?: string[];
   account?: any; // Account address (Pubkey or PDA)

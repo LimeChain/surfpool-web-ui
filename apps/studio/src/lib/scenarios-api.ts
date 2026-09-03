@@ -2,7 +2,7 @@ import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
-import type { Scenario } from './scenarios-data';
+import type { PersistSetting, Scenario, ScenarioAction } from './scenarios-data';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -37,6 +37,20 @@ export function snapshotDownloadContents(rawResponse: string): string | null {
 export function toScenarioNumber(input: string): number | LosslessNumber {
   if (input.trim() === '' || Number.isNaN(Number(input))) return Number(input);
   return isSafeNumber(input) ? Number(input) : new LosslessNumber(input);
+}
+
+const MIN_PERSIST_SLOTS = BigInt(1);
+const MAX_U64 = BigInt('18446744073709551615');
+
+export function isValidPersistSlotCount(input: string): boolean {
+  if (!/^\d+$/.test(input)) return false;
+  const slots = BigInt(input);
+  return slots >= MIN_PERSIST_SLOTS && slots <= MAX_U64;
+}
+
+/** Assign a stable scheduler identity as soon as an override is created in the editor. */
+export function createOverrideId(): string {
+  return globalThis.crypto.randomUUID();
 }
 
 /**
@@ -271,9 +285,21 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
+  persist: PersistSetting;
   account?: unknown;
   [passthrough: string]: unknown;
 };
+
+export type PersistenceCancellation = {
+  id: string;
+  templateId: string;
+  account: unknown;
+  values: Record<string, unknown>;
+};
+
+export function isPersistenceEnabled(persist: PersistSetting | undefined): boolean {
+  return persist === true || (persist !== null && typeof persist === 'object' && 'slots' in persist);
+}
 
 /**
  * Convert a scenario's steps/actions into the backend "overrides" format
@@ -296,6 +322,7 @@ export function buildUpdatePayload(scenario: Scenario) {
         label: action.action,
         enabled: original.enabled ?? true,
         fetchBeforeUse: action.fetchBeforeUse || false,
+        persist: action.persist ?? (original.persist as PersistSetting | undefined) ?? false,
       };
       if (action.account) {
         override.account = action.account;
@@ -310,6 +337,47 @@ export function buildUpdatePayload(scenario: Scenario) {
     description: scenario.description || '',
     overrides,
     tags: scenario.tags || [],
+  };
+}
+
+/**
+ * Build the identity consumed by the scheduler's cancellation-only RPC. Values are included only
+ * so the backend can resolve property-backed PDA seeds; the cancellation endpoint never applies
+ * them to account data.
+ */
+export function buildPersistenceCancellation(
+  action: ScenarioAction,
+  originalSlot: number
+): PersistenceCancellation | null {
+  const account = action.account ?? action.original?.account;
+  if (!account) return null;
+  return {
+    id: action.overrideId || `${action.actionId}_${originalSlot}`,
+    templateId: action.actionId,
+    account,
+    values: flattenOverrideValues(action.overrides, action.modifiedFields),
+  };
+}
+
+/** Collect every override whose persisted scheduler copy may still be active. */
+export function buildScenarioPersistenceCancellations(scenario: Scenario): PersistenceCancellation[] {
+  return (scenario.steps ?? []).flatMap((step, stepIndex) => {
+    const slot = step.slotNumber ?? stepIndex;
+    return (step.actions ?? []).flatMap((action) => {
+      const originalPersist = action.original?.persist as PersistSetting | undefined;
+      if (!isPersistenceEnabled(action.persist) && !isPersistenceEnabled(originalPersist)) return [];
+      const cancellation = buildPersistenceCancellation(action, slot);
+      return cancellation ? [cancellation] : [];
+    });
+  });
+}
+
+export function buildStopPersistenceRpcRequest(cancellation: PersistenceCancellation) {
+  return {
+    jsonrpc: '2.0' as const,
+    id: 1,
+    method: 'surfnet_stopPersistingOverride' as const,
+    params: [cancellation.id, cancellation.account, cancellation.templateId, cancellation.values],
   };
 }
 

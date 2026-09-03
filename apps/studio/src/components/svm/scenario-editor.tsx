@@ -3,7 +3,12 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
+  buildPersistenceCancellation,
+  buildStopPersistenceRpcRequest,
+  createOverrideId,
   flattenOverrideValues,
+  isPersistenceEnabled,
+  isValidPersistSlotCount,
   parseScenariosJson,
   scenarioDownloadFile,
   serializeScenarioJson,
@@ -11,6 +16,7 @@ import {
   toScenarioNumber,
   type OverridePayload,
 } from '@/lib/scenarios-api';
+import type { PersistSetting } from '@/lib/scenarios-data';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -67,6 +73,7 @@ interface Slot {
     overrides?: Record<string, unknown>;
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
+    persist?: PersistSetting;
     account?: any; // Account address from template (Pubkey or PDA)
     original?: Record<string, unknown>; // Untouched backend override, passed through on save
   }[];
@@ -90,12 +97,34 @@ interface ScenarioEditorProps {
       action: string;
       account?: any; // Preserve account data from backend
       fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
+      persist?: PersistSetting; // Preserve how long the override keeps re-applying
       overrides?: Record<string, unknown>; // Preserve the values/overrides from backend
       modifiedFields?: string[]; // Track which fields were modified
       original?: Record<string, unknown>; // Untouched backend override, passed through on save
     }>;
   }>;
 }
+
+const persistenceLabel = (persist: PersistSetting | undefined): string | null => {
+  if (persist === true) return 'Persistent';
+  if (persist && typeof persist === 'object' && 'slots' in persist) {
+    return `${persist.slots} slot${String(persist.slots) === '1' ? '' : 's'}`;
+  }
+  return null;
+};
+
+const PERSISTENCE_DURATION_OPTIONS = [
+  {
+    id: 'bounded' as const,
+    label: 'Fixed number of slots',
+    description: 'Stop automatically after the selected number of applications',
+  },
+  {
+    id: 'forever' as const,
+    label: 'Until manually stopped',
+    description: 'Continue until Stop persisting is used',
+  },
+];
 
 // Protocols to show in the scenario editor (filter the full list).
 // Must match the `protocol` field of each template exactly, including case.
@@ -149,6 +178,9 @@ export default function ScenarioEditor({
   // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
+  const [persistEnabled, setPersistEnabled] = useState(false);
+  const [persistMode, setPersistMode] = useState<'bounded' | 'forever'>('bounded');
+  const [persistSlots, setPersistSlots] = useState('10');
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -159,12 +191,52 @@ export default function ScenarioEditor({
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [stoppingOverrideKey, setStoppingOverrideKey] = useState<string | null>(null);
+  const [persistStopError, setPersistStopError] = useState<{ overrideId: string; message: string } | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
+  const actionSelectionRequestRef = useRef(0);
+  const stopPersistenceRequestRef = useRef<string | null>(null);
+  const scenarioSyncChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  const persistSlotsAreValid = isValidPersistSlotCount(persistSlots);
+
+  const currentPersistSetting = (): PersistSetting => {
+    if (!persistEnabled) return false;
+    return persistMode === 'forever' ? true : { slots: toScenarioNumber(persistSlots) };
+  };
+
+  const resetPersistControls = () => {
+    setPersistEnabled(false);
+    setPersistMode('bounded');
+    setPersistSlots('10');
+  };
+
+  const restorePersistControls = (persist: PersistSetting | undefined) => {
+    if (persist === true) {
+      setPersistEnabled(true);
+      setPersistMode('forever');
+      return;
+    }
+    if (persist && typeof persist === 'object' && 'slots' in persist) {
+      setPersistEnabled(true);
+      setPersistMode('bounded');
+      setPersistSlots(String(persist.slots));
+      return;
+    }
+    resetPersistControls();
+  };
+
+  const cancelActionSelection = () => {
+    actionSelectionRequestRef.current += 1;
+    setLoadingAccountData(false);
+  };
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
     isFirstSlotsChangeRef.current = true;
+    actionSelectionRequestRef.current += 1;
+    setLoadingAccountData(false);
   }, [scenarioId]);
 
   // Load scenario from initialSteps (backend data) - always prioritize fresh data
@@ -288,6 +360,7 @@ export default function ScenarioEditor({
                 label: action.action,
                 enabled: original.enabled ?? true,
                 fetchBeforeUse: action.fetchBeforeUse || false,
+                persist: action.persist ?? (original.persist as PersistSetting | undefined) ?? false,
               };
 
               // Only include account if it exists, don't send default values
@@ -332,7 +405,9 @@ export default function ScenarioEditor({
         }
       };
 
-      syncWithBackend();
+      // PATCH replaces the whole scenario document. Serialize saves so an older request can never
+      // arrive after a newer persistence setting and overwrite it on the backend.
+      scenarioSyncChainRef.current = scenarioSyncChainRef.current.then(syncWithBackend);
       window.dispatchEvent(new Event('scenarioUpdated'));
     } else {
       isFirstSlotsChangeRef.current = false;
@@ -347,12 +422,14 @@ export default function ScenarioEditor({
           // If protocol panel is open, just close it and stop propagation
           e.stopPropagation();
           setShowProtocolPanel(false);
+          cancelActionSelection();
           setSelectedProduct(null);
           setSelectedAction(null);
           setEditingAction(null);
           setModifiedFields(new Set());
           setArrayEntryIndex({});
           setFetchBeforeUse(false);
+          resetPersistControls();
         } else {
           // Check if the selected slot has more than 1 override
           const selectedSlot = slots.find((s) => s.id === selectedSlotId);
@@ -617,16 +694,19 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action) => {
+  const handleActionSelect = async (action: Action): Promise<boolean> => {
+    const requestId = ++actionSelectionRequestRef.current;
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
+    resetPersistControls();
+    setLoadingAccountData(false);
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
-      return;
+      return requestId === actionSelectionRequestRef.current;
     }
 
     setLoadingAccountData(true);
@@ -671,6 +751,8 @@ export default function ScenarioEditor({
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
 
+      if (requestId !== actionSelectionRequestRef.current) return false;
+
       if (accountInfoData.result?.value?.data?.parsed) {
         // Populate accountData with the parsed data
         const parsed = accountInfoData.result.value.data.parsed;
@@ -679,9 +761,12 @@ export default function ScenarioEditor({
       }
 
       setLoadingAccountData(false);
+      return true;
     } catch (error) {
       console.error('Error loading account data:', error);
-      setLoadingAccountData(false);
+      const isCurrentRequest = requestId === actionSelectionRequestRef.current;
+      if (isCurrentRequest) setLoadingAccountData(false);
+      return isCurrentRequest;
     }
   };
 
@@ -757,6 +842,7 @@ export default function ScenarioEditor({
             actions: [
               ...slot.actions,
               {
+                overrideId: createOverrideId(),
                 protocolId: protocol.id,
                 actionId: action.id,
                 protocol: protocol.title,
@@ -764,23 +850,10 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
+                persist: currentPersistSetting(),
                 account: action.template?.address,
               },
             ],
-          };
-        }
-        return slot;
-      })
-    );
-  };
-
-  const deleteActionFromSlot = (slotId: string, actionIndex: number) => {
-    setSlots(
-      slots.map((slot) => {
-        if (slot.id === slotId) {
-          return {
-            ...slot,
-            actions: slot.actions.filter((_, index) => index !== actionIndex),
           };
         }
         return slot;
@@ -797,6 +870,7 @@ export default function ScenarioEditor({
             actions: slot.actions.map((existingAction, index) =>
               index === actionIndex
                 ? {
+                    ...existingAction,
                     protocolId: protocol.id,
                     actionId: action.id,
                     protocol: protocol.title,
@@ -804,7 +878,8 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    persist: currentPersistSetting(),
+                    account: existingAction.account ?? action.template?.address,
                   }
                 : existingAction
             ),
@@ -812,6 +887,92 @@ export default function ScenarioEditor({
         }
         return slot;
       })
+    );
+  };
+
+  const stopPersistingAction = async (slot: Slot, actionIndex: number) => {
+    const action = slot.actions[actionIndex];
+    if (
+      !action ||
+      (!isPersistenceEnabled(action.persist) &&
+        !isPersistenceEnabled(action.original?.persist as PersistSetting | undefined))
+    )
+      return false;
+
+    const cancellation = buildPersistenceCancellation(action, slot.height);
+    if (!cancellation) {
+      setPersistStopError({
+        overrideId: action.overrideId || `${action.actionId}_${slot.height}`,
+        message: 'Could not stop persistence: the override has no account identity',
+      });
+      return false;
+    }
+    const overrideKey = cancellation.id;
+    if (stopPersistenceRequestRef.current !== null) return false;
+    stopPersistenceRequestRef.current = overrideKey;
+    setStoppingOverrideKey(overrideKey);
+    setPersistStopError(null);
+
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: serializeScenarioJson(buildStopPersistenceRpcRequest(cancellation)),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) {
+        throw new Error(result.error?.message || `RPC returned HTTP ${response.status}`);
+      }
+
+      setSlots((current) =>
+        current.map((currentSlot) => ({
+          ...currentSlot,
+          actions: currentSlot.actions.map((currentAction) =>
+            currentAction.overrideId === cancellation.id ||
+            (!currentAction.overrideId && currentAction === action)
+              ? {
+                  ...currentAction,
+                  persist: false,
+                  original: { ...(currentAction.original ?? {}), persist: false },
+                }
+              : currentAction
+          ),
+        }))
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setPersistStopError({ overrideId: cancellation.id, message: `Could not stop persistence: ${message}` });
+      return false;
+    } finally {
+      if (stopPersistenceRequestRef.current === overrideKey) {
+        stopPersistenceRequestRef.current = null;
+        setStoppingOverrideKey(null);
+      }
+    }
+  };
+
+  const deleteActionFromSlot = async (slotId: string, actionIndex: number) => {
+    const slot = slots.find((candidate) => candidate.id === slotId);
+    const action = slot?.actions[actionIndex];
+    if (!slot || !action) return;
+
+    const mayBePersisting =
+      isPersistenceEnabled(action.persist) ||
+      isPersistenceEnabled(action.original?.persist as PersistSetting | undefined);
+    if (mayBePersisting && !(await stopPersistingAction(slot, actionIndex))) return;
+
+    setSlots((current) =>
+      current.map((currentSlot) =>
+        currentSlot.id !== slotId
+          ? currentSlot
+          : {
+              ...currentSlot,
+              actions: currentSlot.actions.filter((currentAction, index) =>
+                action.overrideId ? currentAction.overrideId !== action.overrideId : index !== actionIndex
+              ),
+            }
+      )
     );
   };
 
@@ -899,6 +1060,7 @@ export default function ScenarioEditor({
           label: action.action,
           enabled: original.enabled ?? true,
           fetchBeforeUse: action.fetchBeforeUse || false,
+          persist: action.persist ?? (original.persist as PersistSetting | undefined) ?? false,
         };
 
         // Only include account if it exists, don't send default values
@@ -1105,9 +1267,11 @@ export default function ScenarioEditor({
             setMode('read');
             setSelectedSlotId('');
             setShowProtocolPanel(false);
+            cancelActionSelection();
             setSelectedProduct(null);
             setEditingAction(null);
             setFetchBeforeUse(false);
+            resetPersistControls();
           }
         }}
       >
@@ -1274,7 +1438,8 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction);
+                                                    const isCurrentSelection = await handleActionSelect(foundAction);
+                                                    if (!isCurrentSelection) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1503,6 +1668,10 @@ export default function ScenarioEditor({
                                                     if (action.fetchBeforeUse !== undefined) {
                                                       setFetchBeforeUse(action.fetchBeforeUse);
                                                     }
+                                                    restorePersistControls(
+                                                      action.persist ??
+                                                        (action.original?.persist as PersistSetting | undefined)
+                                                    );
                                                   }
                                                 }
 
@@ -1515,14 +1684,21 @@ export default function ScenarioEditor({
                                             </div>
                                             <div className="flex-1">
                                               <div className="text-sm font-medium text-zinc-100">{action.action}</div>
-                                              <div className="text-xs text-zinc-400">{action.protocol}</div>
+                                              <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+                                                <span>{action.protocol}</span>
+                                                {persistenceLabel(action.persist) && (
+                                                  <span className="whitespace-nowrap rounded-full bg-purple-500/15 px-2 py-0.5 text-[11px] leading-4 text-purple-300">
+                                                    {persistenceLabel(action.persist)}
+                                                  </span>
+                                                )}
+                                              </div>
                                             </div>
                                             {/* Delete button - only in edit mode when slot is selected */}
                                             {mode === 'edit' && selectedSlotId === slot.id && (
                                               <button
                                                 onClick={(e) => {
                                                   e.stopPropagation();
-                                                  deleteActionFromSlot(slot.id, actionIndex);
+                                                  void deleteActionFromSlot(slot.id, actionIndex);
                                                 }}
                                                 className="absolute bottom-2 right-2 text-zinc-500 transition-colors hover:text-zinc-300"
                                                 title="Delete action"
@@ -1672,6 +1848,7 @@ export default function ScenarioEditor({
                             } else if (protocol.actions.length > 0) {
                               handleActionSelect(protocol.actions[0]);
                             } else {
+                              cancelActionSelection();
                               setSelectedAction(null);
                             }
                             setShowProtocolPanel(true);
@@ -1743,12 +1920,14 @@ export default function ScenarioEditor({
                         <button
                           onClick={() => {
                             setShowProtocolPanel(false);
+                            cancelActionSelection();
                             setSelectedProduct(null);
                             setSelectedAction(null);
                             setEditingAction(null);
                             setModifiedFields(new Set());
                             setArrayEntryIndex({});
                             setFetchBeforeUse(false);
+                            resetPersistControls();
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
                         >
@@ -1840,6 +2019,146 @@ export default function ScenarioEditor({
                                     Fetch account data just before transaction execution. Useful for price feeds, oracle
                                     updates, and dynamic balances.
                                   </p>
+                                <div className="mt-4 rounded-lg border border-zinc-700/50 bg-zinc-800/20 p-4">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                      <div className="text-sm font-medium text-zinc-200">
+                                        Keep applying this override
+                                      </div>
+                                      <p className="mt-1 text-xs text-zinc-500">
+                                        Re-apply all modified fields in this action on following slots.
+                                      </p>
+                                    </div>
+                                    <Switch checked={persistEnabled} onChange={setPersistEnabled} color="purple" />
+                                  </div>
+
+                                  {persistEnabled && (
+                                    <div className="mt-4 grid grid-cols-[minmax(0,1fr)_140px] gap-3">
+                                      <label className="text-xs text-zinc-400">
+                                        Duration
+                                        <Combobox
+                                          value={PERSISTENCE_DURATION_OPTIONS.find(
+                                            (option) => option.id === persistMode
+                                          )}
+                                          onChange={(option) => option && setPersistMode(option.id)}
+                                          options={PERSISTENCE_DURATION_OPTIONS}
+                                          displayValue={(option) => option?.label ?? ''}
+                                          filter={(option, query) =>
+                                            `${option.label} ${option.description}`
+                                              .toLowerCase()
+                                              .includes(query.toLowerCase())
+                                          }
+                                          placeholder="Select duration..."
+                                          aria-label="Persistence duration"
+                                          className="mt-1"
+                                        >
+                                          {(option) => (
+                                            <ComboboxOption key={option.id} value={option}>
+                                              <ComboboxLabel>
+                                                <span className="font-medium">{option.label}</span>
+                                                <span className="ml-2 text-zinc-400">{option.description}</span>
+                                              </ComboboxLabel>
+                                            </ComboboxOption>
+                                          )}
+                                        </Combobox>
+                                      </label>
+
+                                      {persistMode === 'bounded' && (
+                                        <label className="text-xs text-zinc-400">
+                                          Slots
+                                          <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={persistSlots}
+                                            onChange={(event) => setPersistSlots(event.target.value)}
+                                            aria-invalid={!persistSlotsAreValid}
+                                            className={`mt-1 block h-10 w-full rounded-lg border bg-zinc-900/60 px-3 text-sm text-zinc-200 focus:outline-none ${
+                                              persistSlotsAreValid
+                                                ? 'border-zinc-700/50 focus:border-purple-500'
+                                                : 'border-red-500/70 focus:border-red-500'
+                                            }`}
+                                          />
+                                        </label>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {persistEnabled && persistMode === 'bounded' && (
+                                    <p
+                                      className={`mt-2 text-xs ${persistSlotsAreValid ? 'text-zinc-500' : 'text-red-400'}`}
+                                    >
+                                      {persistSlotsAreValid
+                                        ? 'The count includes the first application.'
+                                        : 'Enter a whole number of slots greater than zero.'}
+                                    </p>
+                                  )}
+                                  {persistEnabled && persistMode === 'forever' && (
+                                    <p className="mt-2 text-xs text-amber-400/90">
+                                      This continues after playback until it is explicitly stopped.
+                                    </p>
+                                  )}
+                                  {persistEnabled && (
+                                    <p className="mt-2 text-xs text-zinc-500">
+                                      Use this only for inputs such as oracle prices and risk parameters. Re-applying
+                                      pool balances or other transaction-owned state can undo transaction writes.
+                                    </p>
+                                  )}
+                                  {editingAction &&
+                                    (() => {
+                                      const editingSlot = slots.find((slot) => slot.id === editingAction.slotId);
+                                      const savedAction = editingSlot?.actions[editingAction.actionIndex];
+                                      const mayBeActive =
+                                        savedAction &&
+                                        (isPersistenceEnabled(savedAction.persist) ||
+                                          isPersistenceEnabled(
+                                            savedAction.original?.persist as PersistSetting | undefined
+                                          ));
+                                      if (!editingSlot || !savedAction || !mayBeActive) {
+                                        return null;
+                                      }
+                                      const key =
+                                        savedAction.overrideId || `${savedAction.actionId}_${editingSlot.height}`;
+                                      return (
+                                        <div className="mt-4 border-t border-zinc-700/50 pt-4">
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              const stopped = await stopPersistingAction(
+                                                editingSlot,
+                                                editingAction.actionIndex
+                                              );
+                                              if (stopped) resetPersistControls();
+                                            }}
+                                            disabled={stoppingOverrideKey !== null}
+                                            className="rounded-lg border border-purple-500/50 px-3 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-purple-500/10 disabled:cursor-wait disabled:opacity-50"
+                                          >
+                                            {stoppingOverrideKey === key ? 'Stopping…' : 'Stop persisting now'}
+                                          </button>
+                                          <p className="mt-2 text-xs text-zinc-500">
+                                            Stops future re-application. It does not restore the previous account value.
+                                          </p>
+                                          {!isPersistenceEnabled(savedAction.persist) && (
+                                            <p className="mt-2 text-xs text-amber-400/90">
+                                              Persistence is disabled for future playback, but a previously played copy
+                                              may still be active until you stop it here.
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  {persistStopError &&
+                                    editingAction &&
+                                    (() => {
+                                      const editingSlot = slots.find((slot) => slot.id === editingAction.slotId);
+                                      const savedAction = editingSlot?.actions[editingAction.actionIndex];
+                                      const overrideId =
+                                        savedAction &&
+                                        (savedAction.overrideId || `${savedAction.actionId}_${editingSlot?.height}`);
+                                      return overrideId === persistStopError.overrideId ? (
+                                        <p className="mt-2 text-xs text-red-400">{persistStopError.message}</p>
+                                      ) : null;
+                                    })()}
+                                </div>
                                 </div>
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
@@ -2546,51 +2865,75 @@ export default function ScenarioEditor({
                                   </div>
                                 )}
 
-                                {/* Add/Update Action Button - Right Aligned */}
-                                {!loadingAccountData && (
-                                  <div className="flex justify-end">
-                                    <button
-                                      onClick={() => {
-                                        if (selectedSlotId && selectedProtocol && selectedAction) {
-                                          if (editingAction) {
-                                            // Update existing action
-                                            updateActionInSlot(
-                                              editingAction.slotId,
-                                              editingAction.actionIndex,
-                                              selectedProtocol,
-                                              selectedAction
-                                            );
-                                            setEditingAction(null);
-                                          } else {
-                                            // Add new action
-                                            addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
+                              {/* Add/Update Action Button - Right Aligned */}
+                              {!loadingAccountData && (
+                                <div className="flex justify-end">
+                                  <button
+                                    onClick={async () => {
+                                      if (selectedSlotId && selectedProtocol && selectedAction) {
+                                        if (editingAction) {
+                                          const editingSlot = slots.find((slot) => slot.id === editingAction.slotId);
+                                          const existingAction = editingSlot?.actions[editingAction.actionIndex];
+                                          const identityChanges =
+                                            existingAction && existingAction.actionId !== selectedAction.id;
+                                          const mayBePersisting =
+                                            existingAction &&
+                                            (isPersistenceEnabled(existingAction.persist) ||
+                                              isPersistenceEnabled(
+                                                existingAction.original?.persist as PersistSetting | undefined
+                                              ));
+                                          if (
+                                            editingSlot &&
+                                            identityChanges &&
+                                            mayBePersisting &&
+                                            !(await stopPersistingAction(editingSlot, editingAction.actionIndex))
+                                          ) {
+                                            return;
                                           }
-                                          setShowProtocolPanel(false);
-                                          setSelectedProduct(null);
-                                          setSelectedAction(null);
-                                          setAccountData({});
-                                          setModifiedFields(new Set());
-                                          setArrayEntryIndex({});
-                                          setFetchBeforeUse(false);
+                                          // Update existing action
+                                          updateActionInSlot(
+                                            editingAction.slotId,
+                                            editingAction.actionIndex,
+                                            selectedProtocol,
+                                            selectedAction
+                                          );
+                                          setEditingAction(null);
+                                        } else {
+                                          // Add new action
+                                          addActionToSlot(selectedSlotId, selectedProtocol, selectedAction);
                                         }
-                                      }}
-                                      disabled={!selectedSlotId || !selectedAction}
-                                      className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      {editingAction
-                                        ? 'Update Action'
-                                        : selectedSlotId
-                                          ? 'Add to Selected Slot'
-                                          : 'Select a slot first'}
-                                    </button>
-                                  </div>
-                                )}
-                              </>
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-zinc-500">
-                                Select an override to edit account data
-                              </div>
-                            )}
+                                        setShowProtocolPanel(false);
+                                        setSelectedProduct(null);
+                                        cancelActionSelection();
+                                        setSelectedAction(null);
+                                        setAccountData({});
+                                        setModifiedFields(new Set());
+                                        setArrayEntryIndex({});
+                                        setFetchBeforeUse(false);
+                                        resetPersistControls();
+                                      }
+                                    }}
+                                    disabled={
+                                      !selectedSlotId ||
+                                      !selectedAction ||
+                                      (persistEnabled && persistMode === 'bounded' && !persistSlotsAreValid)
+                                    }
+                                    className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {editingAction
+                                      ? 'Update Action'
+                                      : selectedSlotId
+                                        ? 'Add to Selected Slot'
+                                        : 'Select a slot first'}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-zinc-500">
+                              Select an override to edit account data
+                            </div>
+                          )}
                           </div>
                         </div>
                       )}

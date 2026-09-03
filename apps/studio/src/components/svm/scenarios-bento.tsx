@@ -2,13 +2,16 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import {
+  buildScenarioPersistenceCancellations,
+  buildStopPersistenceRpcRequest,
   buildUpdatePayload,
   createScenarioPayload,
+  isPersistenceEnabled,
   scenarioImportPayload,
   scenarioToBentoItem,
   serializeScenarioJson,
 } from '@/lib/scenarios-api';
-import type { Scenario } from '@/lib/scenarios-data';
+import type { PersistSetting, Scenario } from '@/lib/scenarios-data';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
 import {
@@ -52,13 +55,15 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { rpcUrl, studioUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
 
@@ -225,8 +230,40 @@ export default function ScenariosBento({
   };
 
   // Delete scenario
-  const handleDeleteScenario = async (id: string) => {
+  const handleDeleteScenario = async (id: string): Promise<boolean> => {
+    setDeleteError(null);
+    setIsDeleting(true);
     try {
+      const scenario = scenarios.find((candidate) => candidate.id === id);
+      if (scenario) {
+        const expectedCancellations = (scenario.steps ?? []).reduce(
+          (count, step) =>
+            count +
+            (step.actions ?? []).filter(
+              (action) =>
+                isPersistenceEnabled(action.persist) ||
+                isPersistenceEnabled(action.original?.persist as PersistSetting | undefined)
+            ).length,
+          0
+        );
+        const cancellations = buildScenarioPersistenceCancellations(scenario);
+        if (cancellations.length !== expectedCancellations) {
+          throw new Error('A persisted override has no account identity and cannot be stopped safely');
+        }
+
+        for (const cancellation of cancellations) {
+          const stopResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: serializeScenarioJson(buildStopPersistenceRpcRequest(cancellation)),
+          });
+          const stopResult = await stopResponse.json();
+          if (!stopResponse.ok || stopResult.error) {
+            throw new Error(stopResult.error?.message || `Persistence stop returned HTTP ${stopResponse.status}`);
+          }
+        }
+      }
+
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'DELETE',
       });
@@ -237,8 +274,13 @@ export default function ScenariosBento({
 
       logger.log('Scenario deleted successfully:', id);
       onRefresh?.();
+      return true;
     } catch (error) {
       console.error('Error deleting scenario:', error);
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete scenario safely');
+      return false;
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -281,6 +323,7 @@ export default function ScenariosBento({
   const renderDetailActions = (item: ScenarioBentoItem, onClose?: () => void) => (
     <button
       onClick={() => {
+        setDeleteError(null);
         setScenarioToDelete({ id: item.id, onClose });
         setDeleteDialogOpen(true);
       }}
@@ -405,22 +448,25 @@ export default function ScenariosBento({
         <DialogDescription>
           Are you sure you want to delete this scenario? This action cannot be undone.
         </DialogDescription>
+        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
         <DialogActions>
           <Button color="dark" onClick={() => setDeleteDialogOpen(false)}>
             Cancel
           </Button>
           <Button
             color="red"
-            onClick={() => {
+            disabled={isDeleting}
+            onClick={async () => {
               if (scenarioToDelete) {
-                handleDeleteScenario(scenarioToDelete.id);
+                const deleted = await handleDeleteScenario(scenarioToDelete.id);
+                if (!deleted) return;
                 scenarioToDelete.onClose?.();
               }
               setDeleteDialogOpen(false);
               setScenarioToDelete(null);
             }}
           >
-            Delete
+            {isDeleting ? 'Stopping persistence…' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
