@@ -27,6 +27,7 @@ import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpo
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
+import { resolveTokenSelectorOptions } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -102,6 +103,8 @@ const ENABLED_PROTOCOLS = [
   'Pyth',
   'Raydium',
   'Drift',
+  'Pump',
+  'PumpSwap',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -2329,16 +2332,10 @@ export default function ScenarioEditor({
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                         }) => {
-                                          // Convert currentValue to string for comparison (handles numbers like config_index)
-                                          const currentValueStr = currentValue != null ? String(currentValue) : '';
-
-                                          // Find the currently selected option (case-insensitive for hex values)
-                                          const selectedOption =
-                                            constantDef.options.find((opt: any) =>
-                                              currentValueStr.startsWith('0x')
-                                                ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
-                                                : opt.value === currentValueStr
-                                            ) || null;
+                                          const { options, selectedOption } = resolveTokenSelectorOptions(
+                                            constantDef.options,
+                                            currentValue
+                                          );
 
                                           return (
                                             <Combobox
@@ -2348,7 +2345,7 @@ export default function ScenarioEditor({
                                                   setValue(fieldPath, option.value);
                                                 }
                                               }}
-                                              options={constantDef.options}
+                                              options={options}
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
@@ -2364,8 +2361,12 @@ export default function ScenarioEditor({
                                                 ).toLowerCase();
                                                 const label = (option.label || '').toLowerCase();
                                                 const description = (option.description || '').toLowerCase();
+                                                const value = (option.value || '').toLowerCase();
                                                 return (
-                                                  symbol.includes(q) || label.includes(q) || description.includes(q)
+                                                  symbol.includes(q) ||
+                                                  label.includes(q) ||
+                                                  description.includes(q) ||
+                                                  value.includes(q)
                                                 );
                                               }}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
