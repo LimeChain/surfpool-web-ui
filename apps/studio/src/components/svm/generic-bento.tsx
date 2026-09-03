@@ -134,9 +134,7 @@ export default function GenericBento<T extends BentoItem>({
           setSelectedItemId(initialSelectedId);
           setHasInitialized(true);
         } else {
-          // Item not found - maybe it doesn't exist
           console.warn('Deep linking: item not found', initialSelectedId, 'available IDs:', items.map(i => i.id));
-          setHasInitialized(true);
         }
       } else {
         logger.log('Deep linking: waiting for items to load, currently', items.length);

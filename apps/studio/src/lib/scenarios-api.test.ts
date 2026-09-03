@@ -1,5 +1,6 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
-import { describe, expect, it } from 'vitest';
+import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildPersistenceCancellation,
@@ -7,6 +8,8 @@ import {
   buildStopPersistenceRpcRequest,
   buildUpdatePayload,
   createOverrideId,
+  createPumpGraduationScenario,
+  createPumpSwapPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
   isValidPersistSlotCount,
@@ -19,6 +22,22 @@ import {
   toScenarioNumber,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
+
+vi.mock('./ai-client', () => ({
+  callMCPTool: vi.fn(),
+  fetchMCPTools: vi.fn(),
+}));
+
+const callMcpToolMock = vi.mocked(callMCPTool);
+const fetchMcpToolsMock = vi.mocked(fetchMCPTools);
+const fetchMock = vi.fn();
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 const baseScenario: Scenario = {
   id: 'test-123',
@@ -45,6 +64,112 @@ const baseScenario: Scenario = {
     },
   ],
 };
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('createPumpGraduationScenario', () => {
+  it('calls the specialized MCP tool without an LLM', async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    callMcpToolMock.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: null, url: 'http://studio/scenarios?id=scenario-id&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createPumpGraduationScenario('http://studio', ' mint ')).resolves.toEqual({ id: 'scenario-id' });
+    expect(callMcpToolMock).toHaveBeenCalledWith(
+      'http://studio',
+      'create_pump_graduation_scenario',
+      { tokenMint: 'mint' },
+      'session-id'
+    );
+  });
+
+  it('surfaces MCP validation failures', async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    callMcpToolMock.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'Bonding curve is already complete', url: null }) }],
+    });
+
+    await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
+      'Bonding curve is already complete'
+    );
+  });
+});
+
+describe('createPumpSwapPriceShockScenario', () => {
+  it('creates a generic scenario from the existing PumpSwap template', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+      .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
+
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
+      { id: '11111111-1111-4111-8111-111111111111' }
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
+
+    const postRequest = fetchMock.mock.calls[1];
+    expect(postRequest[0]).toBe('http://studio/v1/scenarios');
+    const init = postRequest[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'PumpSwap Price Shock',
+      description: 'Shift a canonical PumpSwap pool price through its virtual quote reserves.',
+      overrides: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          templateId: 'pump-amm-canonical-pool',
+          values: { base_mint: 'mint', virtual_quote_reserves: 15000000000000 },
+          scenarioRelativeSlot: 1,
+          label: 'PumpSwap virtual quote reserve shock',
+          enabled: true,
+          fetchBeforeUse: true,
+          account: { pda: { programId: 'pump', seeds: [] } },
+        },
+      ],
+      tags: ['pumpswap', 'price-shock'],
+    });
+  });
+
+  it('preserves the full u64 value in the scenario JSON', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615');
+
+    const init = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(init.body).toContain('"virtual_quote_reserves":18446744073709551615');
+  });
+
+  it('surfaces generic scenario API failures', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
+
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
 
 describe('createScenarioPayload', () => {
   it('returns correct shape with empty overrides and tags', () => {
@@ -401,13 +526,14 @@ describe('buildStopPersistenceRpcRequest', () => {
 
 describe('scenarioToBentoItem', () => {
   it('maps all fields correctly', () => {
-    const result = scenarioToBentoItem(baseScenario);
+    const result = scenarioToBentoItem({ ...baseScenario, tags: ['pyth', 'oracle'] });
     expect(result.id).toBe('test-123');
     expect(result.name).toBe('Test Scenario');
     expect(result.description).toBe('A test scenario');
     expect(result.created_at).toBe('2025-01-01T00:00:00Z');
     expect(result.updated_at).toBe('2025-01-02T00:00:00Z');
     expect(result.steps).toBe(baseScenario.steps);
+    expect(result.tags).toEqual(['pyth', 'oracle']);
     expect(result.metadata).toBeUndefined();
   });
 
@@ -536,7 +662,28 @@ describe('scenarioDownloadFile', () => {
     expect(scenarioDownloadFile(huge, 'big')!.contents).toContain('9223372036854775807');
   });
 
-  it('returns null for an unknown id, a non-array body, or invalid JSON', () => {
+  it('round-trips an object-map scenario without losing a large integer', () => {
+    const exact = '10103697788335729001';
+    const objectMap =
+      `{"wanted":{"name":"Object map","tags":["pyth"],` +
+      `"overrides":[{"id":"ov","values":{"sqrt_price":${exact}}}]}}`;
+
+    const file = scenarioDownloadFile(objectMap, 'wanted');
+    expect(file).not.toBeNull();
+    expect(file!.contents).toContain(`"id": "wanted"`);
+    expect(file!.contents).toContain(exact);
+
+    const imported = scenarioImportPayload(file!.contents, 'fresh-id');
+    expect('error' in imported).toBe(false);
+    const payload = (imported as { payload: string }).payload;
+    expect(payload).toContain(exact);
+
+    const scenario = parseScenariosJson(payload) as Record<string, unknown>;
+    expect(scenario.id).toBe('fresh-id');
+    expect(scenario.tags).toEqual(['pyth']);
+  });
+
+  it('returns null for an unknown id, an invalid object body, or invalid JSON', () => {
     expect(scenarioDownloadFile(response, 'missing')).toBeNull();
     expect(scenarioDownloadFile('{"id":"wanted"}', 'wanted')).toBeNull();
     expect(scenarioDownloadFile('not json', 'wanted')).toBeNull();

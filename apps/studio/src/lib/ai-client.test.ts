@@ -364,6 +364,42 @@ describe('streamClaudeResponse thinking round-trip', () => {
     expect(events.filter((e) => e.type === 'error').map((e) => e.content)).toEqual([
       'The model ran out of output budget before finishing. Try again, or narrow the request.',
     ]);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+
+  it('reports a stream that closes without a terminal stop reason', async () => {
+    mockAnthropicRounds([
+      [
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } },
+        { type: 'content_block_stop', index: 0 },
+      ],
+    ]);
+
+    const events = await runTurn();
+
+    expect(events.find((e) => e.type === 'error')?.content).toBe(
+      'Claude stream ended before completing. Try again.'
+    );
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+
+  it('reports an unrecognized stop reason instead of completing', async () => {
+    mockAnthropicRounds([[{ type: 'message_delta', delta: { stop_reason: 'unexpected_reason' } }]]);
+
+    const events = await runTurn();
+
+    expect(events.find((e) => e.type === 'error')?.content).toContain('unexpected_reason');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+
+  it('accepts stop_sequence as a successful terminal reason', async () => {
+    mockAnthropicRounds([[{ type: 'message_delta', delta: { stop_reason: 'stop_sequence' } }]]);
+
+    const events = await runTurn();
+
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
   });
 });
 
@@ -518,6 +554,7 @@ describe('streamOpenAIResponse (Responses API)', () => {
     const events = await runOpenAITurn();
     expect(requests).toHaveLength(8);
     expect(events.find((e) => e.type === 'error')?.content).toContain('Stopped after 8 tool rounds');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });
 
@@ -563,5 +600,6 @@ describe('streamClaudeResponse thinking toggle', () => {
     ]);
     const events = await runClaudeTurn('claude-opus-5', true);
     expect(events.find((e) => e.type === 'error')?.content).toContain('context window');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });

@@ -662,13 +662,25 @@ export async function* streamClaudeResponse(
           type: 'error',
           content: 'The model ran out of output budget before finishing. Try again, or narrow the request.',
         };
+        return;
       } else if (stopReason === 'refusal') {
         yield { type: 'error', content: 'The model declined to answer this request.' };
+        return;
       } else if (stopReason === 'model_context_window_exceeded') {
         yield {
           type: 'error',
           content: 'The conversation is too long for the model context window. Start a new generation.',
         };
+        return;
+      }
+      if (stopReason !== 'end_turn' && stopReason !== 'stop_sequence') {
+        yield {
+          type: 'error',
+          content: stopReason
+            ? `Claude stopped before completing (${stopReason}). Try again.`
+            : 'Claude stream ended before completing. Try again.',
+        };
+        return;
       }
       finished = true;
       break;
@@ -680,6 +692,7 @@ export async function* streamClaudeResponse(
       type: 'error',
       content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
     };
+    return;
   }
 
   yield { type: 'done', content: null };
@@ -846,7 +859,6 @@ export async function* streamOpenAIResponse(
     type: 'error',
     content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
   };
-  yield { type: 'done', content: null };
 }
 
 // Stream response from Groq (OpenAI-compatible API)

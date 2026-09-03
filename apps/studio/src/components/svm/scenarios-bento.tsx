@@ -31,8 +31,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
+import PumpGraduationDialog from './pump-graduation-dialog';
+import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
 import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
+import ScenarioPresets from './scenario-presets';
 import type { ScenarioBentoItem, ScenariosBentoProps } from './scenarios-bento.types';
 
 const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
@@ -61,6 +64,8 @@ export default function ScenariosBento({
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
+  const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -157,6 +162,38 @@ export default function ScenariosBento({
       console.error('Error creating scenario:', error);
       return null;
     }
+  };
+
+  const handleOpenPumpGraduationDialog = () => {
+    setPumpGraduationDialogOpen(true);
+  };
+
+  const handleClosePumpGraduationDialog = () => {
+    setPumpGraduationDialogOpen(false);
+  };
+
+  const handlePumpGraduationCreated = (scenarioId: string) => {
+    setPumpGraduationDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleScenarioNavigate = (scenarioId: string) => {
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenPumpSwapPriceShockDialog = () => {
+    setPumpSwapPriceShockDialogOpen(true);
+  };
+
+  const handleClosePumpSwapPriceShockDialog = () => {
+    setPumpSwapPriceShockDialogOpen(false);
+  };
+
+  const handlePumpSwapPriceShockCreated = (scenarioId: string) => {
+    setPumpSwapPriceShockDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
 
   // Update scenario
@@ -315,6 +352,7 @@ export default function ScenariosBento({
               scenarioId={item.id}
               scenarioName={item.name}
               scenarioDescription={item.description}
+              scenarioTags={item.tags}
               initialSteps={item.steps}
             />
           </div>
@@ -333,10 +371,13 @@ export default function ScenariosBento({
     <div className="relative h-full">
       {/* AI Header - always visible when detail pane is closed */}
       {!isDetailPaneOpen && (
-        <AIHeader
-          onRefresh={onRefresh}
-          onScenarioNavigate={(scenarioId) => router.push(`/scenarios?id=${scenarioId}&tab=editor`)}
-        />
+        <>
+          <AIHeader onRefresh={onRefresh} onScenarioNavigate={handleScenarioNavigate} />
+          <ScenarioPresets
+            onPumpGraduationSelect={handleOpenPumpGraduationDialog}
+            onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
+          />
+        </>
       )}
 
       <GenericBento
@@ -348,7 +389,7 @@ export default function ScenariosBento({
             <SparklesIcon className="mb-4 h-12 w-12 text-zinc-600" />
             <p className="mb-4 text-zinc-400">No scenarios yet</p>
             <p className="max-w-md text-sm text-zinc-500">
-              Use the AI prompt above to generate a scenario, or click the + button to create one manually.
+              Use AI, choose a preset, or click the + button to create one manually.
             </p>
           </div>
         }
@@ -429,6 +470,19 @@ export default function ScenariosBento({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <PumpGraduationDialog
+        open={pumpGraduationDialogOpen}
+        studioUrl={studioUrl}
+        onClose={handleClosePumpGraduationDialog}
+        onCreated={handlePumpGraduationCreated}
+      />
+      <PumpSwapPriceShockDialog
+        open={pumpSwapPriceShockDialogOpen}
+        studioUrl={studioUrl}
+        onClose={handleClosePumpSwapPriceShockDialog}
+        onCreated={handlePumpSwapPriceShockCreated}
+      />
     </div>
   );
 }
