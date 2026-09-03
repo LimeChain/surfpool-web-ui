@@ -2,13 +2,13 @@
 
 import { useAppConfig } from '@/hooks/use-app-config';
 import {
-  buildUpdatePayload,
   createScenarioPayload,
   scenarioImportPayload,
   scenarioToBentoItem,
   serializeScenarioJson,
 } from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
+import { reinsertScenario } from '@/lib/scenarios-list-ops';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
 import {
@@ -25,6 +25,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
@@ -41,6 +42,16 @@ const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => m
   ),
 });
 
+interface ScenarioUpdateResult {
+  scenario: Scenario | undefined;
+  succeeded: boolean;
+}
+
+interface ScenarioUpdateQueue {
+  optimisticScenario: Scenario;
+  promise: Promise<ScenarioUpdateResult>;
+}
+
 export default function ScenariosBento({
   scenarios: initialScenarios,
   onRefresh,
@@ -56,6 +67,12 @@ export default function ScenariosBento({
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // REFS
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const scenariosRef = useRef(scenarios);
+  const scenarioUpdateQueuesRef = useRef(new Map<string, ScenarioUpdateQueue>());
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -67,6 +84,11 @@ export default function ScenariosBento({
     );
     setScenarios(initialScenarios);
   }, [initialScenarios]);
+
+  // Keep imperative retry reads synchronized with the rendered list.
+  useEffect(() => {
+    scenariosRef.current = scenarios;
+  }, [scenarios]);
 
   // Notify parent when detail pane state changes
   useEffect(() => {
@@ -88,9 +110,6 @@ export default function ScenariosBento({
   };
 
   // Import scenario from a downloaded file
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-
   const handleImportScenario = async (file: File) => {
     setImportError(null);
     const result = scenarioImportPayload(await file.text(), crypto.randomUUID());
@@ -155,41 +174,89 @@ export default function ScenariosBento({
   };
 
   // Update scenario
-  const handleUpdateScenario = async (id: string, updates: Partial<Scenario>) => {
-    const scenario = scenarios.find((s) => s.id === id);
+  const handleUpdateScenario = (id: string, updates: Partial<Scenario>) => {
+    const scenario = scenariosRef.current.find((item) => item.id === id);
     if (!scenario) return;
+    const optimisticScenario = { ...scenario, ...updates, updated_at: new Date().toISOString() };
+    const previousUpdate = scenarioUpdateQueuesRef.current.get(id);
+    const scenarioIncludesPreviousOptimisticUpdate = previousUpdate?.optimisticScenario === scenario;
 
-    const updatedScenario = { ...scenario, ...updates, updated_at: new Date().toISOString() };
+    async function persistQueuedUpdate(previousResult: ScenarioUpdateResult): Promise<ScenarioUpdateResult> {
+      const previousScenario = scenarioIncludesPreviousOptimisticUpdate ? previousResult.scenario : scenario;
+      if (!previousScenario) return { scenario: undefined, succeeded: false };
 
-    // Optimistic update
-    setScenarios(scenarios.map((s) => (s.id === id ? updatedScenario : s)));
+      const updatedScenario = { ...previousScenario, ...updates, updated_at: new Date().toISOString() };
 
-    try {
-      const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: serializeScenarioJson(buildUpdatePayload(updatedScenario)),
-      });
+      try {
+        const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: serializeScenarioJson(updates),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to update scenario: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`Failed to update scenario: ${response.status}`);
+        }
+
+        logger.log('Scenario updated successfully:', id);
+
+        return { scenario: updatedScenario, succeeded: true };
+      } catch (error) {
+        console.error('Error updating scenario:', error);
+
+        function retryUpdate() {
+          handleUpdateScenario(id, updates);
+        }
+
+        toast.error("Couldn't save the scenario changes.", {
+          action: { label: 'Retry', onClick: retryUpdate },
+        });
+        return { scenario: previousScenario, succeeded: false };
       }
-
-      logger.log('Scenario updated successfully:', id);
-
-      if (!isDetailPaneOpen && onRefresh) {
-        onRefresh();
-      }
-    } catch (error) {
-      console.error('Error updating scenario:', error);
-      // Revert optimistic update
-      setScenarios(scenarios.map((s) => (s.id === id ? scenario : s)));
     }
+
+    const previousUpdatePromise = previousUpdate?.promise ?? Promise.resolve({ scenario, succeeded: true });
+    const queuedUpdate = previousUpdatePromise.then(persistQueuedUpdate);
+    const queueEntry = { optimisticScenario, promise: queuedUpdate };
+
+    function reconcileCompletedUpdate(result: ScenarioUpdateResult) {
+      if (scenarioUpdateQueuesRef.current.get(id) === queueEntry) {
+        scenarioUpdateQueuesRef.current.delete(id);
+        const persistedScenario = result.scenario;
+        if (persistedScenario) {
+          setScenarios((current) =>
+            current.map((item) => {
+              if (item.id !== id) return item;
+              if (item !== optimisticScenario) {
+                return result.succeeded ? { ...item, ...updates, updated_at: persistedScenario.updated_at } : item;
+              }
+              return persistedScenario;
+            })
+          );
+        }
+        onRefresh?.();
+      }
+    }
+
+    setScenarios((current) => current.map((item) => (item.id === id ? optimisticScenario : item)));
+    scenarioUpdateQueuesRef.current.set(id, queueEntry);
+    void queuedUpdate.then(reconcileCompletedUpdate);
   };
 
   // Delete scenario
   const handleDeleteScenario = async (id: string) => {
+    const index = scenarios.findIndex((s) => s.id === id);
+    const deleted = scenarios[index];
+    if (!deleted) return;
+
+    // Drop the card immediately so it doesn't linger until the background
+    // refetch resolves; restore it if the delete fails.
+    setScenarios((prev) => prev.filter((s) => s.id !== id));
+    let scenarioToRestore = deleted;
+
     try {
+      const queuedUpdate = scenarioUpdateQueuesRef.current.get(id);
+      scenarioToRestore = (await queuedUpdate?.promise)?.scenario ?? deleted;
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'DELETE',
       });
@@ -202,6 +269,8 @@ export default function ScenariosBento({
       onRefresh?.();
     } catch (error) {
       console.error('Error deleting scenario:', error);
+      // Restore against the current list without overwriting a newer same-ID item.
+      setScenarios((prev) => reinsertScenario(prev, scenarioToRestore, index));
     }
   };
 
