@@ -46,7 +46,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
   const hasMarketCatalog = !!marketOptions && marketOptions.length > 0;
   const selectedMarket = marketOptions?.find((option) => option.value === normalizedMarket);
   const hasValidMarket = !normalizedMarket || !hasMarketCatalog || !!selectedMarket;
-  const canCreate = hasValidPrice && hasValidMarket && !isCreating;
+  const canCreate = marketOptions !== null && hasValidPrice && hasValidMarket && !isCreating;
   const priceLabel = priceLabelFor(selectedMarket ?? marketOptions?.[0]);
 
   // HANDLERS
@@ -99,7 +99,10 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     setMarketOptions(null);
 
     fetchTesseraMarkets(studioUrl).then((options) => {
-      if (!cancelled) setMarketOptions(options);
+      if (!cancelled) {
+        setMarketOptions(options);
+        setMarket((current) => current || options[0]?.value || '');
+      }
     });
 
     return () => {
@@ -128,7 +131,6 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
               <Input aria-label="PMM market" placeholder="Loading markets…" value="" disabled readOnly />
             ) : marketOptions.length > 0 ? (
               <Listbox aria-label="PMM market" value={market} onChange={handleMarketSelect} disabled={isCreating}>
-                <ListboxOption value="">Default market ({marketOptions[0].label})</ListboxOption>
                 {marketOptions.map(renderMarketOption)}
               </Listbox>
             ) : (
@@ -142,7 +144,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
             )}
             {marketOptions?.length === 0 && (
               <p className="mt-1.5 text-xs text-zinc-500">
-                Market account address, or leave it empty to use the default.
+                Live market list unavailable. Enter a market account address, or leave it empty to use the default.
               </p>
             )}
           </div>

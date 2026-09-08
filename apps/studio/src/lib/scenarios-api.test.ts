@@ -1,15 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
-  createPhoenixCollateralScenario,
   buildUpdatePayload,
+  createPhoenixCollateralScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
-  fetchPhoenixMarketSymbols,
   createTesseraFairValueScenario,
+  fetchPhoenixMarketSymbols,
   fetchTesseraMarkets,
   flattenOverrideValues,
   parseScenariosJson,
@@ -115,9 +115,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -166,7 +166,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -248,9 +250,7 @@ describe('fetchPhoenixMarketSymbols', () => {
       content: [{ type: 'text', text: JSON.stringify({ symbols: ['ETH'] }) }],
     });
 
-    await expect(fetchPhoenixMarketSymbols('http://studio', 'list_other_markets')).resolves.toEqual([
-      'ETH',
-    ]);
+    await expect(fetchPhoenixMarketSymbols('http://studio', 'list_other_markets')).resolves.toEqual(['ETH']);
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_other_markets', {}, 'session');
   });
 
@@ -280,9 +280,9 @@ describe('createTesseraFairValueScenario', () => {
       ],
     });
 
-    await expect(
-      createTesseraFairValueScenario('http://studio', ' FLckHLGM ', ' 100.25 ')
-    ).resolves.toEqual({ id: 'tessera-1' });
+    await expect(createTesseraFairValueScenario('http://studio', ' FLckHLGM ', ' 100.25 ')).resolves.toEqual({
+      id: 'tessera-1',
+    });
     expect(callMCPTool).toHaveBeenCalledWith(
       'http://studio',
       'create_tessera_fair_value_scenario',
@@ -341,56 +341,49 @@ describe('createTesseraFairValueScenario', () => {
 });
 
 describe('fetchTesseraMarkets', () => {
-  const templates = [
-    {
-      id: 'tessera-fair-value',
-      address: { pubkey: 'FLckHLGM' },
-      constants: {
-        market: {
-          label: 'Tessera Market',
-          description: 'Select a live Tessera market account',
-          options: [
-            {
-              id: 'sol_usdc',
-              label: 'SOL/USDC',
-              value: 'FLckHLGM',
-              metadata: { base_decimals: 9, quote_decimals: 6, freshness_limit_slots: 20 },
-            },
-            { id: 'cbbtc_usdc', label: 'cbBTC/USDC', value: '9NkuAWB4' },
-          ],
+  it('reads newly discovered pairs through MCP without a template catalog', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            count: 2,
+            markets: [
+              { label: 'SOL/USDC', address: 'FLckHLGM', baseDecimals: 9, quoteDecimals: 6 },
+              { label: 'NEW/USDC', address: 'newly-discovered-market', baseDecimals: 8, quoteDecimals: 6 },
+            ],
+          }),
         },
-      },
-    },
-  ];
-
-  it('returns the catalog pairs', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        new Response(JSON.stringify(templates), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      );
-
+      ],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([
       { label: 'SOL/USDC', value: 'FLckHLGM' },
-      { label: 'cbBTC/USDC', value: '9NkuAWB4' },
+      { label: 'NEW/USDC', value: 'newly-discovered-market' },
     ]);
-    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/templates');
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_tessera_markets', {}, 'session');
   });
 
-  it('returns an empty catalog when the templates request fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }));
-
+  it('returns an empty list when discovery reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'RPC discovery unavailable' }) }],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
   });
 
-  it('returns an empty catalog when the template carries no market constant', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify([{ id: 'tessera-fair-value', address: {} }]), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
+  it('returns an empty list when the RPC call fails', async () => {
+    vi.mocked(callMCPTool).mockRejectedValue(new Error('network unavailable'));
+    await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
 
+  it('returns an empty list for malformed tool output', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({ content: [{ type: 'text', text: 'invalid json' }] });
+    await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
+
+  it('accepts an empty discovery result', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ count: 0, markets: [] }) }],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
   });
 });
@@ -781,8 +774,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -807,8 +799,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

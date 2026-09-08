@@ -157,6 +157,17 @@ describe('AIHeader', () => {
     expect(prompt).not.toContain('fair-value');
   });
 
+  it('loads a depth stress goal without coupling the chip to backend tool names', () => {
+    renderWithConfig(<AIHeader />);
+    fireEvent.click(screen.getByText('Tessera Depth Stress'));
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('both buy and sell quoting depth by 90%');
+    expect(prompt).toContain('current local state');
+    expect(prompt).toContain('Preserve the price and keep quotes fresh');
+    expect(prompt).toContain('do not build or execute a swap');
+    expect(prompt).not.toContain('create_tessera_depth_scenario');
+  });
+
   it('renders the model selector button', () => {
     renderWithConfig(<AIHeader />);
     expect(screen.getByLabelText('Select AI model')).toBeInTheDocument();

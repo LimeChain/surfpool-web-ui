@@ -56,7 +56,7 @@ describe('PmmFairValueDialog', () => {
     expect(within(protocolListbox).getByRole('option', { name: 'Tessera' })).toBeInTheDocument();
   });
 
-  it('labels the price with the pair of the market the catalog names as default', async () => {
+  it('labels the price with the selected discovered pair', async () => {
     renderDialog();
 
     expect(await screen.findByLabelText('Price of SOL in USDC')).toBeInTheDocument();
@@ -66,17 +66,18 @@ describe('PmmFairValueDialog', () => {
     expect(await screen.findByLabelText('Price of cbBTC in USDC')).toBeInTheDocument();
   });
 
-  it('routes an empty market through the adapter so the backend picks its default', async () => {
+  it('submits a discovered market explicitly when the default market is absent', async () => {
+    fetchMarketsMock.mockResolvedValue([markets[1]]);
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
 
-    await screen.findByLabelText('Price of SOL in USDC');
-    fireEvent.change(screen.getByLabelText('Price of SOL in USDC'), { target: { value: '100.25' } });
+    await screen.findByLabelText('Price of cbBTC in USDC');
+    fireEvent.change(screen.getByLabelText('Price of cbBTC in USDC'), { target: { value: '100.25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createScenarioMock).toHaveBeenCalledWith('http://studio', '', '100.25');
+      expect(createScenarioMock).toHaveBeenCalledWith('http://studio', '9NkuAWB4', '100.25');
       expect(onCreated).toHaveBeenCalledWith('scenario-id');
     });
   });
@@ -103,7 +104,7 @@ describe('PmmFairValueDialog', () => {
       .getAllByRole('option')
       .map((option) => option.textContent);
 
-    expect(optionNames).toEqual(['Default market (SOL/USDC)', 'SOL/USDC', 'cbBTC/USDC']);
+    expect(optionNames).toEqual(['SOL/USDC', 'cbBTC/USDC']);
   });
 
   it('locks the market field while the catalog is loading', () => {
@@ -113,6 +114,7 @@ describe('PmmFairValueDialog', () => {
     const marketField = screen.getByLabelText('PMM market');
     expect(marketField).toBeDisabled();
     expect(marketField).toHaveAttribute('placeholder', 'Loading markets…');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
   it('accepts a free-text market when the catalog fails to load', async () => {
