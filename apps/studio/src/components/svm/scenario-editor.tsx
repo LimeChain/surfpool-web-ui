@@ -716,6 +716,7 @@ export default function ScenarioEditor({
                       existingAction.actionId === action.id && existingAction.account
                         ? existingAction.account
                         : action.template?.address,
+                    original: existingAction.original,
                   }
                 : existingAction
             ),
