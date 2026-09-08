@@ -78,22 +78,9 @@ export async function createPhoenixCollateralScenario(
   });
 }
 
-type ScenarioTemplateConstantOption = {
-  id: string;
-  label: string;
-  value: string;
-};
-
-type ScenarioTemplateConstant = {
-  label: string;
-  description: string;
-  options: ScenarioTemplateConstantOption[];
-};
-
 type ScenarioTemplate = {
   id: string;
   address: unknown;
-  constants?: Record<string, ScenarioTemplateConstant>;
 };
 
 async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
@@ -110,14 +97,31 @@ async function phoenixMarketTemplate(studioUrl: string, templateId: string): Pro
 }
 
 /**
- * Phoenix market symbols come from the direct-mark template's constant catalog. Returns []
- * on any failure so callers can fall back to free-text input.
+ * Phoenix market symbols come live from the `list_phoenix_markets` MCP tool, which decodes the
+ * running fork's PerpAssetMap - so a newly listed or delisted market shows up without a redeploy.
+ * Returns [] when the market catalog is unavailable.
  */
-export async function fetchPhoenixMarketSymbols(studioUrl: string): Promise<string[]> {
+export async function fetchPhoenixMarketSymbols(
+  studioUrl: string,
+  toolName: string = 'list_phoenix_markets'
+): Promise<string[]> {
   try {
-    const template = await phoenixMarketTemplate(studioUrl, 'phoenix-direct-mark-risk-shock');
-    const options = template.constants?.market_symbol?.options ?? [];
-    return options.map((option) => option.value);
+    const { sessionId } = await fetchMCPTools(studioUrl);
+    const result = (await callMCPTool(studioUrl, toolName, {}, sessionId)) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    let text: string | undefined;
+    for (const content of result.content ?? []) {
+      if (content.type === 'text' && content.text) {
+        text = content.text;
+        break;
+      }
+    }
+    if (!text) return [];
+
+    const payload = JSON.parse(text) as { error?: string | null; symbols?: string[] };
+    if (payload.error) return [];
+    return payload.symbols ?? [];
   } catch {
     return [];
   }

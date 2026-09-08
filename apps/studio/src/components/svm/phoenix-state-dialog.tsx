@@ -47,6 +47,12 @@ const renderStateModeOption = (stateMode: PhoenixStateMode) => (
   </ListboxOption>
 );
 
+const renderMarketOption = (marketSymbol: string) => (
+  <ListboxOption key={marketSymbol} value={marketSymbol}>
+    {marketSymbol}
+  </ListboxOption>
+);
+
 export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated }: PhoenixStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.ReferencePrices);
@@ -59,6 +65,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [symbolOptions, setSymbolOptions] = useState<string[]>([]);
+  const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
 
   // DERIVED STATE
   const hasSignedCollateral = /^-?\d+$/.test(targetQuoteLots.trim());
@@ -66,7 +73,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const hasSpotTicks = /^\d+$/.test(spotTicks.trim());
   const hasPerpTicks = /^\d+$/.test(perpTicks.trim());
   const hasSymbolCatalog = symbolOptions.length > 0;
-  const hasSymbol = hasSymbolCatalog ? symbolOptions.includes(symbol) : !!symbol.trim();
+  const hasSymbol = !isLoadingSymbols && symbolOptions.includes(symbol);
   const canCreate =
     !isCreating &&
     ((mode === PhoenixStateMode.Collateral && !!trader.trim() && hasSignedCollateral) ||
@@ -91,8 +98,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleSymbolChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setSymbol(event.target.value);
+  const handleSymbolChange = (selectedSymbol: string) => {
+    setSymbol(selectedSymbol);
     setError(null);
   };
 
@@ -143,9 +150,17 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     if (!open) return;
     let cancelled = false;
 
-    fetchPhoenixMarketSymbols(studioUrl).then((options) => {
-      if (!cancelled) setSymbolOptions(options);
-    });
+    setIsLoadingSymbols(true);
+    setSymbolOptions([]);
+
+    const handleSymbolsLoaded = (options: string[]) => {
+      if (cancelled) return;
+      setSymbolOptions(options);
+      setSymbol((current) => (options.includes(current) ? current : (options[0] ?? '')));
+      setIsLoadingSymbols(false);
+    };
+
+    fetchPhoenixMarketSymbols(studioUrl).then(handleSymbolsLoaded);
 
     return () => {
       cancelled = true;
@@ -188,19 +203,19 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
             <>
               <div>
                 <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
-                <Input
+                <Listbox
                   aria-label="Phoenix market"
-                  placeholder="Market symbol, such as BTC"
                   value={symbol}
                   onChange={handleSymbolChange}
-                  {...(hasSymbolCatalog ? { list: 'phoenix-market-symbols' } : {})}
-                />
-                {!!hasSymbolCatalog && (
-                  <datalist id="phoenix-market-symbols">
-                    {symbolOptions.map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
+                  disabled={isCreating || isLoadingSymbols || !hasSymbolCatalog}
+                  placeholder={isLoadingSymbols ? 'Loading markets…' : 'No markets available'}
+                >
+                  {symbolOptions.map(renderMarketOption)}
+                </Listbox>
+                {!isLoadingSymbols && !hasSymbolCatalog && (
+                  <p role="status" className="mt-1.5 text-sm text-zinc-400">
+                    No markets available. Check the Studio connection and reopen this dialog.
+                  </p>
                 )}
               </div>
               {mode === PhoenixStateMode.DirectMark ? (
