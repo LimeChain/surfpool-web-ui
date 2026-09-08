@@ -710,7 +710,7 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    account: existingAction.account ?? existingAction.original?.account ?? action.template?.address,
                     original: existingAction.original,
                   }
                 : existingAction
@@ -1895,8 +1895,9 @@ export default function ScenarioEditor({
 
                                       // Regular field - render input based on type
                                       const typeString = String(typeInfo.type);
+                                      const isWideInteger = /^(u|i)(64|128)$/.test(typeString);
                                       const inputType =
-                                        typeString.startsWith('i') || typeString.startsWith('u')
+                                        !isWideInteger && (typeString.startsWith('i') || typeString.startsWith('u'))
                                           ? 'number'
                                           : typeString === 'bool'
                                             ? 'checkbox'

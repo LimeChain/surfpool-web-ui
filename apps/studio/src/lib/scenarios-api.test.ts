@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool } from './ai-client';
 import {
   buildAiPrompt,
-  createPhoenixCollateralScenario,
   buildUpdatePayload,
+  createPhoenixCollateralScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -178,9 +178,9 @@ describe('createTesseraFairValueScenario', () => {
       ],
     });
 
-    await expect(
-      createTesseraFairValueScenario('http://studio', ' FLckHLGM ', ' 100.25 ')
-    ).resolves.toEqual({ id: 'tessera-1' });
+    await expect(createTesseraFairValueScenario('http://studio', ' FLckHLGM ', ' 100.25 ')).resolves.toEqual({
+      id: 'tessera-1',
+    });
     expect(callMCPTool).toHaveBeenCalledWith(
       'http://studio',
       'create_tessera_fair_value_scenario',
@@ -239,56 +239,49 @@ describe('createTesseraFairValueScenario', () => {
 });
 
 describe('fetchTesseraMarkets', () => {
-  const templates = [
-    {
-      id: 'tessera-fair-value',
-      address: { pubkey: 'FLckHLGM' },
-      constants: {
-        market: {
-          label: 'Tessera Market',
-          description: 'Select a live Tessera market account',
-          options: [
-            {
-              id: 'sol_usdc',
-              label: 'SOL/USDC',
-              value: 'FLckHLGM',
-              metadata: { base_decimals: 9, quote_decimals: 6, freshness_limit_slots: 20 },
-            },
-            { id: 'cbbtc_usdc', label: 'cbBTC/USDC', value: '9NkuAWB4' },
-          ],
+  it('reads newly discovered pairs through MCP without a template catalog', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            count: 2,
+            markets: [
+              { label: 'SOL/USDC', address: 'FLckHLGM', baseDecimals: 9, quoteDecimals: 6 },
+              { label: 'NEW/USDC', address: 'newly-discovered-market', baseDecimals: 8, quoteDecimals: 6 },
+            ],
+          }),
         },
-      },
-    },
-  ];
-
-  it('returns the catalog pairs', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        new Response(JSON.stringify(templates), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      );
-
+      ],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([
       { label: 'SOL/USDC', value: 'FLckHLGM' },
-      { label: 'cbBTC/USDC', value: '9NkuAWB4' },
+      { label: 'NEW/USDC', value: 'newly-discovered-market' },
     ]);
-    expect(fetchMock).toHaveBeenCalledWith('http://studio/v1/scenarios/templates');
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_tessera_markets', {}, 'session');
   });
 
-  it('returns an empty catalog when the templates request fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }));
-
+  it('returns an empty list when discovery reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'RPC discovery unavailable' }) }],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
   });
 
-  it('returns an empty catalog when the template carries no market constant', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify([{ id: 'tessera-fair-value', address: {} }]), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
+  it('returns an empty list when the RPC call fails', async () => {
+    vi.mocked(callMCPTool).mockRejectedValue(new Error('network unavailable'));
+    await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
 
+  it('returns an empty list for malformed tool output', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({ content: [{ type: 'text', text: 'invalid json' }] });
+    await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
+
+  it('accepts an empty discovery result', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ count: 0, markets: [] }) }],
+    });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
   });
 });

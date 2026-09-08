@@ -128,15 +128,20 @@ export type TesseraMarketOption = {
   value: string;
 };
 
-/**
- * Tessera's live markets come from the fair-value template's constant catalog. Returns [] on any
- * failure so the dialog falls back to a free-text pubkey.
- */
 export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMarketOption[]> {
   try {
-    const template = await scenarioTemplate(studioUrl, 'tessera-fair-value');
-    const options = template.constants?.market?.options ?? [];
-    return options.map((option) => ({ label: option.label, value: option.value }));
+    const { sessionId } = await fetchMCPTools(studioUrl);
+    const result = (await callMCPTool(studioUrl, 'list_tessera_markets', {}, sessionId)) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    const text = result.content?.find((content) => content.type === 'text')?.text;
+    if (!text) return [];
+    const payload = JSON.parse(text) as {
+      error?: string;
+      markets?: Array<{ label: string; address: string }>;
+    };
+    if (payload.error) return [];
+    return (payload.markets ?? []).map((market) => ({ label: market.label, value: market.address }));
   } catch {
     return [];
   }
