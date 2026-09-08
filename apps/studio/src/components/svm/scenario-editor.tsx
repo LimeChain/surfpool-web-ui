@@ -711,6 +711,7 @@ export default function ScenarioEditor({
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
                     account: action.template?.address,
+                    original: existingAction.original,
                   }
                 : existingAction
             ),
