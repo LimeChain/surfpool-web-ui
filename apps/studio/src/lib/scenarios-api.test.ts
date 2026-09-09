@@ -9,6 +9,7 @@ import {
   createScenarioPayload,
   createTesseraFairValueScenario,
   fetchTesseraMarkets,
+  fetchPhoenixMarketSymbols,
   flattenOverrideValues,
   scenarioToBentoItem,
 } from './scenarios-api';
@@ -283,6 +284,47 @@ describe('fetchTesseraMarkets', () => {
       content: [{ type: 'text', text: JSON.stringify({ count: 0, markets: [] }) }],
     });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
+});
+
+describe('fetchPhoenixMarketSymbols', () => {
+  it('returns the live symbols from the list_phoenix_markets tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ perpAssetMap: 'map1', count: 2, symbols: ['SOL', 'BTC'] }),
+        },
+      ],
+    });
+
+    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual(['SOL', 'BTC']);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
+  });
+
+  it('passes a custom source tool name through', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ symbols: ['ETH'] }) }],
+    });
+
+    await expect(fetchPhoenixMarketSymbols('http://studio', 'list_other_markets')).resolves.toEqual([
+      'ETH',
+    ]);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_other_markets', {}, 'session');
+  });
+
+  it('falls back to [] when the tool reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
+    });
+
+    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual([]);
+  });
+
+  it('falls back to [] when the tool call throws', async () => {
+    vi.mocked(callMCPTool).mockRejectedValue(new Error('network down'));
+
+    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual([]);
   });
 });
 
