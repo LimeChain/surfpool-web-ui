@@ -48,6 +48,42 @@ export function isValidPersistSlotCount(input: string): boolean {
   return slots >= MIN_PERSIST_SLOTS && slots <= MAX_U64;
 }
 
+/** Whether editing a dropdown-selected direct account changes the override identity. */
+export function directAccountSelectionChanged(previousAccount: unknown, nextPubkey: string): boolean {
+  const previousPubkey = (previousAccount as { pubkey?: unknown } | null)?.pubkey;
+  return previousPubkey !== nextPubkey;
+}
+
+/**
+ * Tessera convention: a direct-pubkey template may publish alternative targets in
+ * `constants.market`. A constant already referenced by a property remains a field selector.
+ */
+export function getDirectAccountMarketConstantName(template: unknown): 'market' | undefined {
+  if (!template || typeof template !== 'object') return undefined;
+  const candidate = template as {
+    address?: { pubkey?: unknown };
+    constants?: { market?: { options?: unknown } };
+    properties?: Array<{ constant?: unknown }>;
+  };
+  if (typeof candidate.address?.pubkey !== 'string') return undefined;
+  if (!Array.isArray(candidate.constants?.market?.options) || candidate.constants.market.options.length === 0) {
+    return undefined;
+  }
+  if (candidate.properties?.some((property) => property.constant === 'market')) return undefined;
+  return 'market';
+}
+
+/** Resolve a Tessera-style market choice into the ordinary scenario account shape. */
+export function resolveTemplateAccount(
+  templateAddress: unknown,
+  directAccountConstantName: string | undefined,
+  selectedPubkey: string
+): unknown {
+  if (!directAccountConstantName) return templateAddress;
+  const pubkey = selectedPubkey.trim();
+  return pubkey ? { pubkey } : undefined;
+}
+
 /** Assign a stable scheduler identity as soon as an override is created in the editor. */
 export function createOverrideId(): string {
   return globalThis.crypto.randomUUID();
