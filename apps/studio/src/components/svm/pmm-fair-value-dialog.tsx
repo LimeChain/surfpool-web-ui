@@ -70,6 +70,9 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
 
   const handleProtocolSelect = (selectedValue: string) => {
     if (selectedValue !== 'tessera' && selectedValue !== 'goonfi') return;
+    // Reselecting the current protocol must not clear the catalog: `protocol` would not change, so
+    // the effect that reloads it never reruns and the dialog stays stuck on "Loading markets…".
+    if (selectedValue === protocol) return;
     setProtocol(selectedValue);
     setPrice(selectedValue === 'goonfi' ? '' : '100');
     setMarket('');
