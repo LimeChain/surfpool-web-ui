@@ -3,6 +3,7 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
+  fetchPhoenixMarketSymbols,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -114,7 +115,43 @@ export default function ScenarioEditor({
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
+
+  const [dynamicOptions, setDynamicOptions] = useState<
+    Record<string, { label: string; description: string; options: { id: string; label: string; value: string }[] }>
+  >({});
   const isFirstSlotsChangeRef = useRef(true);
+
+  useEffect(() => {
+    const properties = (selectedAction?.template?.properties ?? []) as any[];
+    const sources = Array.from(
+      new Set(
+        properties
+          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
+          .map((prop) => prop.source as string)
+      )
+    );
+    if (sources.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        sources.map(async (source) => {
+          const symbols = await fetchPhoenixMarketSymbols(studioUrl, source);
+          const options = symbols.map((symbol) => ({ id: symbol, label: symbol, value: symbol }));
+          return [source, { label: 'Market', description: 'Live markets from the running fork', options }] as const;
+        })
+      );
+      if (!cancelled) {
+        setDynamicOptions(Object.fromEntries(entries));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAction, studioUrl]);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -330,7 +367,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -708,7 +745,12 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    // A saved override may target an address discovered at creation (the live
+                    // Phoenix PerpAssetMap); the template's address is only for a new action.
+                    account:
+                      existingAction.actionId === action.id && existingAction.account
+                        ? existingAction.account
+                        : action.template?.address,
                   }
                 : existingAction
             ),
@@ -1717,38 +1759,6 @@ export default function ScenarioEditor({
                                     logger.log('🔍 Properties (raw):', rawProperties);
                                     logger.log('🔍 Constants:', constants);
 
-                                    // Helper to check if a field is a constant_ref
-                                    // Note: Backend serializes PropertyKind as "type" field (not "kind")
-                                    const getConstantRefInfo = (
-                                      fieldPath: string
-                                    ): {
-                                      isConstantRef: boolean;
-                                      constantDef?: any;
-                                      label?: string;
-                                      description?: string;
-                                    } => {
-                                      // Find the property by path in the new unified format
-                                      const prop = rawProperties.find(
-                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
-                                      );
-                                      // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
-                                      if (
-                                        prop &&
-                                        typeof prop !== 'string' &&
-                                        prop.type === 'constant_ref' &&
-                                        prop.constant &&
-                                        constants[prop.constant]
-                                      ) {
-                                        return {
-                                          isConstantRef: true,
-                                          constantDef: constants[prop.constant],
-                                          label: prop.label,
-                                          description: prop.description,
-                                        };
-                                      }
-                                      return { isConstantRef: false };
-                                    };
-
                                     // Helper to get property metadata (label, description)
                                     const getPropertyMeta = (
                                       fieldPath: string
@@ -1813,7 +1823,11 @@ export default function ScenarioEditor({
                                       const prop = rawProperties.find(
                                         (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
                                       );
-                                      return prop && typeof prop !== 'string' && prop.type === 'constant_ref';
+                                      return (
+                                        prop &&
+                                        typeof prop !== 'string' &&
+                                        (prop.type === 'constant_ref' || prop.type === 'dynamic_ref')
+                                      );
                                     };
 
                                     // Helper to check if a field or any of its children should be rendered
@@ -1925,8 +1939,11 @@ export default function ScenarioEditor({
 
                                       // Regular field - render input based on type
                                       const typeString = String(typeInfo.type);
+                                      const isPhoenixCollateral =
+                                        selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
+                                        fieldPath === 'traderState.quoteLotCollateral';
                                       const inputType =
-                                        typeString.startsWith('i') || typeString.startsWith('u')
+                                        !isPhoenixCollateral && (typeString.startsWith('i') || typeString.startsWith('u'))
                                           ? 'number'
                                           : typeString === 'bool'
                                             ? 'checkbox'
@@ -2071,18 +2088,26 @@ export default function ScenarioEditor({
                                       // Filter for constant_ref properties from the new unified format
                                       // Note: Backend serializes PropertyKind as "type" field
                                       const constantRefProps = rawProperties
-                                        .filter(
-                                          (prop: any) =>
-                                            typeof prop !== 'string' &&
-                                            prop.type === 'constant_ref' &&
-                                            prop.constant &&
-                                            constants[prop.constant]
-                                        )
+                                        .filter((prop: any) => {
+                                          if (typeof prop === 'string') return false;
+                                          if (prop.type === 'constant_ref')
+                                            return prop.constant && constants[prop.constant];
+                                          if (prop.type === 'dynamic_ref') return Boolean(prop.source);
+                                          return false;
+                                        })
                                         .map((prop: any) => ({
-                                          // Map to the old format for compatibility with existing rendering logic
+                                          // Map to the old format for compatibility with existing rendering logic.
+                                          // dynamic_ref resolves its options live; constant_ref reads the static catalog.
                                           name: prop.path,
-                                          type: 'constant_ref',
-                                          constant: prop.constant,
+                                          type: prop.type,
+                                          constantDef:
+                                            prop.type === 'dynamic_ref'
+                                              ? (dynamicOptions[prop.source] ?? {
+                                                  label: prop.label ?? 'Market',
+                                                  description: prop.description,
+                                                  options: [],
+                                                })
+                                              : constants[prop.constant],
                                           label: prop.label,
                                           description: prop.description,
                                         }));
@@ -2174,7 +2199,7 @@ export default function ScenarioEditor({
                                             PDA Configuration
                                           </h5>
                                           {constantRefProps.map((prop: any) => {
-                                            const constantDef = constants[prop.constant];
+                                            const constantDef = prop.constantDef;
                                             const fieldPath = prop.name;
                                             const rawValue = getValue(fieldPath);
                                             // Convert to string for comparison (handles numbers like config_index)
@@ -2183,6 +2208,10 @@ export default function ScenarioEditor({
 
                                             // Use searchable Combobox for constants with many options (e.g., verified tokens)
                                             const useCombobox = constantDef.options.length > 20;
+                                            const { options, selectedOption } = resolveTokenSelectorOptions(
+                                              constantDef.options,
+                                              currentValue
+                                            );
 
                                             return (
                                               <div key={fieldPath} className="space-y-2">
@@ -2209,17 +2238,7 @@ export default function ScenarioEditor({
                                                   />
                                                 ) : (
                                                   <Select
-                                                    value={
-                                                      // For hex values (like Pyth feed IDs), find matching option case-insensitively
-                                                      currentValue.startsWith('0x')
-                                                        ? constantDef.options.find(
-                                                            (opt: any) =>
-                                                              opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                          )?.value ||
-                                                          currentValue ||
-                                                          ''
-                                                        : currentValue || ''
-                                                    }
+                                                    value={String(selectedOption?.value ?? '')}
                                                     onChange={(e) => {
                                                       setValue(fieldPath, e.target.value);
                                                     }}
@@ -2228,9 +2247,9 @@ export default function ScenarioEditor({
                                                     <option value="">
                                                       Select {constantDef.label.toLowerCase()}...
                                                     </option>
-                                                    {constantDef.options.map((option: any) => (
+                                                    {options.map((option) => (
                                                       <option key={option.id} value={option.value}>
-                                                        {option.label}
+                                                        {option.metadata?.symbol ?? option.label}
                                                       </option>
                                                     ))}
                                                   </Select>
