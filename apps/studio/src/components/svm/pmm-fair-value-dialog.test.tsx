@@ -211,6 +211,24 @@ describe('GoonFi PMM preset', () => {
     expect(fetchGoonfiMarketsMock).toHaveBeenCalledWith('http://studio');
   });
 
+  // Reselecting the same protocol used to clear the catalog without rerunning the effect that
+  // reloads it, which left the market listbox disabled on "Loading markets…" for good.
+  it('keeps the loaded catalog when the current protocol is reselected', async () => {
+    renderDialog();
+    selectGoonfi();
+    await screen.findByRole('option', { name: 'SOL/USDC' });
+    fireEvent.change(screen.getByLabelText('Price of SOL in USDC'), { target: { value: '100' } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+
+    selectGoonfi();
+
+    expect(screen.getByRole('option', { name: 'SOL/USDC' })).toBeInTheDocument();
+    expect(screen.getByLabelText('PMM market')).toBeEnabled();
+    expect(screen.getByLabelText('Price of SOL in USDC')).toHaveValue('100');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+    expect(fetchGoonfiMarketsMock).toHaveBeenCalledTimes(1);
+  });
+
   it('replaces the previous protocol market from the new catalog and blocks submission while loading', async () => {
     let resolveMarkets!: (options: typeof markets) => void;
     fetchGoonfiMarketsMock.mockReturnValue(
