@@ -96,4 +96,18 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '🔥',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Tessera Stale Quote',
+    prompt:
+      'Prepare one editable Tessera scenario with a market quote aged to its rejection boundary. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+    icon: '⏳',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Depth Stress',
+    prompt:
+      'Prepare one editable Tessera SOL/USDC scenario that reduces both buy and sell quoting depth by 90% from the current local state. Preserve the price and keep quotes fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+    icon: '📉',
+    protocols: ['tessera'],
+  },
 ];
