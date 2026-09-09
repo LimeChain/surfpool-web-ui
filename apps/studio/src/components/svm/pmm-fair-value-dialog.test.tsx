@@ -117,6 +117,32 @@ describe('PmmFairValueDialog', () => {
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
+  it.each([
+    ['replaces a removed market', markets, '9NkuAWB4', [markets[0]], 'FLckHLGM'],
+    ['keeps a listed market', markets, '9NkuAWB4', markets, '9NkuAWB4'],
+    ['replaces an unlisted fallback address', [], 'SomeOtherMarket', markets, 'FLckHLGM'],
+    ['keeps a fallback address without a catalog', [], 'SomeOtherMarket', [], 'SomeOtherMarket'],
+  ])('%s when reopening', async (_name, initialOptions, selected, refreshedOptions, expected) => {
+    fetchMarketsMock.mockResolvedValue(initialOptions);
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    const props = { studioUrl: 'http://studio', onClose: vi.fn(), onCreated: vi.fn() };
+    const { rerender } = render(<PmmFairValueDialog {...props} open />);
+    await waitFor(() => expect(screen.getByLabelText('PMM market')).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: selected } });
+
+    rerender(<PmmFairValueDialog {...props} open={false} />);
+    fetchMarketsMock.mockResolvedValue(refreshedOptions);
+    rerender(<PmmFairValueDialog {...props} open />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('PMM market')).not.toBeDisabled();
+      expect(screen.getByLabelText('PMM market')).toHaveValue(expected);
+      expect(screen.getByRole('button', { name: 'Create scenario' })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => expect(createScenarioMock).toHaveBeenCalledWith('http://studio', expected, '100'));
+  });
+
   it('accepts a free-text market when the catalog fails to load', async () => {
     fetchMarketsMock.mockResolvedValue([]);
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
