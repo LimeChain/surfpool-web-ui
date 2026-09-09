@@ -101,7 +101,10 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     fetchTesseraMarkets(studioUrl).then((options) => {
       if (!cancelled) {
         setMarketOptions(options);
-        setMarket((current) => current || options[0]?.value || '');
+        setMarket((current) => {
+          if (options.length === 0) return current;
+          return options.some((option) => option.value === current.trim()) ? current.trim() : options[0].value;
+        });
       }
     });
 
