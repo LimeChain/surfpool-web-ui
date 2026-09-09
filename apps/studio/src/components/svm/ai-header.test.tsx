@@ -88,6 +88,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -123,6 +124,22 @@ describe('AIHeader', () => {
     expect(prompt).toContain('pump-amm-canonical-pool');
     expect(prompt).toContain('create_scenario');
     expect(prompt).toContain('do not build or execute a swap');
+  });
+
+  it('loads the deployed-program-verified SolFi PMM risk-off scenario', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('SolFi Risk-Off'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('SOL crashes to $50');
+    expect(prompt).toContain(
+      'the PMM becomes cautious about accumulating more SOL without completely leaving the market'
+    );
+    expect(prompt).toContain('buy SOL at a 1% discount');
+    expect(prompt).toContain('spend no more than 25 USDC');
+    expect(prompt).toContain('continue selling SOL at its normal 0.1% spread');
+    expect(prompt).toContain('To achieve this');
   });
 
   it('renders the model selector button', () => {

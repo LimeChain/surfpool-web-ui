@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
@@ -11,9 +11,12 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  directAccountSelectionChanged,
   flattenOverrideValues,
+  getDirectAccountMarketConstantName,
   isValidPersistSlotCount,
   parseScenariosJson,
+  resolveTemplateAccount,
   scenarioDownloadFile,
   scenarioImportPayload,
   scenarioToBentoItem,
@@ -116,9 +119,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -167,7 +170,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -348,6 +353,36 @@ describe('buildUpdatePayload', () => {
     expect(override.templateId).toBe('price-update');
     expect(override.values).toEqual({});
     expect(override).not.toHaveProperty('account');
+  });
+
+  it('serializes a dropdown-selected SolFi target as a pubkey, not an override value', () => {
+    const scenario: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-0',
+          name: 'Slot 0',
+          type: 'slot',
+          slotNumber: 0,
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: 'solfi-price',
+              protocol: 'SolFi',
+              action: 'Override Price',
+              account: { pubkey: 'oracle-a' },
+              overrides: { price_exponent: -10, price_coefficient: 500000000 },
+              modifiedFields: ['price_exponent', 'price_coefficient'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildUpdatePayload(scenario).overrides[0]).toMatchObject({
+      account: { pubkey: 'oracle-a' },
+      values: { price_exponent: -10, price_coefficient: 500000000 },
+    });
   });
 
   it('sets label from action name', () => {
@@ -755,6 +790,63 @@ describe('flattenOverrideValues', () => {
 
   it('returns empty object for undefined input', () => {
     expect(flattenOverrideValues(undefined, ['a.b'])).toEqual({});
+  });
+});
+
+describe('directAccountSelectionChanged', () => {
+  it('keeps the same selected account identity stable', () => {
+    expect(directAccountSelectionChanged({ pubkey: 'market-a' }, 'market-a')).toBe(false);
+  });
+
+  it('detects a different selected market', () => {
+    expect(directAccountSelectionChanged({ pubkey: 'market-a' }, 'market-b')).toBe(true);
+  });
+
+  it('treats a missing previous account as a new selection', () => {
+    expect(directAccountSelectionChanged(undefined, 'market-a')).toBe(true);
+  });
+});
+
+describe('resolveTemplateAccount', () => {
+  it('turns an account dropdown choice into a concrete pubkey account', () => {
+    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', ' market-b ')).toEqual({
+      pubkey: 'market-b',
+    });
+  });
+
+  it('does not emit an unresolved account when no option is selected', () => {
+    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', '   ')).toBeUndefined();
+  });
+
+  it('preserves fixed and PDA template addresses', () => {
+    const pda = { pda: { programId: 'program', seeds: [] } };
+    expect(resolveTemplateAccount(pda, undefined, '')).toBe(pda);
+  });
+});
+
+describe('getDirectAccountMarketConstantName', () => {
+  const directMarketTemplate = {
+    address: { pubkey: 'market-a' },
+    constants: { market: { options: [{ label: 'Market A', value: 'market-a' }] } },
+    properties: [{ path: 'price' }],
+  };
+
+  it('recognizes the existing Tessera direct-market convention', () => {
+    expect(getDirectAccountMarketConstantName(directMarketTemplate)).toBe('market');
+  });
+
+  it('does not reinterpret a constant referenced by an account field', () => {
+    expect(
+      getDirectAccountMarketConstantName({
+        ...directMarketTemplate,
+        properties: [{ path: 'market', constant: 'market' }],
+      })
+    ).toBeUndefined();
+  });
+
+  it('requires both a direct pubkey and market options', () => {
+    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, address: { pda: {} } })).toBeUndefined();
+    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, constants: {} })).toBeUndefined();
   });
 });
 
