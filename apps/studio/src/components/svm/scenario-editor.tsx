@@ -354,7 +354,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal', 'Tessera'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal', 'Tessera', 'GoonFi'];
 
   useEffect(() => {
     const fetchProtocols = async () => {

@@ -127,12 +127,16 @@ export async function fetchPhoenixMarketSymbols(
   }
 }
 
-export type TesseraMarketOption = {
+export type PmmMarketOption = {
   label: string;
   value: string;
 };
 
-export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMarketOption[]> {
+/**
+ * Tessera markets come from the fair-value template's constant catalog. Returns [] on any
+ * failure so the dialog falls back to a free-text pubkey.
+ */
+export async function fetchTesseraMarkets(studioUrl: string): Promise<PmmMarketOption[]> {
   try {
     const { sessionId } = await fetchMCPTools(studioUrl);
     const result = (await callMCPTool(studioUrl, 'list_tessera_markets', {}, sessionId)) as {
@@ -163,6 +167,46 @@ export async function createTesseraFairValueScenario(
 ): Promise<ScenarioCreationResult> {
   const trimmedMarket = market.trim();
   return createScenarioWithMcpTool(studioUrl, 'create_tessera_fair_value_scenario', {
+    ...(trimmedMarket ? { market: trimmedMarket } : {}),
+    price: price.trim(),
+  });
+}
+
+export async function fetchGoonfiMarkets(studioUrl: string): Promise<PmmMarketOption[]> {
+  try {
+    const { sessionId } = await fetchMCPTools(studioUrl);
+    const result = (await callMCPTool(
+      studioUrl,
+      'list_goonfi_markets',
+      {},
+      sessionId
+    )) as { content?: Array<{ type?: string; text?: string }> };
+    const text = result.content?.find((content) => content.type === 'text')?.text;
+    if (!text) return [];
+    const payload = JSON.parse(text) as {
+      error?: string;
+      markets?: Array<{ label?: unknown; address?: unknown } | null>;
+    };
+    if (payload.error || !Array.isArray(payload.markets)) return [];
+    const markets: PmmMarketOption[] = [];
+    for (const market of payload.markets) {
+      if (typeof market?.address !== 'string' || !market.address.trim()) continue;
+      if (typeof market.label !== 'string' || !market.label.trim()) continue;
+      markets.push({ label: market.label.trim(), value: market.address.trim() });
+    }
+    return markets;
+  } catch {
+    return [];
+  }
+}
+
+export async function createGoonfiPriceScenario(
+  studioUrl: string,
+  market: string,
+  price: string
+): Promise<ScenarioCreationResult> {
+  const trimmedMarket = market.trim();
+  return createScenarioWithMcpTool(studioUrl, 'create_goonfi_price_scenario', {
     ...(trimmedMarket ? { market: trimmedMarket } : {}),
     price: price.trim(),
   });
@@ -261,7 +305,7 @@ export async function createPhoenixReferencePriceScenario(
 async function createScenarioWithMcpTool(
   studioUrl: string,
   toolName: string,
-  args: Record<string, string>
+  args: Record<string, unknown>
 ): Promise<ScenarioCreationResult> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
