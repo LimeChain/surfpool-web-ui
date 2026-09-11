@@ -211,6 +211,24 @@ describe('GoonFi PMM preset', () => {
     expect(fetchGoonfiMarketsMock).toHaveBeenCalledWith('http://studio');
   });
 
+  // An empty catalog must not leave the previous protocol's market behind: the request has to omit
+  // `market` so the backend picks its default, rather than sending a Tessera address to GoonFi.
+  it('omits the market when the GoonFi catalog comes back empty', async () => {
+    fetchGoonfiMarketsMock.mockResolvedValue([]);
+    createGoonfiScenarioMock.mockResolvedValue({ id: 'default-market' });
+    renderDialog();
+    await screen.findByRole('option', { name: 'cbBTC/USDC' });
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: '9NkuAWB4' } });
+
+    selectGoonfi();
+
+    await screen.findByPlaceholderText('Leave empty for the default market');
+    expect(screen.getByLabelText('PMM market')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Price in quote tokens'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => expect(createGoonfiScenarioMock).toHaveBeenCalledWith('http://studio', '', '100'));
+  });
+
   // Reselecting the same protocol used to clear the catalog without rerunning the effect that
   // reloads it, which left the market listbox disabled on "Loading markets…" for good.
   it('keeps the loaded catalog when the current protocol is reselected', async () => {
