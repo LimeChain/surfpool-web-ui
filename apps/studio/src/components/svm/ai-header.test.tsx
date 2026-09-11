@@ -134,12 +134,11 @@ describe('AIHeader', () => {
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_PHOENIX_TRADER_ACCOUNT>');
     expect(prompt).toContain('<PASTE_MARKET_SYMBOL>');
-    expect(prompt).toContain('create_scenario');
-    expect(prompt).toContain('phoenix-trader-collateral-stress');
-    expect(prompt).toContain('phoenix-direct-mark-risk-shock');
-    expect(prompt).toContain('slot 0');
-    expect(prompt).toContain('slot 1');
-    expect(prompt).toContain('do not build or execute a liquidation transaction');
+    expect(prompt).toContain('reduce collateral to 1 quote lot');
+    expect(prompt).toContain('lower the mark price to 1 tick in the following slot');
+    expect(prompt).toContain('current scenario templates');
+    expect(prompt).toContain('do not submit trades or liquidations');
+    expect(prompt).not.toContain('quote_lot_collateral');
   });
 
   it('renders the model selector button', () => {

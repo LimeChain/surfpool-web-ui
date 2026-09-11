@@ -138,3 +138,69 @@ it('keeps numeric inputs for other IDL templates unchanged', async () => {
     expect(JSON.parse(patch![1].body).overrides[0].values['traderState.quoteLotCollateral']).toBe(2);
   });
 });
+
+const marketTemplates = [
+  {
+    name: 'Direct mark',
+    accountType: 'DirectMarkOverride',
+    id: 'phoenix-direct-mark-risk-shock',
+    prices: ['target_ticks'],
+  },
+  {
+    name: 'Reference prices',
+    accountType: 'ReferencePriceOverride',
+    id: 'phoenix-reference-price-divergence',
+    prices: ['spot_ticks', 'perp_ticks'],
+  },
+];
+
+for (const market of marketTemplates) {
+  it.each(['legacy', 'explicit'])('edits and saves ' + market.name + ' using %s template fields', async (format) => {
+    const names = ['symbol', ...market.prices];
+    const explicit = format === 'explicit';
+    const template = {
+      ...collateralTemplate,
+      ...market,
+      accountType: explicit ? 'PerpAssetMap' : market.accountType,
+      address: { pubkey: 'template-map' },
+      properties: names.map((path) => ({
+        path,
+        ...(explicit ? { value_type: 'string' } : {}),
+        ...(path === 'symbol' ? { type: 'dynamic_ref', source: 'list_phoenix_markets' } : {}),
+      })),
+      idl: {
+        types: [
+          {
+            name: explicit ? 'PerpAssetMap' : market.accountType,
+            type: {
+              kind: 'struct',
+              fields: explicit
+                ? [{ name: 'discriminator', type: { array: ['u8', 8] } }]
+                : names.map((name) => ({ name, type: 'string' })),
+            },
+          },
+        ],
+      },
+    };
+    const values: Record<string, string> = { symbol: 'SOL' };
+    for (const name of market.prices) values[name] = '1';
+    await openEditor(template, values, { pubkey: 'saved-map' });
+    const target = '18446744073709551615';
+    for (const name of market.prices) {
+      const input = await screen.findByPlaceholderText(`Enter ${name}...`);
+      expect(input).toHaveAttribute('type', 'text');
+      fireEvent.change(input, { target: { value: target } });
+      values[name] = target;
+    }
+    expect(((await screen.findByRole('option', { name: 'Custom · SOL' })) as HTMLOptionElement).selected).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+      expect(patch).toBeDefined();
+      const override = JSON.parse(patch![1].body).overrides[0];
+      expect(override.templateId).toBe(market.id);
+      expect(override.account).toEqual({ pubkey: 'saved-map' });
+      expect(override.values).toEqual(values);
+    });
+  });
+}

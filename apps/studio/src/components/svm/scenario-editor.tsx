@@ -1,5 +1,6 @@
 'use client';
 
+import { getScenarioFields } from '@/lib/scenario-fields';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
@@ -432,42 +433,6 @@ export default function ScenarioEditor({
       )
     );
   });
-
-  // Helper function to extract fields from IDL using accountType
-  const getFieldsFromIDL = (template: any) => {
-    if (!template?.idl || !template?.accountType) return [];
-
-    // First, try to find the account in the accounts array
-    if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
-      const account = template.idl.accounts.find((acc: any) => acc.name === template.accountType);
-
-      if (account?.type?.fields) {
-        return account.type.fields;
-      }
-    }
-
-    // Second, try to find in the types array using accountType
-    if (template.idl.types && Array.isArray(template.idl.types)) {
-      const typeDefinition = template.idl.types.find(
-        (type: any) => type.name === template.accountType && type.type?.kind === 'struct'
-      );
-
-      if (typeDefinition?.type?.fields) {
-        return typeDefinition.type.fields;
-      }
-    }
-
-    // Fallback: find any struct type (old behavior)
-    if (template.idl.types) {
-      const structType = template.idl.types.find((type: any) => type.type?.kind === 'struct');
-
-      if (structType?.type?.fields) {
-        return structType.type.fields;
-      }
-    }
-
-    return [];
-  };
 
   // Helper function to look up a type definition in the IDL
   const lookupTypeDefinition = (typeName: string, idl: any): any => {
@@ -1732,7 +1697,7 @@ export default function ScenarioEditor({
                               ) : (
                                 <div className="mb-6 flex-1 space-y-4">
                                   {(() => {
-                                    const fields = getFieldsFromIDL(selectedAction.template);
+                                    const fields = getScenarioFields(selectedAction.template);
 
                                     logger.log('🔍 Fields extracted from IDL:', fields);
                                     logger.log('🔍 Account type:', selectedAction.template?.accountType);
