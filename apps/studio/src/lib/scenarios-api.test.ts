@@ -13,7 +13,7 @@ import {
   flattenOverrideValues,
   scenarioToBentoItem,
 } from './scenarios-api';
-import type { Scenario } from './scenarios-data';
+import { scenarioFromApiData, type Scenario } from './scenarios-data';
 
 const baseScenario: Scenario = {
   id: 'test-123',
@@ -165,6 +165,28 @@ describe('createPhoenixCollateralScenario', () => {
     await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
       'Phoenix collateral stress can only lower collateral'
     );
+  });
+});
+
+describe('MCP scenario responses', () => {
+  it.each([
+    [{}, 'returned no scenario URL'],
+    [{ url: '/scenario' }, 'returned an invalid scenario URL'],
+  ])('rejects an unusable scenario URL: %j', async (payload, error) => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(payload) }],
+    });
+    await expect(createTesseraFairValueScenario('http://studio', '', '1')).rejects.toThrow(error);
+  });
+
+  it('rejects a response without a text result', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({ content: [] });
+    await expect(createTesseraFairValueScenario('http://studio', '', '1')).rejects.toThrow('returned no result');
+  });
+
+  it('surfaces transport failures', async () => {
+    vi.mocked(callMCPTool).mockRejectedValue(new Error('MCP connection lost'));
+    await expect(createTesseraFairValueScenario('http://studio', '', '1')).rejects.toThrow('MCP connection lost');
   });
 });
 
@@ -347,6 +369,62 @@ describe('createScenarioPayload', () => {
 });
 
 describe('buildUpdatePayload', () => {
+  it('preserves all three account overrides during a metadata-only edit', () => {
+    const scaledPrice = '9007199254740993';
+    const original = {
+      id: 'goonfi-scenario',
+      name: 'GoonFi price preparation',
+      description: 'Prepare the market and oracle',
+      tags: ['goonfi', 'pmm', 'price-dislocation'],
+      overrides: [
+        {
+          id: 'price-override',
+          templateId: 'goonfi-price',
+          scenarioRelativeSlot: 0,
+          label: 'GoonFi price',
+          enabled: true,
+          fetchBeforeUse: false,
+          account: { pubkey: 'oracle-account' },
+          values: { bid_price_x1e6: scaledPrice, ask_price_x1e6: scaledPrice },
+        },
+        {
+          id: 'reference-override',
+          templateId: 'goonfi-reference-band',
+          scenarioRelativeSlot: 0,
+          label: 'GoonFi reference band',
+          enabled: true,
+          fetchBeforeUse: false,
+          account: { pubkey: 'market-account' },
+          values: {
+            reference_price_a_x1e6: scaledPrice,
+            reference_price_b_x1e6: scaledPrice,
+          },
+        },
+        {
+          id: 'freshness-override',
+          templateId: 'goonfi-freshness',
+          scenarioRelativeSlot: 0,
+          label: 'Keep GoonFi quote fresh',
+          enabled: true,
+          fetchBeforeUse: false,
+          persist: true,
+          account: { pubkey: 'oracle-account' },
+          values: { last_update_slot: null },
+        },
+      ],
+    };
+    const templateProtocols = new Map(original.overrides.map((override) => [override.templateId, 'GoonFi']));
+    const scenario = scenarioFromApiData(original, original.id, templateProtocols);
+    scenario.name = 'Renamed GoonFi scenario';
+
+    expect(scenario.steps).toHaveLength(1);
+    expect(scenario.steps?.[0].actions?.map((action) => action.protocol)).toEqual(['GoonFi', 'GoonFi', 'GoonFi']);
+    expect(buildUpdatePayload(scenario)).toEqual({
+      ...original,
+      name: 'Renamed GoonFi scenario',
+    });
+  });
+
   // Mirrors the shape produced by the scenarios page when it loads a backend
   // scenario: actionId carries the full templateId, and override data is kept
   const loadedScenario: Scenario = {

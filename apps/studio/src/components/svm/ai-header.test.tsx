@@ -90,6 +90,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Liquidation Cascade')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
+    expect(screen.getByText('GoonFi Stale Quote')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {

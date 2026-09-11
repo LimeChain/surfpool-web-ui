@@ -1,6 +1,12 @@
 'use client';
 
-import { createTesseraFairValueScenario, fetchTesseraMarkets, type TesseraMarketOption } from '@/lib/scenarios-api';
+import {
+  createGoonfiPriceScenario,
+  createTesseraFairValueScenario,
+  fetchGoonfiMarkets,
+  fetchTesseraMarkets,
+  type PmmMarketOption,
+} from '@/lib/scenarios-api';
 import {
   Button,
   Dialog,
@@ -20,29 +26,35 @@ interface PmmFairValueDialogProps {
   onCreated: (scenarioId: string) => void;
 }
 
-const renderMarketOption = (market: TesseraMarketOption) => (
+type PmmProtocol = 'tessera' | 'goonfi';
+
+const renderMarketOption = (market: PmmMarketOption) => (
   <ListboxOption key={market.value} value={market.value}>
     {market.label}
   </ListboxOption>
 );
 
-const priceLabelFor = (market: TesseraMarketOption | undefined) => {
+const priceLabelFor = (market: PmmMarketOption | undefined) => {
   const [base, quote] = market?.label.split('/') ?? [];
   return base && quote ? `Price of ${base} in ${quote}` : 'Price in quote tokens';
 };
 
 export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated }: PmmFairValueDialogProps) {
   // STATE
+  const [protocol, setProtocol] = useState<PmmProtocol>('tessera');
   const [market, setMarket] = useState('');
   const [price, setPrice] = useState('100');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [marketOptions, setMarketOptions] = useState<TesseraMarketOption[] | null>(null);
+  const [marketOptions, setMarketOptions] = useState<PmmMarketOption[] | null>(null);
 
   // DERIVED STATE
   const normalizedPrice = price.trim();
   const normalizedMarket = market.trim();
-  const hasValidPrice = /^\d+(?:\.\d{1,12})?$/.test(normalizedPrice) && /[1-9]/.test(normalizedPrice);
+  const isGoonfi = protocol === 'goonfi';
+  const protocolLabel = isGoonfi ? 'GoonFi' : 'Tessera';
+  const pricePattern = isGoonfi ? /^\d+(?:\.\d{1,6})?$/ : /^\d+(?:\.\d{1,12})?$/;
+  const hasValidPrice = pricePattern.test(normalizedPrice) && /[1-9]/.test(normalizedPrice);
   const hasMarketCatalog = !!marketOptions && marketOptions.length > 0;
   const selectedMarket = marketOptions?.find((option) => option.value === normalizedMarket);
   const hasValidMarket = !normalizedMarket || !hasMarketCatalog || !!selectedMarket;
@@ -56,7 +68,15 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     onClose();
   };
 
-  const handleProtocolSelect = () => {
+  const handleProtocolSelect = (selectedValue: string) => {
+    if (selectedValue !== 'tessera' && selectedValue !== 'goonfi') return;
+    // Reselecting the current protocol must not clear the catalog: `protocol` would not change, so
+    // the effect that reloads it never reruns and the dialog stays stuck on "Loading markets…".
+    if (selectedValue === protocol) return;
+    setProtocol(selectedValue);
+    setPrice(selectedValue === 'goonfi' ? '' : '100');
+    setMarket('');
+    setMarketOptions(null);
     setError(null);
   };
 
@@ -83,10 +103,12 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     setError(null);
 
     try {
-      const result = await createTesseraFairValueScenario(studioUrl, normalizedMarket, normalizedPrice);
+      const result = isGoonfi
+        ? await createGoonfiPriceScenario(studioUrl, normalizedMarket, normalizedPrice)
+        : await createTesseraFairValueScenario(studioUrl, normalizedMarket, normalizedPrice);
       onCreated(result.id);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create Tessera fair-value scenario');
+      setError(requestError instanceof Error ? requestError.message : `Failed to create ${protocolLabel} scenario`);
     } finally {
       setIsCreating(false);
     }
@@ -98,7 +120,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     let cancelled = false;
     setMarketOptions(null);
 
-    fetchTesseraMarkets(studioUrl).then((options) => {
+    const handleMarketsLoaded = (options: PmmMarketOption[]) => {
       if (!cancelled) {
         setMarketOptions(options);
         setMarket((current) => {
@@ -106,12 +128,15 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
           return options.some((option) => option.value === current.trim()) ? current.trim() : options[0].value;
         });
       }
-    });
+    };
+
+    const markets = protocol === 'goonfi' ? fetchGoonfiMarkets(studioUrl) : fetchTesseraMarkets(studioUrl);
+    markets.then(handleMarketsLoaded);
 
     return () => {
       cancelled = true;
     };
-  }, [open, studioUrl]);
+  }, [open, studioUrl, protocol]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
@@ -124,8 +149,9 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
         <div className="mt-5 space-y-4">
           <div>
             <span className="mb-1.5 block text-sm font-medium text-zinc-300">PMM protocol</span>
-            <Listbox aria-label="PMM protocol" value="tessera" onChange={handleProtocolSelect} disabled={isCreating}>
+            <Listbox aria-label="PMM protocol" value={protocol} onChange={handleProtocolSelect} disabled={isCreating}>
               <ListboxOption value="tessera">Tessera</ListboxOption>
+              <ListboxOption value="goonfi">GoonFi</ListboxOption>
             </Listbox>
           </div>
           <div>
@@ -164,8 +190,9 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
               disabled={isCreating}
             />
             <p className="mt-1.5 text-xs text-zinc-500">
-              Positive decimal with up to 12 places. The backend derives both atomic ratio fields from the market&apos;s
-              mint decimals.
+              {isGoonfi
+                ? 'Positive decimal with up to 6 places. Sets equal bid and ask and updates their protective reference prices.'
+                : 'Positive decimal with up to 12 places.'}
             </p>
           </div>
           {!!error && <p className="text-sm text-red-400">{error}</p>}
