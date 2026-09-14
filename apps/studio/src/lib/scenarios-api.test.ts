@@ -3,11 +3,16 @@ import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  buildPersistenceCancellation,
+  buildScenarioPersistenceCancellations,
+  buildStopPersistenceRpcRequest,
   buildUpdatePayload,
+  createOverrideId,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
+  isValidPersistSlotCount,
   parseScenariosJson,
   scenarioDownloadFile,
   scenarioImportPayload,
@@ -249,6 +254,69 @@ describe('buildUpdatePayload', () => {
     expect(buildUpdatePayload(baseScenario).overrides[0].enabled).toBe(true);
   });
 
+  it('defaults persistence to a single application for new actions', () => {
+    expect(buildUpdatePayload(baseScenario).overrides[0].persist).toBe(false);
+  });
+
+  it('serializes indefinite and bounded persistence', () => {
+    const withPersistence: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-0',
+          name: 'Slot 0',
+          type: 'slot',
+          actions: [
+            {
+              ...baseScenario.steps![0].actions![0],
+              persist: true,
+            },
+            {
+              ...baseScenario.steps![0].actions![1],
+              persist: { slots: 10 },
+            },
+          ],
+        },
+      ],
+    };
+
+    const [indefinite, bounded] = buildUpdatePayload(withPersistence).overrides;
+    expect(indefinite.persist).toBe(true);
+    expect(bounded.persist).toEqual({ slots: 10 });
+  });
+
+  it('preserves loaded persistence and lets an explicit false stop it', () => {
+    const loaded: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-0',
+          name: 'Slot 0',
+          type: 'slot',
+          actions: [
+            {
+              ...baseScenario.steps![0].actions![0],
+              overrideId: 'stable-id',
+              original: { persist: { slots: 7 } },
+            },
+            {
+              ...baseScenario.steps![0].actions![1],
+              overrideId: 'stop-id',
+              persist: false,
+              original: { persist: true },
+            },
+          ],
+        },
+      ],
+    };
+
+    const [preserved, stopped] = buildUpdatePayload(loaded).overrides;
+    expect(preserved.persist).toEqual({ slots: 7 });
+    expect(preserved.id).toBe('stable-id');
+    expect(stopped.persist).toBe(false);
+    expect(stopped.id).toBe('stop-id');
+  });
+
   it('preserves the backend override id, values, account, and fetchBeforeUse', () => {
     const override = buildUpdatePayload(loadedScenario).overrides[0];
     expect(override.id).toBe('override-sol-85');
@@ -309,6 +377,152 @@ describe('buildUpdatePayload', () => {
   it('defaults description to empty string', () => {
     const result = buildUpdatePayload({ ...baseScenario, description: undefined });
     expect(result.description).toBe('');
+  });
+});
+
+describe('isValidPersistSlotCount', () => {
+  it('accepts positive u64 slot counts, including values above Number.MAX_SAFE_INTEGER', () => {
+    expect(isValidPersistSlotCount('1')).toBe(true);
+    expect(isValidPersistSlotCount('10')).toBe(true);
+    expect(isValidPersistSlotCount('18446744073709551615')).toBe(true);
+  });
+
+  it('rejects zero, non-integers, signs, and values above u64', () => {
+    expect(isValidPersistSlotCount('0')).toBe(false);
+    expect(isValidPersistSlotCount('-1')).toBe(false);
+    expect(isValidPersistSlotCount('1.5')).toBe(false);
+    expect(isValidPersistSlotCount('')).toBe(false);
+    expect(isValidPersistSlotCount('18446744073709551616')).toBe(false);
+  });
+});
+
+describe('createOverrideId', () => {
+  it('creates stable backend-compatible unique identities for new actions', () => {
+    const first = createOverrideId();
+    const second = createOverrideId();
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(second).not.toBe(first);
+  });
+});
+
+describe('buildPersistenceCancellation', () => {
+  it('includes PDA-resolution values in the cancellation-only identity', () => {
+    const cancellation = buildPersistenceCancellation(
+      {
+        protocolId: 'kamino',
+        actionId: 'kamino-scope-price',
+        protocol: 'Kamino',
+        action: 'Crash POPCAT',
+        overrideId: 'scope-crash-popcat',
+        account: { pubkey: 'scope-account' },
+        overrides: { 'prices.492.price.value': 2_124_828 },
+        modifiedFields: ['prices.492.price.value'],
+        fetchBeforeUse: true,
+        persist: true,
+        original: { futureBackendField: 'preserved' },
+      },
+      7
+    );
+
+    expect(cancellation).toEqual({
+      id: 'scope-crash-popcat',
+      templateId: 'kamino-scope-price',
+      account: { pubkey: 'scope-account' },
+      values: { 'prices.492.price.value': 2_124_828 },
+    });
+  });
+
+  it('uses the same generated identity as normal scenario serialization', () => {
+    const action = {
+      protocolId: 'pyth',
+      actionId: 'pyth-price-feed-v2',
+      protocol: 'Pyth',
+      action: 'Price',
+    };
+    expect(buildPersistenceCancellation({ ...action, account: { pubkey: 'feed' } }, 3)?.id).toBe(
+      'pyth-price-feed-v2_3'
+    );
+  });
+
+  it('refuses to construct an unsafe cancellation without an account identity', () => {
+    expect(
+      buildPersistenceCancellation(
+        {
+          protocolId: 'pyth',
+          actionId: 'pyth-price-feed-v2',
+          protocol: 'Pyth',
+          action: 'Price',
+        },
+        3
+      )
+    ).toBeNull();
+  });
+});
+
+describe('buildScenarioPersistenceCancellations', () => {
+  it('collects bounded and indefinite actions while excluding one-shot actions', () => {
+    const scenario: Scenario = {
+      ...baseScenario,
+      steps: [
+        {
+          id: 'slot-4',
+          name: 'Slot 4',
+          type: 'slot',
+          slotNumber: 4,
+          actions: [
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-a',
+              protocol: 'Kamino',
+              action: 'A',
+              overrideId: 'a',
+              account: { pubkey: 'account-a' },
+              persist: true,
+            },
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-b',
+              protocol: 'Kamino',
+              action: 'B',
+              overrideId: 'b',
+              account: { pubkey: 'account-b' },
+              persist: { slots: 5 },
+            },
+            {
+              protocolId: 'kamino',
+              actionId: 'kamino-c',
+              protocol: 'Kamino',
+              action: 'C',
+              account: { pubkey: 'account-c' },
+              persist: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildScenarioPersistenceCancellations(scenario)).toEqual([
+      { id: 'a', templateId: 'kamino-a', account: { pubkey: 'account-a' }, values: {} },
+      { id: 'b', templateId: 'kamino-b', account: { pubkey: 'account-b' }, values: {} },
+    ]);
+  });
+});
+
+describe('buildStopPersistenceRpcRequest', () => {
+  it('uses the cancellation-only RPC and exact scheduler identity', () => {
+    expect(
+      buildStopPersistenceRpcRequest({
+        id: 'override-a',
+        account: { pubkey: 'account-a' },
+        templateId: 'kamino-a',
+        values: {},
+      })
+    ).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'surfnet_stopPersistingOverride',
+      params: ['override-a', { pubkey: 'account-a' }, 'kamino-a', {}],
+    });
   });
 });
 
@@ -552,8 +766,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -578,8 +791,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
