@@ -1,10 +1,17 @@
-import { createTesseraFairValueScenario, fetchTesseraMarkets } from '@/lib/scenarios-api';
+import {
+  createHumidifiFairValueScenario,
+  createTesseraFairValueScenario,
+  fetchHumidifiMarkets,
+  fetchTesseraMarkets,
+} from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PmmFairValueDialog from './pmm-fair-value-dialog';
 
 vi.mock('@/lib/scenarios-api', () => ({
+  createHumidifiFairValueScenario: vi.fn(),
   createTesseraFairValueScenario: vi.fn(),
+  fetchHumidifiMarkets: vi.fn(),
   fetchTesseraMarkets: vi.fn(),
 }));
 
@@ -29,17 +36,22 @@ vi.mock('@surfpool/ui', () => ({
 
 const createScenarioMock = vi.mocked(createTesseraFairValueScenario);
 const fetchMarketsMock = vi.mocked(fetchTesseraMarkets);
+const createHumidifiMock = vi.mocked(createHumidifiFairValueScenario);
+const fetchHumidifiMarketsMock = vi.mocked(fetchHumidifiMarkets);
 
 const markets = [
   { label: 'SOL/USDC', value: 'FLckHLGM' },
   { label: 'cbBTC/USDC', value: '9NkuAWB4' },
 ];
 
+const humidifiMarkets = [{ label: 'JUP/USDC', value: 'hKgG7iED' }];
+
 const renderDialog = (onCreated = vi.fn()) =>
   render(<PmmFairValueDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={onCreated} />);
 
 beforeEach(() => {
   fetchMarketsMock.mockResolvedValue(markets);
+  fetchHumidifiMarketsMock.mockResolvedValue(humidifiMarkets);
 });
 
 afterEach(() => {
@@ -47,13 +59,64 @@ afterEach(() => {
 });
 
 describe('PmmFairValueDialog', () => {
-  it('offers Tessera through the PMM protocol selector', () => {
+  it('offers Tessera and HumidiFi through the PMM protocol selector', async () => {
     renderDialog();
 
+    await screen.findByLabelText('Price of SOL in USDC');
     const protocolListbox = screen.getByLabelText('PMM protocol');
     expect(protocolListbox).toHaveValue('tessera');
-    expect(within(protocolListbox).getAllByRole('option')).toHaveLength(1);
-    expect(within(protocolListbox).getByRole('option', { name: 'Tessera' })).toBeInTheDocument();
+    expect(
+      within(protocolListbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent)
+    ).toEqual(['Tessera', 'HumidiFi']);
+  });
+
+  it('preserves the selected market when selecting the current protocol again', async () => {
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: '9NkuAWB4' } });
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'tessera' } });
+
+    const marketField = screen.getByLabelText('PMM market');
+    expect(marketField).not.toBeDisabled();
+    expect(marketField).toHaveValue('9NkuAWB4');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).not.toBeDisabled();
+    expect(fetchMarketsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes creation through the selected PMM adapter and refetches its markets', async () => {
+    const onCreated = vi.fn();
+    createHumidifiMock.mockResolvedValue({ id: 'humidifi-1' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'humidifi' } });
+    const price = await screen.findByLabelText('Price of JUP in USDC');
+    expect(fetchHumidifiMarketsMock).toHaveBeenCalledWith('http://studio');
+    fireEvent.change(price, { target: { value: '104' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => {
+      expect(createHumidifiMock).toHaveBeenCalledWith('http://studio', 'hKgG7iED', '104');
+      expect(createScenarioMock).not.toHaveBeenCalled();
+      expect(onCreated).toHaveBeenCalledWith('humidifi-1');
+    });
+  });
+
+  it("locks the market field again while the selected PMM's catalog loads", async () => {
+    fetchHumidifiMarketsMock.mockReturnValue(new Promise(() => {}));
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'humidifi' } });
+
+    const marketField = screen.getByLabelText('PMM market');
+    expect(fetchHumidifiMarketsMock).toHaveBeenCalledWith('http://studio');
+    expect(marketField).toBeDisabled();
+    expect(marketField).toHaveAttribute('placeholder', 'Loading markets…');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
   it('labels the price with the selected discovered pair', async () => {
@@ -155,6 +218,29 @@ describe('PmmFairValueDialog', () => {
 
     await waitFor(() => {
       expect(createScenarioMock).toHaveBeenCalledWith('http://studio', 'SomeOtherMarket', '5');
+    });
+  });
+
+  it.each(['', '   '])('requires an explicit HumidiFi market when discovery fails for %j', async (blankMarket) => {
+    fetchHumidifiMarketsMock.mockResolvedValue([]);
+    createHumidifiMock.mockResolvedValue({ id: 'humidifi-scenario-id' });
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'humidifi' } });
+    const marketField = await screen.findByLabelText('PMM market');
+    await waitFor(() => expect(marketField).toHaveAttribute('placeholder', 'Enter a market account address'));
+    expect(
+      screen.getByText('Live market list unavailable. Enter a market account address to continue.')
+    ).toBeInTheDocument();
+    fireEvent.change(marketField, { target: { value: blankMarket } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+
+    fireEvent.change(marketField, { target: { value: 'HumidiFiMarket111' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => {
+      expect(createHumidifiMock).toHaveBeenCalledWith('http://studio', 'HumidiFiMarket111', '100');
     });
   });
 

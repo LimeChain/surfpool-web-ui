@@ -4,11 +4,13 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createHumidifiFairValueScenario,
   createPhoenixCollateralScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   createTesseraFairValueScenario,
+  fetchHumidifiMarkets,
   fetchPhoenixMarketSymbols,
   fetchTesseraMarkets,
   flattenOverrideValues,
@@ -385,6 +387,119 @@ describe('fetchTesseraMarkets', () => {
       content: [{ type: 'text', text: JSON.stringify({ count: 0, markets: [] }) }],
     });
     await expect(fetchTesseraMarkets('http://studio')).resolves.toEqual([]);
+  });
+});
+
+describe('createHumidifiFairValueScenario', () => {
+  it('creates the scenario through the HumidiFi MCP tool with the trimmed market and price', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ url: 'http://studio/scenarios?id=humidifi-1&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createHumidifiFairValueScenario('http://studio', ' hKgG7iED ', ' 100.25 ')).resolves.toEqual({
+      id: 'humidifi-1',
+    });
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'create_humidifi_fair_value_scenario',
+      { market: 'hKgG7iED', price: '100.25' },
+      'session'
+    );
+  });
+
+  it.each(['', '   '])('rejects a blank market locally before calling MCP', async (market) => {
+    vi.mocked(callMCPTool).mockClear();
+
+    await expect(createHumidifiFairValueScenario('http://studio', market, '100')).rejects.toThrow(
+      'Select a HumidiFi market'
+    );
+    expect(callMCPTool).not.toHaveBeenCalled();
+  });
+
+  it('passes the price as a plain string, never a number', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ url: '/scenarios?id=h&tab=editor' }) }],
+    });
+
+    await createHumidifiFairValueScenario('http://studio', 'hKgG7iED', '100.25');
+
+    const args = vi.mocked(callMCPTool).mock.calls[0][2] as Record<string, unknown>;
+    expect(typeof args.price).toBe('string');
+    expect(args.price).toBe('100.25');
+  });
+
+  it('surfaces tool validation failures', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: 'market is not owned by HumidiFi' }),
+        },
+      ],
+    });
+
+    await expect(createHumidifiFairValueScenario('http://studio', 'bad', '100')).rejects.toThrow(
+      'market is not owned by HumidiFi'
+    );
+  });
+});
+
+describe('fetchHumidifiMarkets', () => {
+  it('reads newly discovered pairs through MCP without a template catalog', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            count: 2,
+            markets: [
+              { label: 'JUP/USDC', address: 'hKgG7iED', baseDecimals: 6, quoteDecimals: 6, maxStalenessSlots: 2 },
+              {
+                label: 'NEW/USDC',
+                address: 'newly-discovered-market',
+                baseDecimals: 8,
+                quoteDecimals: 6,
+                maxStalenessSlots: 3,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    await expect(fetchHumidifiMarkets('http://studio')).resolves.toEqual([
+      { label: 'JUP/USDC', value: 'hKgG7iED' },
+      { label: 'NEW/USDC', value: 'newly-discovered-market' },
+    ]);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_humidifi_markets', {}, 'session');
+  });
+
+  it('returns an empty list when discovery reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'RPC discovery unavailable' }) }],
+    });
+    await expect(fetchHumidifiMarkets('http://studio')).resolves.toEqual([]);
+  });
+
+  it('returns an empty list when the RPC call fails', async () => {
+    vi.mocked(callMCPTool).mockRejectedValue(new Error('network unavailable'));
+    await expect(fetchHumidifiMarkets('http://studio')).resolves.toEqual([]);
+  });
+
+  it('returns an empty list for malformed tool output', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({ content: [{ type: 'text', text: 'invalid json' }] });
+    await expect(fetchHumidifiMarkets('http://studio')).resolves.toEqual([]);
+  });
+
+  it('accepts an empty discovery result', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ count: 0, markets: [] }) }],
+    });
+    await expect(fetchHumidifiMarkets('http://studio')).resolves.toEqual([]);
   });
 });
 

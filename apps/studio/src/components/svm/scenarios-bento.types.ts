@@ -110,4 +110,18 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['tessera'],
   },
+  {
+    label: 'HumidiFi Stale Quote',
+    prompt:
+      'Prepare one editable HumidiFi scenario with a market quote aged to its rejection boundary. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+    icon: '⏳',
+    protocols: ['humidifi'],
+  },
+  {
+    label: 'HumidiFi Liquidity Stress',
+    prompt:
+      'Prepare one editable HumidiFi SOL/USDC scenario that leaves the market only a sliver of its base inventory so my swaps see the maker pull its quote. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+    icon: '💧',
+    protocols: ['humidifi'],
+  },
 ];
