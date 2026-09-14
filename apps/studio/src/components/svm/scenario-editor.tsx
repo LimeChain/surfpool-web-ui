@@ -1405,6 +1405,17 @@ export default function ScenarioEditor({
                                             className="relative flex cursor-pointer items-center gap-3 rounded-md border border-zinc-700 bg-zinc-800 p-3 transition-colors hover:border-yellow-500 hover:bg-zinc-700"
                                             onClick={async () => {
                                               if (mode === 'edit' && selectedSlotId === slot.id) {
+                                                // Invalidate any account request started by the previously selected
+                                                // action before looking up this saved action. The lookup can fail when
+                                                // a template was removed or renamed, but that must not allow the old
+                                                // request to restore its values into this action.
+                                                cancelActionSelection();
+                                                setSelectedAction(null);
+                                                setAccountData({});
+                                                setModifiedFields(new Set());
+                                                setArrayEntryIndex({});
+                                                setFetchBeforeUse(false);
+                                                resetPersistControls();
                                                 setEditingAction({ slotId: slot.id, actionIndex });
 
                                                 // Load the action's protocol and set it as selected
