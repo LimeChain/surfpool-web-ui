@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
@@ -8,7 +8,9 @@ import {
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
+  getDirectAccountMarketConstantName,
   parseScenariosJson,
+  resolveTemplateAccount,
   scenarioDownloadFile,
   scenarioImportPayload,
   scenarioToBentoItem,
@@ -111,9 +113,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -162,7 +164,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -544,6 +548,49 @@ describe('flattenOverrideValues', () => {
   });
 });
 
+describe('resolveTemplateAccount', () => {
+  it('turns an account dropdown choice into a concrete pubkey account', () => {
+    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', ' market-b ')).toEqual({
+      pubkey: 'market-b',
+    });
+  });
+
+  it('does not emit an unresolved account when no option is selected', () => {
+    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', '   ')).toBeUndefined();
+  });
+
+  it('preserves fixed and PDA template addresses', () => {
+    const pda = { pda: { programId: 'program', seeds: [] } };
+    expect(resolveTemplateAccount(pda, undefined, '')).toBe(pda);
+  });
+});
+
+describe('getDirectAccountMarketConstantName', () => {
+  const directMarketTemplate = {
+    address: { pubkey: 'market-a' },
+    constants: { market: { options: [{ label: 'Market A', value: 'market-a' }] } },
+    properties: [{ path: 'price' }],
+  };
+
+  it('recognizes the existing Tessera direct-market convention', () => {
+    expect(getDirectAccountMarketConstantName(directMarketTemplate)).toBe('market');
+  });
+
+  it('does not reinterpret a constant referenced by an account field', () => {
+    expect(
+      getDirectAccountMarketConstantName({
+        ...directMarketTemplate,
+        properties: [{ path: 'market', constant: 'market' }],
+      })
+    ).toBeUndefined();
+  });
+
+  it('requires both a direct pubkey and market options', () => {
+    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, address: { pda: {} } })).toBeUndefined();
+    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, constants: {} })).toBeUndefined();
+  });
+});
+
 describe('u64 precision across the edit/save flow (path 2)', () => {
   // An odd u64 above Number.MAX_SAFE_INTEGER (2**53 - 1). Odd + large so any rounding
   // (which snaps to an even double) is detectable. Kept as a string so the source
@@ -552,8 +599,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -578,8 +624,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
