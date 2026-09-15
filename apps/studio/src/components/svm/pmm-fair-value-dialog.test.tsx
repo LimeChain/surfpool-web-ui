@@ -267,9 +267,7 @@ describe('GoonFi PMM preset', () => {
     expect(screen.getByLabelText('PMM market')).toHaveValue('goonfi-market');
     fireEvent.change(screen.getByLabelText('Price of SOL in USDC'), { target: { value: '100' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-    await waitFor(() =>
-      expect(createGoonfiScenarioMock).toHaveBeenCalledWith('http://studio', 'goonfi-market', '100')
-    );
+    await waitFor(() => expect(createGoonfiScenarioMock).toHaveBeenCalledWith('http://studio', 'goonfi-market', '100'));
   });
 
   it('ignores a previous protocol catalog that arrives after switching', async () => {

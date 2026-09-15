@@ -352,12 +352,9 @@ export async function createTesseraFairValueScenario(
 export async function fetchGoonfiMarkets(studioUrl: string): Promise<PmmMarketOption[]> {
   try {
     const { sessionId } = await fetchMCPTools(studioUrl);
-    const result = (await callMCPTool(
-      studioUrl,
-      'list_goonfi_markets',
-      {},
-      sessionId
-    )) as { content?: Array<{ type?: string; text?: string }> };
+    const result = (await callMCPTool(studioUrl, 'list_goonfi_markets', {}, sessionId)) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
     const text = result.content?.find((content) => content.type === 'text')?.text;
     if (!text) return [];
     const payload = JSON.parse(text) as {
