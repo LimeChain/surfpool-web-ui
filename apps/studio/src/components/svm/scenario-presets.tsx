@@ -10,14 +10,14 @@ interface ScenarioPresetsProps {
 export default function ScenarioPresets({ onPumpGraduationSelect, onPumpSwapPriceShockSelect }: ScenarioPresetsProps) {
   return (
     <section aria-labelledby="scenario-presets-heading" className="mx-auto mb-8 max-w-7xl px-6 lg:px-8">
-      <div className="mb-3">
+      <div className="mx-auto mb-3 max-w-4xl">
         <h2 id="scenario-presets-heading" className="text-sm font-semibold text-zinc-200">
           Scenario presets
         </h2>
         <p className="mt-1 text-sm text-zinc-500">Prepare common protocol states without an AI prompt.</p>
       </div>
 
-      <div className="grid max-w-4xl gap-3 md:grid-cols-2">
+      <div className="mx-auto grid max-w-4xl gap-3 md:grid-cols-2">
         <button
           type="button"
           onClick={onPumpGraduationSelect}
