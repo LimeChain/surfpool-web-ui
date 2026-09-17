@@ -99,7 +99,7 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'Tessera Stale Quote',
     prompt:
-      'Prepare one editable Tessera scenario with a market quote aged to its rejection boundary. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+      "Age the default SOL/USDC Tessera quote to its rejection boundary so swaps are rejected as stale. Read that market's freshness limit from the live market catalog, then age the quote by exactly that many slots using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '⏳',
     protocols: ['tessera'],
   },
