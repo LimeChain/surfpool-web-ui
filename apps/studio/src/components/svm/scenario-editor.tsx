@@ -1,8 +1,8 @@
 'use client';
 
-import { getScenarioFields } from '@/lib/scenario-fields';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
+import { getScenarioFields } from '@/lib/scenario-fields';
 import {
   fetchPhoenixMarketSymbols,
   flattenOverrideValues,
@@ -368,7 +368,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap', 'Phoenix Eternal', 'Tessera'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -713,9 +713,10 @@ export default function ScenarioEditor({
                     // A saved override may target an address discovered at creation (the live
                     // Phoenix PerpAssetMap); the template's address is only for a new action.
                     account:
-                      existingAction.actionId === action.id && existingAction.account
-                        ? existingAction.account
+                      existingAction.actionId === action.id
+                        ? (existingAction.account ?? existingAction.original?.account ?? action.template?.address)
                         : action.template?.address,
+                    original: existingAction.original,
                   }
                 : existingAction
             ),
@@ -1907,8 +1908,14 @@ export default function ScenarioEditor({
                                       const isPhoenixCollateral =
                                         selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
                                         fieldPath === 'traderState.quoteLotCollateral';
+                                      // Raw-layout u64/u128 values exceed a JS number; keep them as text so the exact
+                                      // digits reach the writer. IDL templates keep the number input.
+                                      const isWideInteger =
+                                        !selectedAction.template?.idl && /^(u|i)(64|128)$/.test(typeString);
                                       const inputType =
-                                        !isPhoenixCollateral && (typeString.startsWith('i') || typeString.startsWith('u'))
+                                        !isPhoenixCollateral &&
+                                        !isWideInteger &&
+                                        (typeString.startsWith('i') || typeString.startsWith('u'))
                                           ? 'number'
                                           : typeString === 'bool'
                                             ? 'checkbox'

@@ -96,4 +96,18 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '🔥',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Tessera Stale Quote',
+    prompt:
+      "Age the default SOL/USDC Tessera quote to its rejection boundary so swaps are rejected as stale. Read that market's freshness limit from the live market catalog, then age the quote by exactly that many slots using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+    icon: '⏳',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Depth Stress',
+    prompt:
+      'Prepare one editable Tessera SOL/USDC scenario that reduces both buy and sell quoting depth by 90% from the current local state. Preserve the price and keep quotes fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+    icon: '📉',
+    protocols: ['tessera'],
+  },
 ];
