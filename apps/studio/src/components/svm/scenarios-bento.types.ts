@@ -99,7 +99,7 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'Tessera Stale Quote',
     prompt:
-      'Prepare one editable Tessera scenario with a market quote aged to its rejection boundary. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+      "Age the default SOL/USDC Tessera quote to its rejection boundary so swaps are rejected as stale. Read that market's freshness limit from the live market catalog, then age the quote by exactly that many slots using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '⏳',
     protocols: ['tessera'],
   },
@@ -113,14 +113,14 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'HumidiFi Stale Quote',
     prompt:
-      'Prepare one editable HumidiFi scenario with a market quote aged to its rejection boundary. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+      "Age the HumidiFi market <PASTE_MARKET_ADDRESS> past its staleness limit, to its rejection boundary, so swaps are rejected as stale. HumidiFi runs several markets for one pair and an aggregator picks among them on its own, so leave the placeholder to take the first SOL/USDC market from the live catalog, or replace it with the address you mean. Read that market's staleness limit from the catalog, then age the quote just beyond it using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '⏳',
     protocols: ['humidifi'],
   },
   {
     label: 'HumidiFi Liquidity Stress',
     prompt:
-      'Prepare one editable HumidiFi SOL/USDC scenario that leaves the market only a sliver of its base inventory so my swaps see the maker pull its quote. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
+      'Leave the HumidiFi market <PASTE_MARKET_ADDRESS> only a sliver of its base inventory so my swaps see the maker pull its quote. HumidiFi runs several markets for one pair and an aggregator picks among them on its own, so leave the placeholder to take the first SOL/USDC market from the live catalog, or replace it with the address you mean. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.',
     icon: '💧',
     protocols: ['humidifi'],
   },

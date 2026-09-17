@@ -960,4 +960,30 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
     expect(snapshotDownloadContents('{"result":{"context":{"slot":1}}}')).toBeNull();
     expect(snapshotDownloadContents('not json')).toBeNull();
   });
+
+  it('disambiguates markets that share a pair label and leaves unique ones alone', async () => {
+    vi.mocked(fetchMCPTools).mockResolvedValue({ tools: [], sessionId: 'session' });
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            markets: [
+              { label: 'SOL/USDC', address: '8sKQHfjNhvmAw94PhfvfMcytmqW6jmxvwieYyzXCCPu' },
+              { label: 'SOL/USDC', address: 'FksffEqnBRixYGR791Qw2MgdU7zNCpHVFYBL4Fa4qVuH' },
+              { label: 'Bonk/USDC', address: 'PuxcQpbFrybkUAsqAKhJZ3NPgj5QG1i1FMhog6bDjx4' },
+            ],
+          }),
+        },
+      ],
+    });
+
+    const markets = await fetchHumidifiMarkets('http://localhost:18488');
+
+    expect(markets.map((market) => market.label)).toEqual([
+      'SOL/USDC · 8sKQ…CCPu',
+      'SOL/USDC · Fksf…qVuH',
+      'Bonk/USDC',
+    ]);
+  });
 });
