@@ -113,21 +113,21 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'GoonFi Stale Quote',
     prompt:
-      "Age the default SOL/USDC GoonFi quote past its freshness window so swaps are rejected as stale. Call get_override_templates, then call create_scenario once with a single goonfi-stale-quote override, fetchBeforeUse enabled, persist false, its account set to that template's default address.pubkey, and last_update_slot at a negative lead well beyond the window (for example -2000) so the quote reads as expired. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+      "Age the default SOL/USDC GoonFi quote past its freshness window so swaps are rejected as stale. Take that market and its oracle from the live market catalog, then age the quote well beyond the window using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '⏳',
     protocols: ['goonfi'],
   },
   {
     label: 'GoonFi Drained Pool',
     prompt:
-      "Drain a GoonFi market's vaults so swaps fail with insufficient liquidity. Call create_goonfi_liquidity_scenario with market <PASTE_MARKET_ADDRESS> (omit the market field entirely to use the default SOL/USDC market), baseRemainingBps 0, and quoteRemainingBps 0. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+      "Drain the default SOL/USDC GoonFi market's vaults so swaps fail for want of inventory. Leave the price and the quote's freshness alone. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '🕳️',
     protocols: ['goonfi'],
   },
   {
     label: 'GoonFi Price Dislocation',
     prompt:
-      "Dislocate a GoonFi quote with an asymmetric spread on the default SOL/USDC market. Call get_override_templates, then call create_scenario once with two overrides, each with fetchBeforeUse enabled and its account set to that template's default address.pubkey: the goonfi-price template with bid_price_x1e6 and ask_price_x1e6 at a dislocated midpoint where the ask sits a few percent above the bid, and the goonfi-reference-band template with reference_price_a_x1e6 at the bid and reference_price_b_x1e6 at the ask so the band brackets the quote. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+      "Dislocate a GoonFi quote with an asymmetric spread on the default SOL/USDC market. Take that market and its oracle from the live market catalog, then move the oracle's bid and ask a few percent apart using the protocol's own override templates: the editable builder quotes one symmetric price and cannot produce a spread. Set the market's reference band to bracket the bid and the ask so the venue accepts the dislocated quote. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
     icon: '📈',
     protocols: ['goonfi'],
   },
