@@ -110,4 +110,25 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['tessera'],
   },
+  {
+    label: 'GoonFi Stale Quote',
+    prompt:
+      "Age the default SOL/USDC GoonFi quote past its freshness window so swaps are rejected as stale. Take that market and its oracle from the live market catalog, then age the quote well beyond the window using the protocol's own override templates: the editable builders keep quotes fresh and cannot age one. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+    icon: '⏳',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Drained Pool',
+    prompt:
+      "Drain the default SOL/USDC GoonFi market's vaults so swaps fail for want of inventory. Leave the price and the quote's freshness alone. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+    icon: '🕳️',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Price Dislocation',
+    prompt:
+      "Dislocate a GoonFi quote with an asymmetric spread on the default SOL/USDC market. Take that market and its oracle from the live market catalog, then move the oracle's bid and ask a few percent apart using the protocol's own override templates: the editable builder quotes one symmetric price and cannot produce a spread. Set the market's reference band to bracket the bid and the ask so the venue accepts the dislocated quote. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap.",
+    icon: '📈',
+    protocols: ['goonfi'],
+  },
 ];
