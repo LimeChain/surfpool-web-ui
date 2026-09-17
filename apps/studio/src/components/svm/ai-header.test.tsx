@@ -90,6 +90,8 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Liquidation Cascade')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
+    expect(screen.getByText('HumidiFi Stale Quote')).toBeInTheDocument();
+    expect(screen.getByText('HumidiFi Liquidity Stress')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -166,6 +168,28 @@ describe('AIHeader', () => {
     expect(prompt).toContain('Preserve the price and keep quotes fresh');
     expect(prompt).toContain('do not build or execute a swap');
     expect(prompt).not.toContain('create_tessera_depth_scenario');
+  });
+
+  it('loads a HumidiFi staleness goal without coupling the chip to template ids or tool names', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('HumidiFi Stale Quote'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('rejection boundary');
+    expect(prompt).toContain('do not build or execute a swap');
+    expect(prompt).not.toMatch(/create_humidifi|humidifi-|fetchBeforeUse|templateId|max_staleness|\d/);
+  });
+
+  it('loads a HumidiFi liquidity goal without coupling the chip to template ids or tool names', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('HumidiFi Liquidity Stress'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('sliver of its base inventory');
+    expect(prompt).toContain('do not build or execute a swap');
+    expect(prompt).not.toMatch(/create_humidifi|humidifi-|spl-token|fetchBeforeUse|templateId|bps|\d/);
   });
 
   it('renders the model selector button', () => {

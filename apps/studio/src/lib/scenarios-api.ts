@@ -304,15 +304,15 @@ export async function fetchPhoenixMarketSymbols(
   }
 }
 
-export type TesseraMarketOption = {
+export type PmmMarketOption = {
   label: string;
   value: string;
 };
 
-export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMarketOption[]> {
+async function fetchPmmMarketsViaMcp(studioUrl: string, toolName: string): Promise<PmmMarketOption[]> {
   try {
     const { sessionId } = await fetchMCPTools(studioUrl);
-    const result = (await callMCPTool(studioUrl, 'list_tessera_markets', {}, sessionId)) as {
+    const result = (await callMCPTool(studioUrl, toolName, {}, sessionId)) as {
       content?: Array<{ type?: string; text?: string }>;
     };
     const text = result.content?.find((content) => content.type === 'text')?.text;
@@ -322,10 +322,29 @@ export async function fetchTesseraMarkets(studioUrl: string): Promise<TesseraMar
       markets?: Array<{ label: string; address: string }>;
     };
     if (payload.error) return [];
-    return (payload.markets ?? []).map((market) => ({ label: market.label, value: market.address }));
+    const markets = payload.markets ?? [];
+    const duplicated = new Set(
+      markets.map((market) => market.label).filter((label, index, all) => all.indexOf(label) !== index)
+    );
+    // Several PMM markets can share a pair label, and the aggregator that later routes a swap picks
+    // among them on its own. Showing the address keeps the one the user prepared identifiable.
+    return markets.map((market) => ({
+      label: duplicated.has(market.label)
+        ? `${market.label} · ${market.address.slice(0, 4)}…${market.address.slice(-4)}`
+        : market.label,
+      value: market.address,
+    }));
   } catch {
     return [];
   }
+}
+
+export function fetchTesseraMarkets(studioUrl: string): Promise<PmmMarketOption[]> {
+  return fetchPmmMarketsViaMcp(studioUrl, 'list_tessera_markets');
+}
+
+export function fetchHumidifiMarkets(studioUrl: string): Promise<PmmMarketOption[]> {
+  return fetchPmmMarketsViaMcp(studioUrl, 'list_humidifi_markets');
 }
 
 /**
@@ -341,6 +360,20 @@ export async function createTesseraFairValueScenario(
   const trimmedMarket = market.trim();
   return createScenarioWithMcpTool(studioUrl, 'create_tessera_fair_value_scenario', {
     ...(trimmedMarket ? { market: trimmedMarket } : {}),
+    price: price.trim(),
+  });
+}
+
+export async function createHumidifiFairValueScenario(
+  studioUrl: string,
+  market: string,
+  price: string
+): Promise<ScenarioCreationResult> {
+  const trimmedMarket = market.trim();
+  if (!trimmedMarket) throw new Error('Select a HumidiFi market');
+
+  return createScenarioWithMcpTool(studioUrl, 'create_humidifi_fair_value_scenario', {
+    market: trimmedMarket,
     price: price.trim(),
   });
 }

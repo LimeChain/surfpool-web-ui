@@ -1,6 +1,13 @@
 'use client';
 
-import { createTesseraFairValueScenario, fetchTesseraMarkets, type TesseraMarketOption } from '@/lib/scenarios-api';
+import {
+  createHumidifiFairValueScenario,
+  createTesseraFairValueScenario,
+  fetchHumidifiMarkets,
+  fetchTesseraMarkets,
+  type PmmMarketOption,
+  type ScenarioCreationResult,
+} from '@/lib/scenarios-api';
 import {
   Button,
   Dialog,
@@ -20,32 +27,76 @@ interface PmmFairValueDialogProps {
   onCreated: (scenarioId: string) => void;
 }
 
-const renderMarketOption = (market: TesseraMarketOption) => (
+const PmmProtocol = {
+  Tessera: 'tessera',
+  HumidiFi: 'humidifi',
+} as const;
+type PmmProtocol = (typeof PmmProtocol)[keyof typeof PmmProtocol];
+
+interface PmmAdapter {
+  id: PmmProtocol;
+  label: string;
+  fetchMarkets: (studioUrl: string) => Promise<PmmMarketOption[]>;
+  createScenario: (studioUrl: string, market: string, price: string) => Promise<ScenarioCreationResult>;
+}
+
+const PMM_ADAPTERS: readonly PmmAdapter[] = [
+  {
+    id: PmmProtocol.Tessera,
+    label: 'Tessera',
+    fetchMarkets: fetchTesseraMarkets,
+    createScenario: createTesseraFairValueScenario,
+  },
+  {
+    id: PmmProtocol.HumidiFi,
+    label: 'HumidiFi',
+    fetchMarkets: fetchHumidifiMarkets,
+    createScenario: createHumidifiFairValueScenario,
+  },
+];
+
+const renderProtocolOption = (adapter: PmmAdapter) => (
+  <ListboxOption key={adapter.id} value={adapter.id}>
+    {adapter.label}
+  </ListboxOption>
+);
+
+const renderMarketOption = (market: PmmMarketOption) => (
   <ListboxOption key={market.value} value={market.value}>
     {market.label}
   </ListboxOption>
 );
 
-const priceLabelFor = (market: TesseraMarketOption | undefined) => {
+const priceLabelFor = (market: PmmMarketOption | undefined) => {
   const [base, quote] = market?.label.split('/') ?? [];
   return base && quote ? `Price of ${base} in ${quote}` : 'Price in quote tokens';
 };
 
+const adapterFor = (protocol: PmmProtocol) =>
+  PMM_ADAPTERS.find((adapter) => adapter.id === protocol) ?? PMM_ADAPTERS[0];
+
+const isPmmProtocol = (value: string): value is PmmProtocol => PMM_ADAPTERS.some((adapter) => adapter.id === value);
+
 export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated }: PmmFairValueDialogProps) {
   // STATE
+  const [protocol, setProtocol] = useState<PmmProtocol>(PmmProtocol.Tessera);
   const [market, setMarket] = useState('');
   const [price, setPrice] = useState('100');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [marketOptions, setMarketOptions] = useState<TesseraMarketOption[] | null>(null);
+  const [marketOptions, setMarketOptions] = useState<PmmMarketOption[] | null>(null);
 
   // DERIVED STATE
+  const adapter = adapterFor(protocol);
   const normalizedPrice = price.trim();
   const normalizedMarket = market.trim();
   const hasValidPrice = /^\d+(?:\.\d{1,12})?$/.test(normalizedPrice) && /[1-9]/.test(normalizedPrice);
   const hasMarketCatalog = !!marketOptions && marketOptions.length > 0;
   const selectedMarket = marketOptions?.find((option) => option.value === normalizedMarket);
-  const hasValidMarket = !normalizedMarket || !hasMarketCatalog || !!selectedMarket;
+  const requiresMarket = protocol === PmmProtocol.HumidiFi;
+  const hasValidMarket = requiresMarket
+    ? !!normalizedMarket && (!hasMarketCatalog || !!selectedMarket)
+    : !normalizedMarket || !hasMarketCatalog || !!selectedMarket;
   const canCreate = marketOptions !== null && hasValidPrice && hasValidMarket && !isCreating;
   const priceLabel = priceLabelFor(selectedMarket ?? marketOptions?.[0]);
 
@@ -56,7 +107,12 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     onClose();
   };
 
-  const handleProtocolSelect = () => {
+  const handleProtocolSelect = (selectedValue: string) => {
+    if (!isPmmProtocol(selectedValue)) return;
+    if (selectedValue === protocol) return;
+    setProtocol(selectedValue);
+    setMarket('');
+    setMarketOptions(null);
     setError(null);
   };
 
@@ -83,10 +139,12 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     setError(null);
 
     try {
-      const result = await createTesseraFairValueScenario(studioUrl, normalizedMarket, normalizedPrice);
+      const result = await adapter.createScenario(studioUrl, normalizedMarket, normalizedPrice);
       onCreated(result.id);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create Tessera fair-value scenario');
+      setError(
+        requestError instanceof Error ? requestError.message : `Failed to create ${adapter.label} fair-value scenario`
+      );
     } finally {
       setIsCreating(false);
     }
@@ -98,7 +156,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     let cancelled = false;
     setMarketOptions(null);
 
-    fetchTesseraMarkets(studioUrl).then((options) => {
+    adapter.fetchMarkets(studioUrl).then((options) => {
       if (!cancelled) {
         setMarketOptions(options);
         setMarket((current) => {
@@ -111,7 +169,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     return () => {
       cancelled = true;
     };
-  }, [open, studioUrl]);
+  }, [open, studioUrl, adapter]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
@@ -124,8 +182,8 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
         <div className="mt-5 space-y-4">
           <div>
             <span className="mb-1.5 block text-sm font-medium text-zinc-300">PMM protocol</span>
-            <Listbox aria-label="PMM protocol" value="tessera" onChange={handleProtocolSelect} disabled={isCreating}>
-              <ListboxOption value="tessera">Tessera</ListboxOption>
+            <Listbox aria-label="PMM protocol" value={protocol} onChange={handleProtocolSelect} disabled={isCreating}>
+              {PMM_ADAPTERS.map(renderProtocolOption)}
             </Listbox>
           </div>
           <div>
@@ -139,7 +197,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
             ) : (
               <Input
                 aria-label="PMM market"
-                placeholder="Leave empty for the default market"
+                placeholder={requiresMarket ? 'Enter a market account address' : 'Leave empty for the default market'}
                 value={market}
                 onChange={handleMarketInput}
                 disabled={isCreating}
@@ -147,7 +205,9 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
             )}
             {marketOptions?.length === 0 && (
               <p className="mt-1.5 text-xs text-zinc-500">
-                Live market list unavailable. Enter a market account address, or leave it empty to use the default.
+                {requiresMarket
+                  ? 'Live market list unavailable. Enter a market account address to continue.'
+                  : 'Live market list unavailable. Enter a market account address, or leave it empty to use the default.'}
               </p>
             )}
           </div>
@@ -164,8 +224,8 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
               disabled={isCreating}
             />
             <p className="mt-1.5 text-xs text-zinc-500">
-              Positive decimal with up to 12 places. The backend derives both atomic ratio fields from the market&apos;s
-              mint decimals.
+              Positive decimal with up to 12 places. The backend derives the atomic ratio from the market&apos;s mint
+              decimals.
             </p>
           </div>
           {!!error && <p className="text-sm text-red-400">{error}</p>}
