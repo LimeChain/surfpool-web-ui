@@ -27,6 +27,7 @@ import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpo
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
+import { getFieldsFromRawLayout } from './raw-layout-fields';
 import { resolveTokenSelectorOptions } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
@@ -470,7 +471,7 @@ export default function ScenarioEditor({
 
   // Helper function to extract fields from IDL using accountType
   const getFieldsFromIDL = (template: any) => {
-    if (!template?.idl || !template?.accountType) return [];
+    if (!template?.idl || !template?.accountType) return getFieldsFromRawLayout(template);
 
     // First, try to find the account in the accounts array
     if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
@@ -501,7 +502,7 @@ export default function ScenarioEditor({
       }
     }
 
-    return [];
+    return getFieldsFromRawLayout(template);
   };
 
   // Helper function to look up a type definition in the IDL
