@@ -73,6 +73,7 @@ export default function ScenariosBento({
   const importInputRef = useRef<HTMLInputElement>(null);
   const scenariosRef = useRef(scenarios);
   const scenarioUpdateQueuesRef = useRef(new Map<string, ScenarioUpdateQueue>());
+  const pendingDeletesRef = useRef(new Set<string>());
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -234,7 +235,9 @@ export default function ScenariosBento({
             })
           );
         }
-        onRefresh?.();
+        // Refreshing here while a delete waits on this update would bring the scenario
+        // back from the server, and a failing post-delete refresh would leave it there.
+        if (!pendingDeletesRef.current.has(id)) onRefresh?.();
       }
     }
 
@@ -254,6 +257,9 @@ export default function ScenariosBento({
     setScenarios((prev) => prev.filter((s) => s.id !== id));
     let scenarioToRestore = deleted;
 
+    // Marked before the await below, because the queued update settles first.
+    pendingDeletesRef.current.add(id);
+
     try {
       const queuedUpdate = scenarioUpdateQueuesRef.current.get(id);
       scenarioToRestore = (await queuedUpdate?.promise)?.scenario ?? deleted;
@@ -271,6 +277,8 @@ export default function ScenariosBento({
       console.error('Error deleting scenario:', error);
       // Restore against the current list without overwriting a newer same-ID item.
       setScenarios((prev) => reinsertScenario(prev, scenarioToRestore, index));
+    } finally {
+      pendingDeletesRef.current.delete(id);
     }
   };
 

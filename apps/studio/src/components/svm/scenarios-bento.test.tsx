@@ -48,8 +48,12 @@ vi.mock('next/navigation', function mockNextNavigation() {
 });
 
 vi.mock('@surfpool/ui', function mockSurfpoolUi() {
-  function HiddenDialog() {
-    return null;
+  function DialogMock({ open, children }: { open?: boolean; children?: ReactNode }) {
+    return open ? <>{children}</> : null;
+  }
+
+  function ButtonMock({ children, onClick }: { children?: ReactNode; onClick?: () => void }) {
+    return <button onClick={onClick}>{children}</button>;
   }
 
   function Passthrough({ children }: { children?: ReactNode }) {
@@ -57,8 +61,8 @@ vi.mock('@surfpool/ui', function mockSurfpoolUi() {
   }
 
   return {
-    Button: Passthrough,
-    Dialog: HiddenDialog,
+    Button: ButtonMock,
+    Dialog: DialogMock,
     DialogActions: Passthrough,
     DialogDescription: Passthrough,
     DialogTitle: Passthrough,
@@ -84,6 +88,7 @@ vi.mock('./generic-bento', function mockGenericBentoModule() {
     initialTab?: string;
     renderDetailHeader: (item: ScenarioBentoItem) => ReactNode;
     renderDetailContent: (item: ScenarioBentoItem, activeTab: string) => ReactNode;
+    renderDetailActions?: (item: ScenarioBentoItem, onClose?: () => void) => ReactNode;
   }
 
   function GenericBentoMock({
@@ -92,6 +97,7 @@ vi.mock('./generic-bento', function mockGenericBentoModule() {
     initialTab,
     renderDetailHeader,
     renderDetailContent,
+    renderDetailActions,
   }: GenericBentoMockProps) {
     function isSelectedItem(item: ScenarioBentoItem) {
       return item.id === initialSelectedId;
@@ -101,6 +107,7 @@ vi.mock('./generic-bento', function mockGenericBentoModule() {
     return selectedItem ? (
       <>
         {renderDetailHeader(selectedItem)}
+        {renderDetailActions?.(selectedItem)}
         {renderDetailContent(selectedItem, initialTab ?? 'editor')}
       </>
     ) : null;
@@ -330,6 +337,49 @@ describe('ScenariosBento', function scenariosBentoTests() {
     expect(JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)).toEqual({ name: 'Saved name' });
     expect(screen.getByText('Saved name')).toBeInTheDocument();
     expect(screen.getByText('Refreshed description')).toBeInTheDocument();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the reconciliation refresh while a delete for the same scenario is pending', async function holdsRefreshWhileDeletePending() {
+    const patchResponse = createPendingResponse();
+    const deleteResponse = createPendingResponse();
+    const fetchMock = vi.fn().mockReturnValueOnce(patchResponse.promise).mockReturnValueOnce(deleteResponse.promise);
+    const onRefresh = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithConfig(
+      <ScenariosBento
+        scenarios={scenarios}
+        onRefresh={onRefresh}
+        initialSelectedId="scenario-a"
+        initialTab="overview"
+      />
+    );
+
+    fireEvent.click(screen.getByText('Scenario A'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Saved name' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    fireEvent.click(screen.getByTitle('Delete scenario'));
+    fireEvent.click(screen.getByText('Delete'));
+
+    await act(async function completePatch() {
+      patchResponse.resolve({ ok: true, status: 200 } as Response);
+      await patchResponse.promise;
+    });
+
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    await waitFor(function waitsForDeleteRequest() {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe('DELETE');
+
+    await act(async function completeDelete() {
+      deleteResponse.resolve({ ok: true, status: 200 } as Response);
+      await deleteResponse.promise;
+    });
+
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });
