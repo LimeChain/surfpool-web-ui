@@ -339,6 +339,8 @@ export default function ScenarioEditor({
             console.error('Failed to sync scenario with backend:', response.status, errorText);
           } else {
             logger.log('Scenario synced with backend successfully');
+            // Fire after the PATCH resolves so a refetch reads the saved state.
+            window.dispatchEvent(new Event('scenarioUpdated'));
           }
         } catch (error) {
           console.error('Error syncing scenario with backend:', error);
@@ -350,7 +352,6 @@ export default function ScenarioEditor({
       };
 
       syncWithBackend();
-      window.dispatchEvent(new Event('scenarioUpdated'));
     } else {
       isFirstSlotsChangeRef.current = false;
     }
