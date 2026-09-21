@@ -6,6 +6,7 @@ const templates = new Map<string, string>([
   ['pump-bonding-curve-custom', 'Pump'],
   ['pump-amm-canonical-pool', 'PumpSwap'],
   ['kamino-obligation-health', 'kamino'],
+  ['meteora-dlmm-custom', 'Meteora'],
 ]);
 
 describe('resolveProtocol', () => {
@@ -28,6 +29,13 @@ describe('resolveProtocol', () => {
     expect(resolveProtocol('raydium-clmm-custom', new Map())).toEqual({
       protocolId: 'raydium',
       displayName: 'Raydium',
+    });
+  });
+
+  it('resolves meteora-dlmm-* templates to Meteora via the templates map', () => {
+    expect(resolveProtocol('meteora-dlmm-custom', templates)).toEqual({
+      protocolId: 'meteora',
+      displayName: 'Meteora',
     });
   });
 });
