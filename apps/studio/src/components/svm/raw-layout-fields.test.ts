@@ -9,7 +9,7 @@ describe('getFieldsFromRawLayout', () => {
   it('turns scalar encodings into editable fields', () => {
     expect(
       getFieldsFromRawLayout({
-        rawLayout: { accountSize: 32 },
+        rawLayout: true,
         properties: [
           { path: 'amount', encoding: 'u64' },
           { path: 'owner', encoding: 'bytes32' },
@@ -24,7 +24,7 @@ describe('getFieldsFromRawLayout', () => {
   it('uses the scalar type behind a strided encoding', () => {
     expect(
       getFieldsFromRawLayout({
-        rawLayout: { accountSize: 64 },
+        rawLayout: true,
         properties: [{ path: 'levels', encoding: { i32_strided: { count: 3, stride: 16 } } }],
       })
     ).toEqual([{ name: 'levels', type: 'i32' }]);
