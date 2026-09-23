@@ -4,7 +4,7 @@ type RawLayoutProperty = {
 };
 
 type RawLayoutTemplate = {
-  rawLayout?: unknown;
+  rawLayout?: boolean;
   properties?: RawLayoutProperty[];
 };
 
