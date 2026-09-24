@@ -89,4 +89,17 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Meteora Pair Halt',
+    prompt:
+      'Disable the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y so it rejects new swaps.',
+    icon: '🧊',
+    protocols: ['meteora'],
+  },
+  {
+    label: 'Meteora Price Shock',
+    prompt: 'Halve the price of the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y.',
+    icon: '⚡',
+    protocols: ['meteora'],
+  },
 ];

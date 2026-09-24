@@ -2,8 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  ACTIVE_ID_OFFSET,
+  BIN_ARRAY_DISCRIMINATOR,
+  BIN_ARRAY_LEN,
+  BIN_STEP_OFFSET,
+  LB_PAIR_DISCRIMINATOR,
+  LB_PAIR_LEN,
+  METEORA_DLMM_PROGRAM_ID,
+} from './meteora-price-shock';
+import {
   buildAiPrompt,
   buildUpdatePayload,
+  createMeteoraPairHaltScenario,
+  createMeteoraPriceShockScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -163,6 +174,73 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
+
+describe('Meteora scenarios', () => {
+  const pool = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
+  const templates = () => jsonResponse([{ id: 'meteora-dlmm-pool-state', address: { pubkey: '' } }]);
+  const postedBody = (call: number) => JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string);
+
+  function rpcAccount(length: number, discriminator: number[]) {
+    const data = new Uint8Array(length);
+    data.set(discriminator);
+    if (length === LB_PAIR_LEN) {
+      new DataView(data.buffer).setInt32(ACTIVE_ID_OFFSET, -2222, true);
+      new DataView(data.buffer).setUint16(BIN_STEP_OFFSET, 10, true);
+    }
+    const value = { owner: METEORA_DLMM_PROGRAM_ID, data: [Buffer.from(data).toString('base64'), 'base64'] };
+    return jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } });
+  }
+
+  it('reads the pool and its destination bin array, then posts one active_id override', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(rpcAccount(LB_PAIR_LEN, LB_PAIR_DISCRIMINATOR))
+      .mockResolvedValueOnce(rpcAccount(BIN_ARRAY_LEN, BIN_ARRAY_DISCRIMINATOR))
+      .mockResolvedValueOnce(templates())
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    const created = createMeteoraPriceShockScenario('http://studio', 'http://rpc', ` ${pool} `, ' 1.1 ');
+    await expect(created).resolves.toEqual({ id: 'scenario-id' });
+
+    expect(postedBody(0).params).toEqual([pool, { encoding: 'base64', commitment: 'confirmed' }]);
+    expect(postedBody(1).params[0]).toBe('28WnLxAM6rpjMToCVqaDys7dpiRmVUeQus1pvzGVR4G2');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://rpc',
+      'http://rpc',
+      'http://studio/v1/scenarios/templates',
+      'http://studio/v1/scenarios',
+    ]);
+    expect(postedBody(3)).toMatchObject({
+      name: 'Meteora DLMM Price Shock',
+      overrides: [
+        {
+          templateId: 'meteora-dlmm-pool-state',
+          values: { active_id: -2127 },
+          scenarioRelativeSlot: 1,
+          label: 'DLMM price x1.1',
+          enabled: true,
+          fetchBeforeUse: true,
+          account: { pubkey: pool },
+        },
+      ],
+      tags: ['meteora', 'dlmm', 'price-shock'],
+    });
+  });
+
+  it('posts a status override for a pair halt', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(templates()).mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await expect(createMeteoraPairHaltScenario('http://studio', ` ${pool} `)).resolves.toEqual({ id: 'scenario-id' });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
+    expect(postedBody(1)).toMatchObject({
+      name: 'Meteora Pair Halt (BGm1ta…)',
+      overrides: [{ values: { status: 1 }, scenarioRelativeSlot: 0, fetchBeforeUse: true, account: { pubkey: pool } }],
+      tags: ['meteora', 'pair-halt'],
+    });
   });
 });
 
