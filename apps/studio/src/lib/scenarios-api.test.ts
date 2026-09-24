@@ -6,6 +6,8 @@ import {
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
+  createRaydiumAmmPoolStatusScenario,
+  createRaydiumClmmPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
   parseScenariosJson,
@@ -163,6 +165,55 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
+
+describe('Raydium scenarios', () => {
+  const pool = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
+  const clmm = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+  const account = (data: Uint8Array) =>
+    jsonResponse({ result: { value: { owner: clmm, data: [Buffer.from(data).toString('base64'), 'base64'] } } });
+  const postedOverride = (call: number) =>
+    JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string).overrides[0];
+
+  it('reads the pool and its covering tick array, then posts the price shock', async () => {
+    const poolData = new Uint8Array(1544);
+    poolData.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    const view = new DataView(poolData.buffer);
+    view.setUint16(235, 1, true);
+    view.setBigUint64(253, BigInt('6404133718641369980'), true);
+    view.setInt32(269, -21160, true);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(account(poolData))
+      .mockResolvedValueOnce(account(new Uint8Array(10240)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'shock' }));
+
+    await expect(createRaydiumClmmPriceShockScenario('http://studio', 'http://rpc', pool, '1.001')).resolves.toEqual({
+      id: 'shock',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toBe('GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK');
+    expect(postedOverride(3)).toMatchObject({
+      templateId: 'raydium-clmm-pool-state',
+      values: { sqrt_price_x64: '6407334985383984128', tick_current: -21150 },
+      scenarioRelativeSlot: 1,
+      account: { pubkey: pool },
+    });
+  });
+
+  it('posts an AMM v4 pool status override on the given pool', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-amm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'status' }));
+
+    await expect(createRaydiumAmmPoolStatusScenario('http://studio', pool, '2')).resolves.toEqual({ id: 'status' });
+    expect(postedOverride(1)).toMatchObject({
+      templateId: 'raydium-amm-pool-state',
+      values: { status: 2 },
+      account: { pubkey: pool },
+    });
   });
 });
 

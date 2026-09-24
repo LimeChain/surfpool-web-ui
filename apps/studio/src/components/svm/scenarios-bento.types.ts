@@ -89,4 +89,17 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Raydium Pool Freeze',
+    prompt:
+      'Freeze the Raydium AMM v4 SOL/USDC pool 58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2 so it only allows withdrawals, blocking new swaps and deposits.',
+    icon: '🧊',
+    protocols: ['raydium'],
+  },
+  {
+    label: 'Raydium CLMM Price Shock',
+    prompt: 'Halve the price of the Raydium CLMM SOL/USDC pool 3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv.',
+    icon: '⚡',
+    protocols: ['raydium'],
+  },
 ];
