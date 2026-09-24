@@ -1,6 +1,14 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
+import {
+  buildPancakeswapPriceShockScenario,
+  pancakeswapScenario,
+  planPancakeswapPriceShock,
+  type PoolAccount,
+  validatePriceFactor,
+} from './pancakeswap-price-shock';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 
@@ -243,6 +251,119 @@ async function createPumpScenarioWithMcp(
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type PancakeswapScenarioResult = { id: string };
+export type PancakeswapFeeTierOption = { value: string; label: string };
+type PancakeswapConfigTemplate = ScenarioTemplate & {
+  constants?: Record<string, { options?: PancakeswapFeeTierOption[] }>;
+};
+
+const PANCAKESWAP_CONFIG_TEMPLATE_ID = 'pancakeswap-clmm-amm-config';
+
+async function fetchPancakeswapConfigTemplate(studioUrl: string): Promise<PancakeswapConfigTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) throw new Error(`Failed to load scenario templates: ${response.status}`);
+
+  const templates = (await response.json()) as PancakeswapConfigTemplate[];
+  const template = findScenarioTemplate(templates, PANCAKESWAP_CONFIG_TEMPLATE_ID);
+  if (!template) throw new Error(`PancakeSwap template ${PANCAKESWAP_CONFIG_TEMPLATE_ID} is unavailable`);
+  return template;
+}
+
+async function postPancakeswapScenario(studioUrl: string, scenario: object): Promise<PancakeswapScenarioResult> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize PancakeSwap scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create PancakeSwap scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+async function fetchSurfnetAccount(rpcUrl: string, account: string): Promise<PoolAccount | null> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getAccountInfo',
+      params: [account, { encoding: 'base64', commitment: 'confirmed' }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Failed to read ${account} from the surfnet: ${response.status}`);
+
+  const result = (await response.json()) as {
+    error?: { message?: string };
+    result?: { value: { owner: string; data: [string, string] } | null };
+  };
+  if (result.error) throw new Error(`Failed to read ${account} from the surfnet: ${result.error.message}`);
+
+  const value = result.result?.value;
+  if (!value) return null;
+  return { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) };
+}
+
+// A swap could not resume from a tick whose covering tick array does not exist, so that shock is refused.
+export async function createPancakeswapPriceShockScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<PancakeswapScenarioResult> {
+  const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const factor = Number(priceFactor.trim());
+  validatePriceFactor(factor);
+
+  const poolAccount = await fetchSurfnetAccount(rpcUrl, normalizedPool);
+  if (!poolAccount) throw new Error(`PancakeSwap pool ${normalizedPool} was not found`);
+
+  const plan = await planPancakeswapPriceShock(normalizedPool, poolAccount, factor);
+  const tickArray = await fetchSurfnetAccount(rpcUrl, plan.tickArray);
+  return postPancakeswapScenario(studioUrl, buildPancakeswapPriceShockScenario(plan, tickArray));
+}
+
+// Read off the template's constant catalog so the picker never drifts from the backend's fee tier list.
+export async function fetchPancakeswapFeeTierOptions(studioUrl: string): Promise<PancakeswapFeeTierOption[]> {
+  try {
+    const template = await fetchPancakeswapConfigTemplate(studioUrl);
+    return template.constants?.amm_config_index?.options ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createPancakeswapClmmFeeTierScenario(
+  studioUrl: string,
+  configIndex: string,
+  feeBps: string
+): Promise<PancakeswapScenarioResult> {
+  const template = await fetchPancakeswapConfigTemplate(studioUrl);
+  const scenario = pancakeswapScenario(
+    `PancakeSwap CLMM Fee Tier ${feeBps.trim()} bps`,
+    "Change a PancakeSwap CLMM fee tier's trade fee rate.",
+    {
+      templateId: template.id,
+      values: { config_index: configIndex.trim(), trade_fee_rate: Number(feeBps.trim()) * 100 },
+      scenarioRelativeSlot: 0,
+      label: 'PancakeSwap CLMM fee tier',
+      // The AmmConfig is a PDA over the config index; the template address carries its derivation seeds.
+      account: template.address,
+    },
+    ['pancakeswap', 'fee-tier']
+  );
+  return postPancakeswapScenario(studioUrl, scenario);
 }
 
 /**
