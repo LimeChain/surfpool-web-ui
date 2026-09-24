@@ -7,6 +7,8 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  createWhirlpoolFeeRateScenario,
+  createWhirlpoolPriceShockScenario,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -17,6 +19,14 @@ import {
   toScenarioNumber,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
+import {
+  POOL_STATE_LEN,
+  SQRT_PRICE_OFFSET,
+  TICK_ARRAY_LEN,
+  TICK_SPACING_OFFSET,
+  WHIRLPOOL_DISCRIMINATOR,
+  WHIRLPOOL_PROGRAM_ID,
+} from './whirlpool-price-shock';
 
 vi.mock('./ai-client', () => ({
   callMCPTool: vi.fn(),
@@ -163,6 +173,67 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
+
+describe('Whirlpool scenarios', () => {
+  const pool = 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE';
+  const poolData = new Uint8Array(POOL_STATE_LEN);
+  poolData.set(WHIRLPOOL_DISCRIMINATOR);
+  new DataView(poolData.buffer).setUint16(TICK_SPACING_OFFSET, 1, true);
+  new DataView(poolData.buffer).setBigUint64(SQRT_PRICE_OFFSET + 8, BigInt(1), true);
+
+  async function respond(url: string, init?: RequestInit): Promise<Response> {
+    if (url === 'http://studio/v1/scenarios/templates') return jsonResponse([{ id: 'whirlpool-pool-state' }]);
+    if (url === 'http://studio/v1/scenarios') return jsonResponse({ id: 'scenario-id' });
+    const [address] = JSON.parse(init?.body as string).params;
+    const data = address === pool ? poolData : new Uint8Array(TICK_ARRAY_LEN);
+    const value = { owner: WHIRLPOOL_PROGRAM_ID, data: [Buffer.from(data).toString('base64'), 'base64'] };
+    return jsonResponse({ jsonrpc: '2.0', id: 1, result: { value } });
+  }
+
+  function requestBodies(url: string) {
+    return fetchMock.mock.calls.filter((call) => call[0] === url).map((call) => JSON.parse(call[1].body));
+  }
+
+  it('reads the pool, checks the destination tick array and posts both coupled price fields', async () => {
+    vi.stubGlobal('fetch', fetchMock.mockImplementation(respond));
+
+    await expect(createWhirlpoolPriceShockScenario('http://studio', 'http://rpc', pool, '4')).resolves.toEqual({
+      id: 'scenario-id',
+    });
+    expect(requestBodies('http://rpc').map((body) => body.params[0])).toEqual([
+      pool,
+      'GtpuS8hUCDTzME7YENqarRQ51uxBziaXuyMjEFAMU53R',
+    ]);
+    expect(requestBodies('http://studio/v1/scenarios')[0]).toMatchObject({
+      name: 'Whirlpool Price Shock',
+      description: `Move Whirlpool pool ${pool} to 4x its price, onto tick 13863 of the tick array starting at 13816.`,
+      overrides: [
+        {
+          templateId: 'whirlpool-pool-state',
+          values: { sqrt_price: '36893488147419103232', tick_current_index: 13863 },
+          scenarioRelativeSlot: 1,
+          label: 'Whirlpool price x4',
+          enabled: true,
+          fetchBeforeUse: true,
+          account: { pubkey: pool },
+        },
+      ],
+      tags: ['whirlpool', 'orca', 'price-shock'],
+    });
+  });
+
+  it('posts the fee rate in hundredths of a basis point', async () => {
+    vi.stubGlobal('fetch', fetchMock.mockImplementation(respond));
+
+    await createWhirlpoolFeeRateScenario('http://studio', pool, '25');
+
+    expect(requestBodies('http://studio/v1/scenarios')[0]).toMatchObject({
+      name: 'Whirlpool Fee Rate (Czfq3x…)',
+      overrides: [{ values: { fee_rate: 2500 }, scenarioRelativeSlot: 0, account: { pubkey: pool } }],
+      tags: ['whirlpool', 'fee-rate'],
+    });
   });
 });
 
