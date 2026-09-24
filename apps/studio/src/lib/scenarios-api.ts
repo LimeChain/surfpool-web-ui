@@ -138,7 +138,7 @@ export async function createPumpGraduationScenario(
   studioUrl: string,
   tokenMint: string
 ): Promise<PumpGraduationScenarioResult> {
-  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
     tokenMint: tokenMint.trim(),
   });
 }
@@ -218,11 +218,11 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-async function createPumpScenarioWithMcp(
+async function createScenarioWithMcp(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PumpGraduationScenarioResult> {
+): Promise<{ id: string }> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;
@@ -243,6 +243,142 @@ async function createPumpScenarioWithMcp(
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type RaydiumScenarioResult = { id: string };
+
+async function raydiumTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  const templates = (await response.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, templateId);
+  if (!template) throw new Error(`Raydium template ${templateId} is unavailable`);
+
+  return template;
+}
+
+async function postRaydiumScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<RaydiumScenarioResult> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize Raydium scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create Raydium scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+
+  return { id: result.id };
+}
+
+/**
+ * Shifts a Raydium CLMM pool's price by a factor through the specialized MCP tool, which
+ * recomputes sqrt_price_x64/tick_current together and checks the covering TickArray exists.
+ */
+export async function createRaydiumClmmPriceShockScenario(
+  studioUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<RaydiumScenarioResult> {
+  return createScenarioWithMcp(studioUrl, 'create_raydium_clmm_price_shock_scenario', {
+    pool: pool.trim(),
+    priceFactor: priceFactor.trim(),
+  });
+}
+
+/**
+ * Raydium AMM v4 pools are keypair accounts (no PDA to derive), so the caller-supplied
+ * pool address is sent directly as the override's pubkey account.
+ */
+export async function createRaydiumAmmPoolStatusScenario(
+  studioUrl: string,
+  pool: string,
+  status: string
+): Promise<RaydiumScenarioResult> {
+  const template = await raydiumTemplate(studioUrl, 'raydium-amm-pool-state');
+  const normalizedPool = pool.trim();
+  const scenario = {
+    id: crypto.randomUUID(),
+    name: `Raydium AMM v4 Pool Status (${normalizedPool.slice(0, 6)}…)`,
+    description: "Change which operations a Raydium AMM v4 pool's status allows.",
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values: { status: Number(status) },
+        scenarioRelativeSlot: 0,
+        label: 'Raydium AMM v4 pool status',
+        enabled: true,
+        fetchBeforeUse: true,
+        account: { pubkey: normalizedPool },
+      },
+    ],
+    tags: ['raydium', 'pool-status'],
+  };
+  return postRaydiumScenario(studioUrl, scenario);
+}
+
+export type RaydiumFeeTierOption = { value: string; label: string };
+
+/**
+ * Reads amm_config_index straight off the raydium-clmm-amm-config template's constant
+ * catalog, so the picker never drifts from the backend's own fee tier list.
+ */
+export async function fetchRaydiumFeeTierOptions(studioUrl: string): Promise<RaydiumFeeTierOption[]> {
+  try {
+    const template = await raydiumTemplate(studioUrl, 'raydium-clmm-amm-config');
+    const constants = (template as unknown as { constants?: Record<string, { options?: RaydiumFeeTierOption[] }> })
+      .constants;
+    return constants?.amm_config_index?.options ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A fee tier's AmmConfig is a PDA over the config index, so the template's own address
+ * (which carries the derivation seeds) is passed through unchanged.
+ */
+export async function createRaydiumClmmFeeTierScenario(
+  studioUrl: string,
+  configIndex: string,
+  feeBps: string
+): Promise<RaydiumScenarioResult> {
+  const template = await raydiumTemplate(studioUrl, 'raydium-clmm-amm-config');
+  const scenario = {
+    id: crypto.randomUUID(),
+    name: `Raydium CLMM Fee Tier ${feeBps.trim()} bps`,
+    description: "Change a Raydium CLMM fee tier's trade fee rate.",
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values: {
+          config_index: configIndex.trim(),
+          trade_fee_rate: Number(feeBps.trim()) * 100,
+        },
+        scenarioRelativeSlot: 0,
+        label: 'Raydium CLMM fee tier',
+        enabled: true,
+        fetchBeforeUse: true,
+        account: template.address,
+      },
+    ],
+    tags: ['raydium', 'fee-tier'],
+  };
+  return postRaydiumScenario(studioUrl, scenario);
 }
 
 /**
