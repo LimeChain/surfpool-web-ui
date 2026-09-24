@@ -138,7 +138,7 @@ export async function createPumpGraduationScenario(
   studioUrl: string,
   tokenMint: string
 ): Promise<PumpGraduationScenarioResult> {
-  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
     tokenMint: tokenMint.trim(),
   });
 }
@@ -218,11 +218,11 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-async function createPumpScenarioWithMcp(
+async function createScenarioWithMcp(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PumpGraduationScenarioResult> {
+): Promise<{ id: string }> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;
@@ -243,6 +243,111 @@ async function createPumpScenarioWithMcp(
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type PancakeswapScenarioResult = { id: string };
+
+async function pancakeswapTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  const templates = (await response.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, templateId);
+  if (!template) throw new Error(`PancakeSwap template ${templateId} is unavailable`);
+
+  return template;
+}
+
+async function postPancakeswapScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<PancakeswapScenarioResult> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize PancakeSwap scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create PancakeSwap scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+
+  return { id: result.id };
+}
+
+/**
+ * Shifts a PancakeSwap CLMM pool's price by a factor through the specialized MCP tool, which
+ * recomputes sqrt_price_x64/tick_current together and checks the covering TickArrayState exists.
+ */
+export async function createPancakeswapPriceShockScenario(
+  studioUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<PancakeswapScenarioResult> {
+  return createScenarioWithMcp(studioUrl, 'create_pancakeswap_price_shock_scenario', {
+    pool: pool.trim(),
+    priceFactor: priceFactor.trim(),
+  });
+}
+
+export type PancakeswapFeeTierOption = { value: string; label: string };
+
+/**
+ * Reads amm_config_index straight off the pancakeswap-clmm-amm-config template's constant
+ * catalog, so the picker never drifts from the backend's own fee tier list.
+ */
+export async function fetchPancakeswapFeeTierOptions(studioUrl: string): Promise<PancakeswapFeeTierOption[]> {
+  try {
+    const template = await pancakeswapTemplate(studioUrl, 'pancakeswap-clmm-amm-config');
+    const constants = (
+      template as unknown as { constants?: Record<string, { options?: PancakeswapFeeTierOption[] }> }
+    ).constants;
+    return constants?.amm_config_index?.options ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A fee tier's AmmConfig is a PDA over the config index, so the template's own address
+ * (which carries the derivation seeds) is passed through unchanged.
+ */
+export async function createPancakeswapClmmFeeTierScenario(
+  studioUrl: string,
+  configIndex: string,
+  feeBps: string
+): Promise<PancakeswapScenarioResult> {
+  const template = await pancakeswapTemplate(studioUrl, 'pancakeswap-clmm-amm-config');
+  const scenario = {
+    id: crypto.randomUUID(),
+    name: `PancakeSwap CLMM Fee Tier ${feeBps.trim()} bps`,
+    description: "Change a PancakeSwap CLMM fee tier's trade fee rate.",
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values: {
+          config_index: configIndex.trim(),
+          trade_fee_rate: Number(feeBps.trim()) * 100,
+        },
+        scenarioRelativeSlot: 0,
+        label: 'PancakeSwap CLMM fee tier',
+        enabled: true,
+        fetchBeforeUse: true,
+        account: template.address,
+      },
+    ],
+    tags: ['pancakeswap', 'fee-tier'],
+  };
+  return postPancakeswapScenario(studioUrl, scenario);
 }
 
 /**
