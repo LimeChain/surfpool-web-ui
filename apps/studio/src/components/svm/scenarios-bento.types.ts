@@ -89,4 +89,17 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'PancakeSwap Fee Spike',
+    prompt:
+      'Spike the PancakeSwap CLMM tick-spacing-10, 0.2% fee tier (config G3BrCQzNu93v1acayMA23CmCMH8tf6iAFb3PYUHUHtcg) up to 10%, making every pool on that tier expensive to trade.',
+    icon: '🔥',
+    protocols: ['pancakeswap'],
+  },
+  {
+    label: 'PancakeSwap Price Shock',
+    prompt: 'Halve the price of the PancakeSwap SOL/USDC pool DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ.',
+    icon: '⚡',
+    protocols: ['pancakeswap'],
+  },
 ];
