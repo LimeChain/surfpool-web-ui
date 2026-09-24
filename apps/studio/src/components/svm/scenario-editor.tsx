@@ -114,6 +114,7 @@ const ENABLED_PROTOCOLS = [
   'kamino-liquidity',
   // Whirlpool: the Kamino liquidation-arbitrage scenario overrides its pools
   'Whirlpool',
+  'Meteora',
 ];
 
 // Kamino ships six programs. Collapse them behind one icon and let the panel

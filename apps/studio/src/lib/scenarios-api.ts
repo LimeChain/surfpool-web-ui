@@ -138,7 +138,7 @@ export async function createPumpGraduationScenario(
   studioUrl: string,
   tokenMint: string
 ): Promise<PumpGraduationScenarioResult> {
-  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
     tokenMint: tokenMint.trim(),
   });
 }
@@ -218,11 +218,11 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-async function createPumpScenarioWithMcp(
+async function createScenarioWithMcp(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PumpGraduationScenarioResult> {
+): Promise<{ id: string }> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;
@@ -243,6 +243,90 @@ async function createPumpScenarioWithMcp(
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type MeteoraScenarioResult = { id: string };
+
+async function meteoraTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  const templates = (await response.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, templateId);
+  if (!template) throw new Error(`Meteora template ${templateId} is unavailable`);
+
+  return template;
+}
+
+async function postMeteoraScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<MeteoraScenarioResult> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize Meteora scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create Meteora scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+
+  return { id: result.id };
+}
+
+/**
+ * Shifts a Meteora DLMM pool's active bin by a price factor through the specialized MCP
+ * tool, which converts the factor into a bin delta and checks the covering BinArray exists.
+ */
+export async function createMeteoraPriceShockScenario(
+  studioUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<MeteoraScenarioResult> {
+  return createScenarioWithMcp(studioUrl, 'create_meteora_price_shock_scenario', {
+    pool: pool.trim(),
+    priceFactor: priceFactor.trim(),
+  });
+}
+
+/**
+ * Meteora DLMM pools are keypair accounts (no PDA to derive), so the caller-supplied pool
+ * address is sent directly as the override's pubkey account.
+ */
+export async function createMeteoraPairHaltScenario(
+  studioUrl: string,
+  pool: string
+): Promise<MeteoraScenarioResult> {
+  const template = await meteoraTemplate(studioUrl, 'meteora-dlmm-pool-state');
+  const normalizedPool = pool.trim();
+  const scenario = {
+    id: crypto.randomUUID(),
+    name: `Meteora Pair Halt (${normalizedPool.slice(0, 6)}…)`,
+    description: 'Disable a Meteora DLMM pair so it rejects swaps.',
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values: { status: 1 },
+        scenarioRelativeSlot: 0,
+        label: 'Meteora pair halt',
+        enabled: true,
+        fetchBeforeUse: true,
+        account: { pubkey: normalizedPool },
+      },
+    ],
+    tags: ['meteora', 'pair-halt'],
+  };
+  return postMeteoraScenario(studioUrl, scenario);
 }
 
 /**
