@@ -1,8 +1,10 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { getBase64Encoder } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
+import { assertTickArrayExists, planWhirlpoolPriceShock, type WhirlpoolAccount } from './whirlpool-price-shock';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -243,6 +245,124 @@ async function createPumpScenarioWithMcp(
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type WhirlpoolScenarioResult = { id: string };
+
+async function whirlpoolPoolTemplate(studioUrl: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) throw new Error(`Failed to load scenario templates: ${response.status}`);
+
+  const template = findScenarioTemplate((await response.json()) as ScenarioTemplate[], 'whirlpool-pool-state');
+  if (!template) throw new Error('Whirlpool template whirlpool-pool-state is unavailable');
+  return template;
+}
+
+async function postWhirlpoolScenario(
+  studioUrl: string,
+  name: string,
+  description: string,
+  tags: string[],
+  override: Record<string, unknown>
+): Promise<WhirlpoolScenarioResult> {
+  const scenario = {
+    id: crypto.randomUUID(),
+    name,
+    description,
+    overrides: [{ id: crypto.randomUUID(), ...override, enabled: true, fetchBeforeUse: true }],
+    tags,
+  };
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(scenario),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create Whirlpool scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+async function fetchWhirlpoolAccount(rpcUrl: string, pubkey: string): Promise<WhirlpoolAccount | null> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getAccountInfo',
+      params: [pubkey, { encoding: 'base64', commitment: 'confirmed' }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Failed to read accounts from Surfnet: ${response.status}`);
+
+  const payload = (await response.json()) as {
+    result?: { value: { owner: string; data: [string, string] } | null };
+    error?: { message?: string };
+  };
+  if (payload.error) throw new Error(`Failed to read accounts from Surfnet: ${payload.error.message ?? 'RPC error'}`);
+
+  const value = payload.result?.value;
+  return value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null;
+}
+
+export async function createWhirlpoolPriceShockScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<WhirlpoolScenarioResult> {
+  const normalizedPool = pool.trim();
+  const factor = Number(priceFactor.trim());
+  const [template, poolAccount] = await Promise.all([
+    whirlpoolPoolTemplate(studioUrl),
+    fetchWhirlpoolAccount(rpcUrl, normalizedPool),
+  ]);
+  if (!poolAccount) throw new Error(`Whirlpool pool ${normalizedPool} was not found`);
+
+  const plan = await planWhirlpoolPriceShock(normalizedPool, poolAccount, factor);
+  assertTickArrayExists(plan, await fetchWhirlpoolAccount(rpcUrl, plan.tickArray));
+
+  return postWhirlpoolScenario(
+    studioUrl,
+    'Whirlpool Price Shock',
+    `Move Whirlpool pool ${normalizedPool} to ${factor}x its price, onto tick ${plan.newTickCurrentIndex} of the tick array starting at ${plan.tickArrayStartIndex}.`,
+    ['whirlpool', 'orca', 'price-shock'],
+    {
+      templateId: template.id,
+      values: { sqrt_price: plan.newSqrtPrice.toString(), tick_current_index: plan.newTickCurrentIndex },
+      scenarioRelativeSlot: 1,
+      label: `Whirlpool price x${factor}`,
+      account: { pubkey: normalizedPool },
+    }
+  );
+}
+
+// fee_rate is hundredths of a basis point, so the bps the dialog collects is multiplied by 100.
+export async function createWhirlpoolFeeRateScenario(
+  studioUrl: string,
+  pool: string,
+  feeBps: string
+): Promise<WhirlpoolScenarioResult> {
+  const template = await whirlpoolPoolTemplate(studioUrl);
+  const normalizedPool = pool.trim();
+  return postWhirlpoolScenario(
+    studioUrl,
+    `Whirlpool Fee Rate (${normalizedPool.slice(0, 6)}…)`,
+    "Change a Whirlpool pool's swap fee rate.",
+    ['whirlpool', 'fee-rate'],
+    {
+      templateId: template.id,
+      values: { fee_rate: Number(feeBps.trim()) * 100 },
+      scenarioRelativeSlot: 0,
+      label: 'Whirlpool fee rate',
+      account: { pubkey: normalizedPool },
+    }
+  );
 }
 
 /**
