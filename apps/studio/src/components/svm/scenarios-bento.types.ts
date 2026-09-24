@@ -89,4 +89,10 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Whirlpool Price Shock',
+    prompt: 'Halve the price of the Whirlpool SOL/USDC pool Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE.',
+    icon: '⚡',
+    protocols: ['whirlpool'],
+  },
 ];
