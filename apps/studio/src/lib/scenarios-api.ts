@@ -249,16 +249,13 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-export async function fetchScenarioTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+export async function fetchScenarioTemplates(studioUrl: string): Promise<ScenarioTemplate[]> {
   const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!response.ok) {
     throw new Error(`Failed to load scenario templates: ${response.status}`);
   }
 
-  const templates = (await response.json()) as ScenarioTemplate[];
-  const template = findScenarioTemplate(templates, templateId);
-  if (!template) throw new Error(`Scenario template ${templateId} is unavailable`);
-  return template;
+  return (await response.json()) as ScenarioTemplate[];
 }
 
 export async function createTemplateScenario(
