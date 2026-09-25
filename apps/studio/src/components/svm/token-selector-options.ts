@@ -9,6 +9,9 @@ export type TokenSelectorOption = {
   description?: string;
 };
 
+export const shouldUseConstantCombobox = (optionCount: number, isAccountSelector: boolean) =>
+  isAccountSelector || optionCount > 20;
+
 export const resolveTokenSelectorOptions = (
   catalogOptions: TokenSelectorOption[],
   currentValue: string | number | undefined
