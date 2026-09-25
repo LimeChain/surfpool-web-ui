@@ -33,6 +33,7 @@ const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const wsolUsdc = { label: 'WSOL / USDC', value: 'FLckHLGM', metadata: { base_decimals: 9, quote_decimals: 6 } };
 const cbbtcUsdc = { label: 'cbBTC / USDC', value: '9NkuAWB4', metadata: { base_decimals: 8, quote_decimals: 6 } };
+const humidifiWsolUsdc = { label: 'WSOL / USDC', value: '8sKQHfjN', metadata: { base_decimals: 9, quote_decimals: 6 } };
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -83,6 +84,46 @@ describe('PmmFairValueDialog', () => {
     expect(freshness).toMatchObject({
       templateId: 'tessera-freshness',
       account: { pubkey: '9NkuAWB4' },
+      values: { last_update_slot: 0 },
+    });
+  });
+
+  it('opens on HumidiFi and lists only HumidiFi when the surfnet serves only its templates', async () => {
+    fetchTemplatesMock.mockResolvedValue([
+      { id: 'humidifi-price', address: { pubkey: '8sKQHfjN' }, constants: { market: { options: [humidifiWsolUsdc] } } },
+    ]);
+    renderDialog();
+
+    expect(await screen.findByLabelText('Price of WSOL in USDC')).toHaveValue('100');
+    expect(optionNames('PMM protocol')).toEqual(['HumidiFi']);
+    expect(screen.getByLabelText('PMM protocol')).toHaveValue('humidifi');
+    expect(screen.queryByText(/no PMM fair value templates/)).not.toBeInTheDocument();
+  });
+
+  it('switches to HumidiFi and posts the fair value and freshness overrides', async () => {
+    const onCreated = vi.fn();
+    fetchTemplatesMock.mockResolvedValue([
+      { id: 'tessera-price', address: { pubkey: 'FLckHLGM' }, constants: { market: { options: [cbbtcUsdc] } } },
+      { id: 'humidifi-price', address: { pubkey: '8sKQHfjN' }, constants: { market: { options: [humidifiWsolUsdc] } } },
+    ]);
+    createScenarioMock.mockResolvedValue({ id: 'humidifi-scenario' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of cbBTC in USDC');
+    expect(optionNames('PMM protocol')).toEqual(['Tessera', 'HumidiFi']);
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'humidifi' } });
+    fireEvent.change(await screen.findByLabelText('Price of WSOL in USDC'), { target: { value: '208' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('humidifi-scenario'));
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
+    const [fairValue, freshness] = scenario.overrides;
+    expect(scenario.tags).toEqual(['humidifi', 'pmm', 'fair-value']);
+    expect(fairValue).toMatchObject({ templateId: 'humidifi-price', account: { pubkey: '8sKQHfjN' } });
+    expect(String(fairValue.values.fair_value)).toBe('58546795155816');
+    expect(freshness).toMatchObject({
+      templateId: 'humidifi-freshness',
+      account: { pubkey: '8sKQHfjN' },
       values: { last_update_slot: 0 },
     });
   });

@@ -77,6 +77,27 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['tessera'],
   },
   {
+    label: 'HumidiFi SOL Squeeze',
+    prompt:
+      'Create an editable WSOL/USDC scenario where SOL doubles to $400 on HumidiFi while the market keeps quoting, but its SOL inventory runs thin. Buyers should pay the new price immediately, and large SOL purchases should come back much smaller because only 5 SOL is left to pay them out. To achieve this, use the HumidiFi price override, keep the quote fresh in the same slot, and lower the WSOL vault balance. Select the market only through the override account; do not put a market value in values.',
+    icon: '💧',
+    protocols: ['humidifi'],
+  },
+  {
+    label: 'HumidiFi Stale Quote',
+    prompt:
+      "Age the quote of the default WSOL/USDC market from the catalog past its staleness limit so swaps are rejected as stale: read that market's limit from the catalog and age the quote one slot beyond it. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '⏳',
+    protocols: ['humidifi'],
+  },
+  {
+    label: 'HumidiFi Liquidity Stress',
+    prompt:
+      'Leave the default WSOL/USDC market from the catalog only a sliver of its SOL inventory so large SOL purchases come back much smaller while SOL sales still fill. Preserve the price and keep the quote fresh. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.',
+    icon: '🫧',
+    protocols: ['humidifi'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',

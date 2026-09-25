@@ -91,6 +91,9 @@ describe('AIHeader', () => {
     expect(screen.getByText('Tessera Risk-Off')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
     expect(screen.getByText('Tessera Depth Stress')).toBeInTheDocument();
+    expect(screen.getByText('HumidiFi SOL Squeeze')).toBeInTheDocument();
+    expect(screen.getByText('HumidiFi Stale Quote')).toBeInTheDocument();
+    expect(screen.getByText('HumidiFi Liquidity Stress')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {

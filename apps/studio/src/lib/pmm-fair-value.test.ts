@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildPmmFairValueScenario, PMM_FAIR_VALUE_ADAPTERS, PmmProtocols, tesseraPriceRatios } from './pmm-fair-value';
+import {
+  buildPmmFairValueScenario,
+  humidifiFairValue,
+  PMM_FAIR_VALUE_ADAPTERS,
+  PmmProtocols,
+  tesseraPriceRatios,
+} from './pmm-fair-value';
 import { toScenarioNumber } from './scenarios-api';
 
 describe('tesseraPriceRatios', () => {
@@ -55,5 +61,43 @@ describe('buildPmmFairValueScenario', () => {
     });
     expect(scenario.overrides).toHaveLength(2);
     expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(2);
+  });
+
+  it('assembles the HumidiFi fair value scenario for WSOL/USDC at 208', () => {
+    const market = {
+      label: 'WSOL / USDC',
+      value: '8sKQHfjNhvmAw94PhfvfMcytmqW6jmxvwieYyzXCCPu',
+      metadata: { pair: 'WSOL/USDC', base_decimals: 9, quote_decimals: 6 },
+    };
+    const scenario = buildPmmFairValueScenario(PMM_FAIR_VALUE_ADAPTERS[PmmProtocols.HumidiFi], market, '208');
+    const shared = { account: { pubkey: market.value }, scenarioRelativeSlot: 0, enabled: true, fetchBeforeUse: true };
+
+    expect(scenario).toMatchObject({
+      name: 'HumidiFi WSOL / USDC fair value 208',
+      description: 'Set the HumidiFi WSOL / USDC fair value to 208 and keep the quote fresh.',
+      tags: ['humidifi', 'pmm', 'fair-value'],
+      overrides: [
+        { ...shared, templateId: 'humidifi-price', values: { fair_value: toScenarioNumber('58546795155816') } },
+        { ...shared, templateId: 'humidifi-freshness', values: { last_update_slot: 0 } },
+      ],
+    });
+    expect(scenario.overrides).toHaveLength(2);
+    expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(2);
+  });
+});
+
+describe('humidifiFairValue', () => {
+  it.each([
+    ['208', 9, 6, BigInt('58546795155816')],
+    ['100', 9, 6, BigInt('28147497671065')],
+    ['1', 6, 6, BigInt('281474976710656')],
+    ['0.5', 6, 8, BigInt('14073748835532800')],
+  ])('derives the fair value for %s at %i/%i decimals', (price, base, quote, expected) => {
+    expect(humidifiFairValue(price, base, quote)).toBe(expected);
+  });
+
+  it('rejects a price whose fair value leaves the u64 range', () => {
+    expect(() => humidifiFairValue('0.0000000000001', 9, 6)).toThrow('too small');
+    expect(() => humidifiFairValue('1000000000', 6, 6)).toThrow('too large');
   });
 });

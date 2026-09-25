@@ -2,6 +2,7 @@ import { type ScenarioTemplate, toScenarioNumber } from './scenarios-api';
 
 export const PmmProtocols = {
   Tessera: 'tessera',
+  HumidiFi: 'humidifi',
 } as const;
 
 export type PmmProtocol = (typeof PmmProtocols)[keyof typeof PmmProtocols];
@@ -31,6 +32,7 @@ const ZERO = BigInt(0);
 const TEN = BigInt(10);
 const U64_MAX = BigInt('18446744073709551615');
 const TEN_POW_30 = TEN ** BigInt(30);
+const TWO_POW_48 = BigInt(2) ** BigInt(48);
 const PRICE_PATTERN = /^\d+(?:\.\d+)?$/;
 
 export function isValidPmmPrice(price: string): boolean {
@@ -80,6 +82,17 @@ export function tesseraPriceRatios(
   return { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 };
 }
 
+export function humidifiFairValue(price: string, baseDecimals: number, quoteDecimals: number): bigint {
+  const { digits, scale } = parseDecimalPrice(price);
+  const decimalsGap = baseDecimals - quoteDecimals;
+  const numerator = digits * TWO_POW_48 * TEN ** BigInt(Math.max(0, -decimalsGap));
+  const denominator = TEN ** BigInt(scale + Math.max(0, decimalsGap));
+  const fairValue = numerator / denominator;
+  if (fairValue === ZERO) throw new Error("Price is too small for this market's decimals");
+  if (fairValue > U64_MAX) throw new Error("Price is too large for this market's decimals");
+  return fairValue;
+}
+
 const tesseraAdapter: PmmFairValueAdapter = {
   protocol: PmmProtocols.Tessera,
   label: 'Tessera',
@@ -111,8 +124,37 @@ const tesseraAdapter: PmmFairValueAdapter = {
   },
 };
 
+const humidifiAdapter: PmmFairValueAdapter = {
+  protocol: PmmProtocols.HumidiFi,
+  label: 'HumidiFi',
+  marketTemplateId: 'humidifi-price',
+  buildOverrides: (market, price) => {
+    const fairValue = humidifiFairValue(
+      price,
+      readDecimals(market, 'base_decimals'),
+      readDecimals(market, 'quote_decimals')
+    );
+    const account = { pubkey: market.value };
+    return [
+      {
+        templateId: 'humidifi-price',
+        label: 'HumidiFi fair value',
+        account,
+        values: { fair_value: toScenarioNumber(fairValue.toString()) },
+      },
+      {
+        templateId: 'humidifi-freshness',
+        label: 'HumidiFi fresh quote',
+        account,
+        values: { last_update_slot: 0 },
+      },
+    ];
+  },
+};
+
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
   [PmmProtocols.Tessera]: tesseraAdapter,
+  [PmmProtocols.HumidiFi]: humidifiAdapter,
 };
 
 export function readMarketOptions(template: ScenarioTemplate): PmmMarketOption[] {
