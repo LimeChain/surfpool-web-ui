@@ -91,6 +91,10 @@ describe('AIHeader', () => {
     expect(screen.getByText('Tessera Risk-Off')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
     expect(screen.getByText('Tessera Depth Stress')).toBeInTheDocument();
+    expect(screen.getByText('GoonFi Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('GoonFi Stale Quote')).toBeInTheDocument();
+    expect(screen.getByText('GoonFi Drained Pool')).toBeInTheDocument();
+    expect(screen.getByText('GoonFi Price Dislocation')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {

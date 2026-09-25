@@ -2,6 +2,7 @@ import { type ScenarioTemplate, toScenarioNumber } from './scenarios-api';
 
 export const PmmProtocols = {
   Tessera: 'tessera',
+  GoonFi: 'goonfi',
 } as const;
 
 export type PmmProtocol = (typeof PmmProtocols)[keyof typeof PmmProtocols];
@@ -80,6 +81,20 @@ export function tesseraPriceRatios(
   return { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 };
 }
 
+export function goonfiPriceX1e6(price: string): bigint {
+  const priceX1e6 = scaleDecimal(price, 6);
+  if (priceX1e6 > U64_MAX) throw new Error('Price is too large for GoonFi');
+  return priceX1e6;
+}
+
+function readPubkey(market: PmmMarketOption, key: string): string {
+  const value = market.metadata?.[key];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Market ${market.label} has no ${key} in its catalog metadata`);
+  }
+  return value;
+}
+
 const tesseraAdapter: PmmFairValueAdapter = {
   protocol: PmmProtocols.Tessera,
   label: 'Tessera',
@@ -111,8 +126,39 @@ const tesseraAdapter: PmmFairValueAdapter = {
   },
 };
 
+const goonfiAdapter: PmmFairValueAdapter = {
+  protocol: PmmProtocols.GoonFi,
+  label: 'GoonFi',
+  marketTemplateId: 'goonfi-reference-band',
+  buildOverrides: (market, price) => {
+    const priceX1e6 = toScenarioNumber(goonfiPriceX1e6(price).toString());
+    const oracle = { pubkey: readPubkey(market, 'oracle') };
+    return [
+      {
+        templateId: 'goonfi-price',
+        label: 'GoonFi fair value',
+        account: oracle,
+        values: { bid_price_x1e6: priceX1e6, ask_price_x1e6: priceX1e6 },
+      },
+      {
+        templateId: 'goonfi-freshness',
+        label: 'GoonFi fresh quote',
+        account: oracle,
+        values: { last_update_slot: 0 },
+      },
+      {
+        templateId: 'goonfi-reference-band',
+        label: 'GoonFi reference band',
+        account: { pubkey: market.value },
+        values: { reference_price_a_x1e6: priceX1e6, reference_price_b_x1e6: priceX1e6 },
+      },
+    ];
+  },
+};
+
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
   [PmmProtocols.Tessera]: tesseraAdapter,
+  [PmmProtocols.GoonFi]: goonfiAdapter,
 };
 
 export function readMarketOptions(template: ScenarioTemplate): PmmMarketOption[] {

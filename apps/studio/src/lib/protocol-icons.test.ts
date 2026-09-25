@@ -9,6 +9,7 @@ describe('PROTOCOLS', () => {
     expect(ids).toContain('jupiter');
     expect(ids).toContain('raydium');
     expect(ids).toContain('tessera');
+    expect(ids).toContain('goonfi');
   });
 
   it('each protocol has id, name, and icon', () => {
@@ -25,6 +26,7 @@ describe('PROTOCOL_ICONS', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
     expect(PROTOCOL_ICONS['tessera']).toBe('/assets/tessera.svg');
+    expect(PROTOCOL_ICONS['goonfi']).toBe('/assets/goonfi.webp');
   });
 
   it('has the same number of entries as PROTOCOLS', () => {
@@ -36,6 +38,7 @@ describe('getProtocolIcon', () => {
   it('returns icon for known protocol', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
     expect(getProtocolIcon('tessera')).toBe('/assets/tessera.svg');
+    expect(getProtocolIcon('goonfi')).toBe('/assets/goonfi.webp');
   });
 
   it('returns default fallback for unknown protocol', () => {

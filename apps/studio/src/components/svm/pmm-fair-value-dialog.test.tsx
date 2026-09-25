@@ -33,6 +33,7 @@ const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const wsolUsdc = { label: 'WSOL / USDC', value: 'FLckHLGM', metadata: { base_decimals: 9, quote_decimals: 6 } };
 const cbbtcUsdc = { label: 'cbBTC / USDC', value: '9NkuAWB4', metadata: { base_decimals: 8, quote_decimals: 6 } };
+const goonfiSolUsdc = { label: 'SOL / USDC', value: 'GMCJvYGf', metadata: { oracle: '7yecFG22', pair: 'SOL/USDC' } };
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -85,6 +86,54 @@ describe('PmmFairValueDialog', () => {
       account: { pubkey: '9NkuAWB4' },
       values: { last_update_slot: 0 },
     });
+  });
+
+  it('opens on GoonFi and lists only GoonFi when the surfnet serves only its templates', async () => {
+    fetchTemplatesMock.mockResolvedValue([
+      {
+        id: 'goonfi-reference-band',
+        address: { pubkey: 'GMCJvYGf' },
+        constants: { market: { options: [goonfiSolUsdc] } },
+      },
+    ]);
+    renderDialog();
+
+    expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
+    expect(optionNames('PMM protocol')).toEqual(['GoonFi']);
+    expect(screen.getByLabelText('PMM protocol')).toHaveValue('goonfi');
+    expect(screen.queryByText(/no PMM fair value templates/)).not.toBeInTheDocument();
+  });
+
+  it('switches to GoonFi and posts the oracle quote, freshness and reference band', async () => {
+    const onCreated = vi.fn();
+    fetchTemplatesMock.mockResolvedValue([
+      { id: 'tessera-price', address: { pubkey: 'FLckHLGM' }, constants: { market: { options: [wsolUsdc] } } },
+      {
+        id: 'goonfi-reference-band',
+        address: { pubkey: 'GMCJvYGf' },
+        constants: { market: { options: [goonfiSolUsdc] } },
+      },
+    ]);
+    createScenarioMock.mockResolvedValue({ id: 'goonfi-scenario' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of WSOL in USDC');
+    expect(optionNames('PMM protocol')).toEqual(['Tessera', 'GoonFi']);
+    fireEvent.change(screen.getByLabelText('PMM protocol'), { target: { value: 'goonfi' } });
+    fireEvent.change(await screen.findByLabelText('Price of SOL in USDC'), { target: { value: '99.74' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('goonfi-scenario'));
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
+    const [price, freshness, band] = scenario.overrides;
+    expect(scenario.tags).toEqual(['goonfi', 'pmm', 'fair-value']);
+    expect(price).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: '7yecFG22' } });
+    expect(String(price.values.bid_price_x1e6)).toBe('99740000');
+    expect(String(price.values.ask_price_x1e6)).toBe('99740000');
+    expect(freshness).toMatchObject({ templateId: 'goonfi-freshness', account: { pubkey: '7yecFG22' } });
+    expect(band).toMatchObject({ templateId: 'goonfi-reference-band', account: { pubkey: 'GMCJvYGf' } });
+    expect(String(band.values.reference_price_a_x1e6)).toBe('99740000');
+    expect(String(band.values.reference_price_b_x1e6)).toBe('99740000');
   });
 
   it('shows an error and disables Create when the surfnet serves no PMM template', async () => {

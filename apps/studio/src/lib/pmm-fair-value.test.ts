@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildPmmFairValueScenario, PMM_FAIR_VALUE_ADAPTERS, PmmProtocols, tesseraPriceRatios } from './pmm-fair-value';
+import {
+  buildPmmFairValueScenario,
+  goonfiPriceX1e6,
+  PMM_FAIR_VALUE_ADAPTERS,
+  PmmProtocols,
+  tesseraPriceRatios,
+} from './pmm-fair-value';
 import { toScenarioNumber } from './scenarios-api';
 
 describe('tesseraPriceRatios', () => {
@@ -55,5 +61,55 @@ describe('buildPmmFairValueScenario', () => {
     });
     expect(scenario.overrides).toHaveLength(2);
     expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(2);
+  });
+
+  it('assembles the GoonFi fair value scenario for SOL/USDC at $150', () => {
+    const market = {
+      label: 'SOL / USDC',
+      value: 'GMCJvYGf5Ex2ARiMquaBDqU6iKM8uiEQkB8jCnoNfHpC',
+      metadata: { pair: 'SOL/USDC', oracle: '7yecFG22heommABQ5svcbQLK1Ua4ZrJsHPiktZ17jfm3' },
+    };
+    const scenario = buildPmmFairValueScenario(PMM_FAIR_VALUE_ADAPTERS[PmmProtocols.GoonFi], market, '150');
+    const shared = { scenarioRelativeSlot: 0, enabled: true, fetchBeforeUse: true };
+    const oracle = { pubkey: market.metadata.oracle };
+
+    expect(scenario).toMatchObject({
+      name: 'GoonFi SOL / USDC fair value 150',
+      description: 'Set the GoonFi SOL / USDC fair value to 150 and keep the quote fresh.',
+      tags: ['goonfi', 'pmm', 'fair-value'],
+      overrides: [
+        {
+          ...shared,
+          templateId: 'goonfi-price',
+          account: oracle,
+          values: { bid_price_x1e6: 150000000, ask_price_x1e6: 150000000 },
+        },
+        { ...shared, templateId: 'goonfi-freshness', account: oracle, values: { last_update_slot: 0 } },
+        {
+          ...shared,
+          templateId: 'goonfi-reference-band',
+          account: { pubkey: market.value },
+          values: { reference_price_a_x1e6: 150000000, reference_price_b_x1e6: 150000000 },
+        },
+      ],
+    });
+    expect(scenario.overrides).toHaveLength(3);
+    expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(3);
+  });
+});
+
+describe('goonfiPriceX1e6', () => {
+  it.each([
+    ['99.74', BigInt('99740000')],
+    ['1.0001', BigInt('1000100')],
+    ['150', BigInt('150000000')],
+  ])('scales %s to quote per base times 10^6', (price, expected) => {
+    expect(goonfiPriceX1e6(price)).toBe(expected);
+  });
+
+  it('accepts up to u64 max with 6 decimals and rejects anything beyond', () => {
+    expect(goonfiPriceX1e6('18446744073709.551615')).toBe(BigInt('18446744073709551615'));
+    expect(() => goonfiPriceX1e6('18446744073710')).toThrow('too large');
+    expect(() => goonfiPriceX1e6('1.0000001')).toThrow('at most 6');
   });
 });

@@ -109,6 +109,7 @@ const ENABLED_PROTOCOLS = [
   'Pump',
   'PumpSwap',
   'Tessera',
+  'GoonFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
