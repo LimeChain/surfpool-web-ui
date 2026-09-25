@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTokenSelectorOptions, type TokenSelectorOption } from './token-selector-options';
+import {
+  resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+  type TokenSelectorOption,
+} from './token-selector-options';
 
 const catalogOptions: TokenSelectorOption[] = [
   { id: 'catalog-token', label: 'Catalog token', value: 'CatalogMintpump' },
@@ -32,5 +36,16 @@ describe('resolveTokenSelectorOptions', () => {
 
     expect(result.selectedOption).toBe(catalogOptions[1]);
     expect(result.options).toBe(catalogOptions);
+  });
+});
+
+describe('shouldUseConstantCombobox', () => {
+  it('uses the shared searchable protocol selector for account choices of any size', () => {
+    expect(shouldUseConstantCombobox(2, true)).toBe(true);
+  });
+
+  it('preserves the existing threshold for ordinary constant fields', () => {
+    expect(shouldUseConstantCombobox(2, false)).toBe(false);
+    expect(shouldUseConstantCombobox(21, false)).toBe(true);
   });
 });

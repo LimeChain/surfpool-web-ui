@@ -56,6 +56,55 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'Tessera Risk-Off',
+    prompt:
+      'Create an editable WSOL/USDC scenario where SOL crashes to $50 and the Tessera maker goes risk-off. It reprices both directions to $50 but stops taking on more SOL: anyone selling SOL is turned away, while buyers can still get SOL at $50 for the next 100 slots. To achieve this, use the Tessera price override, keep the quote fresh throughout those 100 slots, and halt only the liquidity that fills SOL sellers. Select the market only through the override account; do not put a market value in values.',
+    icon: '🛡️',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Stale Quote',
+    prompt:
+      "Age the quote of the default WSOL/USDC Tessera market from the catalog to its rejection boundary so swaps in both directions are rejected as stale. Read that market's freshness limit from the catalog and age the quote by exactly that many slots. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '⏳',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Depth Stress',
+    prompt:
+      'Prepare one editable Tessera WSOL/USDC scenario that reduces both buy and sell quoting depth by 90% from the current local state. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.',
+    icon: '📉',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'GoonFi Price Shock',
+    prompt:
+      "Create an editable SOL/USDC scenario where the GoonFi oracle shocks SOL down to $100 and the market keeps trading at that price instead of rejecting it. Sellers should receive about 100 USDC per SOL, but GoonFi should pay out no more than 25 USDC, so small sells still fill and larger ones fail. To achieve this, use the GoonFi oracle price override, stamp that quote as fresh, move the market's reference band to the new price, and drain the USDC vault balance. Select the market only through the override account; do not put a market value in values.",
+    icon: '🎯',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Stale Quote',
+    prompt:
+      "Age the quote of the default SOL/USDC GoonFi market from the catalog well past its freshness window so swaps in both directions are rejected as stale. Take the market's oracle from the catalog entry. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '⏳',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Drained Pool',
+    prompt:
+      "Drain both vaults of the default SOL/USDC GoonFi market from the catalog so swaps fail for lack of inventory. Leave the price and the quote's freshness unchanged. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '🏜️',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Price Dislocation',
+    prompt:
+      "Dislocate the quote of the default SOL/USDC GoonFi market from the catalog: spread the bid and the ask a few percent apart on its oracle, stamp the quote as fresh, and set the market's reference band to bracket both so the venue still accepts swaps in both directions. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '↔️',
+    protocols: ['goonfi'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
