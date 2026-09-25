@@ -1,4 +1,4 @@
-import { createTemplateScenario, fetchScenarioTemplate } from '@/lib/scenarios-api';
+import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PmmFairValueDialog from './pmm-fair-value-dialog';
@@ -6,7 +6,7 @@ import PmmFairValueDialog from './pmm-fair-value-dialog';
 vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/scenarios-api')>()),
   createTemplateScenario: vi.fn(),
-  fetchScenarioTemplate: vi.fn(),
+  fetchScenarioTemplates: vi.fn(),
 }));
 
 vi.mock('@surfpool/ui', () => ({
@@ -29,7 +29,7 @@ vi.mock('@surfpool/ui', () => ({
 }));
 
 const createScenarioMock = vi.mocked(createTemplateScenario);
-const fetchTemplateMock = vi.mocked(fetchScenarioTemplate);
+const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const wsolUsdc = { label: 'WSOL / USDC', value: 'FLckHLGM', metadata: { base_decimals: 9, quote_decimals: 6 } };
 const cbbtcUsdc = { label: 'cbBTC / USDC', value: '9NkuAWB4', metadata: { base_decimals: 8, quote_decimals: 6 } };
@@ -43,11 +43,9 @@ const renderDialog = (onCreated = vi.fn()) =>
   render(<PmmFairValueDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={onCreated} />);
 
 beforeEach(() => {
-  fetchTemplateMock.mockResolvedValue({
-    id: 'tessera-price',
-    address: { pubkey: 'FLckHLGM' },
-    constants: { market: { options: [wsolUsdc, cbbtcUsdc] } },
-  });
+  fetchTemplatesMock.mockResolvedValue([
+    { id: 'tessera-price', address: { pubkey: 'FLckHLGM' }, constants: { market: { options: [wsolUsdc, cbbtcUsdc] } } },
+  ]);
 });
 
 afterEach(() => {
@@ -59,7 +57,8 @@ describe('PmmFairValueDialog', () => {
     renderDialog();
 
     expect(await screen.findByLabelText('Price of WSOL in USDC')).toHaveValue('100');
-    expect(fetchTemplateMock).toHaveBeenCalledWith('http://studio', 'tessera-price');
+    expect(fetchTemplatesMock).toHaveBeenCalledTimes(1);
+    expect(fetchTemplatesMock).toHaveBeenCalledWith('http://studio');
     expect(optionNames('PMM protocol')).toEqual(['Tessera']);
     expect(optionNames('PMM market')).toEqual(['WSOL / USDC', 'cbBTC / USDC']);
   });
@@ -86,6 +85,15 @@ describe('PmmFairValueDialog', () => {
       account: { pubkey: '9NkuAWB4' },
       values: { last_update_slot: 0 },
     });
+  });
+
+  it('shows an error and disables Create when the surfnet serves no PMM template', async () => {
+    fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool', address: {} }]);
+    renderDialog();
+
+    expect(await screen.findByText('This surfnet serves no PMM fair value templates')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('PMM protocol')).queryAllByRole('option')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
   it('refuses a malformed price and shows an out-of-range one without posting', async () => {

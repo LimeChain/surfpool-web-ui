@@ -11,7 +11,7 @@ import {
   PmmProtocols,
   readMarketOptions,
 } from '@/lib/pmm-fair-value';
-import { createTemplateScenario, fetchScenarioTemplate } from '@/lib/scenarios-api';
+import { createTemplateScenario, fetchScenarioTemplates, type ScenarioTemplate } from '@/lib/scenarios-api';
 import {
   Button,
   Dialog,
@@ -50,13 +50,27 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
   const [price, setPrice] = useState('100');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [marketOptions, setMarketOptions] = useState<PmmMarketOption[] | null>(null);
+  const [templates, setTemplates] = useState<ScenarioTemplate[] | null>(null);
 
   // DERIVED STATE
-  const adapter = PMM_FAIR_VALUE_ADAPTERS[protocol];
-  const selectedMarket = marketOptions?.find((option) => option.value === market);
+  const availableAdapters = Object.values(PMM_FAIR_VALUE_ADAPTERS).filter(
+    (candidate) => !!templates?.some((template) => template.id === candidate.marketTemplateId)
+  );
+  const adapter = availableAdapters.find((candidate) => candidate.protocol === protocol) ?? availableAdapters[0];
+  const marketTemplate = templates?.find((template) => template.id === adapter?.marketTemplateId);
+  const marketOptions = templates === null ? null : marketTemplate ? readMarketOptions(marketTemplate) : [];
+  const selectedMarket = marketOptions?.find((option) => option.value === market) ?? marketOptions?.[0];
   const canCreate = !!selectedMarket && isValidPmmPrice(price) && !isCreating;
   const priceLabel = marketPairLabel(selectedMarket);
+  const catalogError =
+    templates === null
+      ? null
+      : !adapter
+        ? 'This surfnet serves no PMM fair value templates'
+        : marketOptions?.length === 0
+          ? `No ${adapter.label} markets are listed in the template catalog`
+          : null;
+  const visibleError = error ?? catalogError;
 
   // HANDLERS
   const handleClose = () => {
@@ -82,7 +96,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCreate || !selectedMarket) return;
+    if (!canCreate || !selectedMarket || !adapter) return;
 
     setIsCreating(true);
     setError(null);
@@ -102,28 +116,22 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setMarketOptions(null);
+    setTemplates(null);
 
-    fetchScenarioTemplate(studioUrl, adapter.marketTemplateId)
-      .then((template) => {
-        if (cancelled) return;
-        const options = readMarketOptions(template);
-        setMarketOptions(options);
-        setMarket((current) =>
-          options.some((option) => option.value === current) ? current : (options[0]?.value ?? '')
-        );
-        if (options.length === 0) setError(`No ${adapter.label} markets are listed in the template catalog`);
+    fetchScenarioTemplates(studioUrl)
+      .then((loadedTemplates) => {
+        if (!cancelled) setTemplates(loadedTemplates);
       })
       .catch((loadError: unknown) => {
         if (cancelled) return;
-        setMarketOptions([]);
-        setError(loadError instanceof Error ? loadError.message : `Failed to load ${adapter.label} markets`);
+        setTemplates([]);
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load PMM markets');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [open, studioUrl, adapter]);
+  }, [open, studioUrl]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
@@ -136,8 +144,14 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
         <div className="mt-5 space-y-4">
           <div>
             <span className="mb-1.5 block text-sm font-medium text-zinc-300">PMM protocol</span>
-            <Listbox aria-label="PMM protocol" value={protocol} onChange={handleProtocolSelect} disabled={isCreating}>
-              {Object.values(PMM_FAIR_VALUE_ADAPTERS).map(renderProtocolOption)}
+            <Listbox
+              aria-label="PMM protocol"
+              placeholder={templates === null ? 'Loading protocols…' : undefined}
+              value={adapter?.protocol ?? ''}
+              onChange={handleProtocolSelect}
+              disabled={isCreating || !availableAdapters.length}
+            >
+              {availableAdapters.map(renderProtocolOption)}
             </Listbox>
           </div>
           <div>
@@ -145,7 +159,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
             <Listbox
               aria-label="PMM market"
               placeholder={marketOptions === null ? 'Loading markets…' : undefined}
-              value={market}
+              value={selectedMarket?.value ?? ''}
               onChange={handleMarketSelect}
               disabled={isCreating || !marketOptions?.length}
             >
@@ -168,7 +182,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
               Positive decimal. The raw fields are derived from the selected market and its catalog metadata.
             </p>
           </div>
-          {!!error && <p className="text-sm text-red-400">{error}</p>}
+          {!!visibleError && <p className="text-sm text-red-400">{visibleError}</p>}
         </div>
         <DialogActions>
           <Button type="button" color="dark" onClick={handleClose} disabled={isCreating}>
