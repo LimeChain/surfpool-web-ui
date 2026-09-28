@@ -112,6 +112,7 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const accountRequestRef = useRef(0);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -524,7 +525,8 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action) => {
+  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
+    const requestId = ++accountRequestRef.current;
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
@@ -532,6 +534,7 @@ export default function ScenarioEditor({
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
+      setLoadingAccountData(false);
       return;
     }
 
@@ -549,6 +552,7 @@ export default function ScenarioEditor({
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
+      if (accountPubkey) addressString = accountPubkey;
 
       // Step 1: Fetch account info with parsed JSON
       logger.log('🔍 Fetching account info for address:', addressString);
@@ -576,6 +580,7 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
+      if (requestId !== accountRequestRef.current) return;
 
       if (accountInfoData.result?.value?.data?.parsed) {
         // Populate accountData with the parsed data
@@ -587,7 +592,7 @@ export default function ScenarioEditor({
       setLoadingAccountData(false);
     } catch (error) {
       console.error('Error loading account data:', error);
-      setLoadingAccountData(false);
+      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
   };
 
@@ -1178,7 +1183,7 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction);
+                                                    await handleActionSelect(foundAction, action.account?.pubkey);
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data

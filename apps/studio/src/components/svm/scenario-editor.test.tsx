@@ -204,3 +204,72 @@ for (const market of marketTemplates) {
     });
   });
 }
+
+const rpcAccounts = () =>
+  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params[0]);
+
+it('fetches the saved account when reopening a saved override', async () => {
+  const template = { ...collateralTemplate, address: { pubkey: 'template-trader' } };
+  await openEditor(template, {}, { pubkey: 'saved-trader' });
+  await waitFor(() => expect(rpcAccounts()).toEqual(['saved-trader']));
+});
+
+it('ignores an older account response that resolves after a newer selection', async () => {
+  const other = { ...collateralTemplate, id: 'other-collateral', name: 'Other collateral', address: { pubkey: 'b' } };
+  const pending: Array<{ account: string; resolve: (collateral: number) => void }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.endsWith('/templates')) return Promise.resolve({ ok: true, json: async () => [collateralTemplate, other] });
+    if (url !== 'http://rpc') return Promise.resolve({ ok: true, json: async () => ({}) });
+    return new Promise((resolve) => {
+      pending.push({
+        account: JSON.parse(`${init?.body}`).params[0],
+        resolve: (collateral) =>
+          resolve({
+            ok: true,
+            json: async () => ({
+              result: { value: { data: { parsed: { traderState: { quoteLotCollateral: collateral } } } } },
+            }),
+          }),
+      });
+    });
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="stale-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'phoenix-eternal',
+              actionId: collateralTemplate.id,
+              protocol: 'Phoenix Eternal',
+              action: collateralTemplate.name,
+              account: { pubkey: 'a' },
+              overrides: {},
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${collateralTemplate.name}`));
+  fireEvent.click(await screen.findByText(collateralTemplate.name));
+  await waitFor(() => expect(pending).toHaveLength(1));
+  pending[0].resolve(1);
+
+  fireEvent.click(await screen.findByRole('heading', { name: 'Other collateral' }));
+  await waitFor(() => expect(pending).toHaveLength(2));
+  fireEvent.click(screen.getByRole('heading', { name: collateralTemplate.name }));
+  await waitFor(() => expect(pending).toHaveLength(3));
+  expect(pending.map(({ account }) => account)).toEqual(['a', 'b', 'trader']);
+
+  pending[2].resolve(3);
+  const collateral = () => (screen.getByPlaceholderText('Enter quoteLotCollateral...') as HTMLInputElement).value;
+  await waitFor(() => expect(collateral()).toBe('3'));
+  pending[1].resolve(2);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(collateral()).toBe('3');
+});
