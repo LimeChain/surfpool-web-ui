@@ -6,7 +6,7 @@ import { parseScenariosJson } from '@/lib/scenarios-api';
 import { Scenario } from '@/lib/scenarios-data';
 import { logger } from '@surfpool/shared';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 function ScenariosContent() {
   const searchParams = useSearchParams();
@@ -15,6 +15,10 @@ function ScenariosContent() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDetailPaneOpen, setIsDetailPaneOpen] = useState(false);
+  const [pendingRefresh, setPendingRefresh] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
+  const latestLoadRequestRef = useRef(0);
 
   // Read search params reactively - these will update when URL changes
   const selectedId = searchParams?.get('id') || undefined;
@@ -26,9 +30,15 @@ function ScenariosContent() {
   }, [selectedId, selectedTab]);
 
   useEffect(() => {
+    const requestId = latestLoadRequestRef.current + 1;
+    latestLoadRequestRef.current = requestId;
+
     async function loadScenarios() {
       try {
-        setLoading(true);
+        // Full-screen spinner only on the first load. Later refetches (create,
+        // close-with-pending-update) swap the list in the background, so the page
+        // does not blank out and feel like a hard reload.
+        if (!hasLoadedRef.current) setLoading(true);
 
         const response = await fetch(`${studioUrl}/v1/scenarios`);
 
@@ -37,6 +47,7 @@ function ScenariosContent() {
         }
 
         const data = parseScenariosJson(await response.text());
+        if (requestId !== latestLoadRequestRef.current) return;
         logger.log('Loaded scenarios from API:', data);
 
         // Convert API response to scenarios array
@@ -162,26 +173,36 @@ function ScenariosContent() {
         }
 
         setScenarios(loadedScenarios);
+        setRefreshError(null);
       } catch (error) {
+        if (requestId !== latestLoadRequestRef.current) return;
         console.error('Error loading scenarios:', error);
-        setScenarios([]);
+        // Only blank the list if we never had one. A failed background refetch
+        // keeps the current list rather than wiping it, but says the refresh failed.
+        if (!hasLoadedRef.current) {
+          setScenarios([]);
+        } else {
+          setRefreshError("Couldn't refresh the scenarios list.");
+        }
       } finally {
+        if (requestId !== latestLoadRequestRef.current) return;
         setLoading(false);
+        hasLoadedRef.current = true;
       }
     }
 
     loadScenarios();
   }, [refreshKey, studioUrl]);
 
-  // Listen for scenario updates (but not when detail pane is open to avoid refresh loops)
+  // The editor dispatches this while its pane is open; defer the refresh to close.
   useEffect(() => {
     const handleScenarioUpdate = () => {
-      // Only refresh if detail pane is closed
-      if (!isDetailPaneOpen) {
+      if (isDetailPaneOpen) {
+        logger.log('Scenario updated while detail pane open - deferring refresh until close');
+        setPendingRefresh(true);
+      } else {
         logger.log('Scenario updated event received, refreshing scenarios');
         setRefreshKey((prev) => prev + 1);
-      } else {
-        logger.log('Scenario updated event received, but detail pane is open - skipping refresh');
       }
     };
 
@@ -189,8 +210,21 @@ function ScenariosContent() {
     return () => window.removeEventListener('scenarioUpdated', handleScenarioUpdate);
   }, [isDetailPaneOpen]);
 
+  // Flush the deferred refresh once the detail pane closes.
+  useEffect(() => {
+    if (!isDetailPaneOpen && pendingRefresh) {
+      logger.log('Detail pane closed with a pending update - refreshing scenarios');
+      setRefreshKey((prev) => prev + 1);
+      setPendingRefresh(false);
+    }
+  }, [isDetailPaneOpen, pendingRefresh]);
+
   const handleRefresh = () => {
     setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleDismissRefreshError = () => {
+    setRefreshError(null);
   };
 
   if (loading) {
@@ -202,13 +236,34 @@ function ScenariosContent() {
   }
 
   return (
-    <ScenariosBento
-      scenarios={scenarios}
-      onRefresh={handleRefresh}
-      onDetailPaneChange={setIsDetailPaneOpen}
-      initialSelectedId={selectedId}
-      initialTab={selectedTab}
-    />
+    <>
+      <ScenariosBento
+        scenarios={scenarios}
+        onRefresh={handleRefresh}
+        onDetailPaneChange={setIsDetailPaneOpen}
+        initialSelectedId={selectedId}
+        initialTab={selectedTab}
+      />
+      {!!refreshError && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-6 z-50 flex items-center gap-3 rounded-lg bg-zinc-900/90 px-3 py-2 text-sm text-red-400 shadow-lg"
+        >
+          <span>{refreshError}</span>
+          <button type="button" onClick={handleRefresh} className="text-zinc-300 underline-offset-2 hover:underline">
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={handleDismissRefreshError}
+            aria-label="Dismiss"
+            className="text-zinc-500 hover:text-zinc-300"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
