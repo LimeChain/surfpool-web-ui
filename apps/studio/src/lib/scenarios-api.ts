@@ -280,17 +280,10 @@ async function phoenixMarketTemplate(studioUrl: string, templateId: string): Pro
   return template;
 }
 
-/**
- * Phoenix market symbols come live from the `list_phoenix_markets` MCP tool, which decodes the
- * running fork's PerpAssetMap - so a newly listed or delisted market shows up without a redeploy.
- * Returns [] when the market catalog is unavailable.
- */
-export async function fetchPhoenixMarketSymbols(
-  studioUrl: string,
-  toolName: string = 'list_phoenix_markets'
-): Promise<string[]> {
+/** Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. */
+export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<string[]> {
   try {
-    const payload = await callMcpToolJson<{ error?: string | null; symbols?: string[] }>(studioUrl, toolName, {});
+    const payload = await callMcpToolJson<{ error?: string | null; symbols?: string[] }>(studioUrl, source, {});
     if (!payload || payload.error) return [];
     return payload.symbols ?? [];
   } catch {
@@ -319,13 +312,13 @@ async function createPhoenixMarketScenario(
     overrides: [
       {
         id: crypto.randomUUID(),
-        // The Phoenix writers take tick values as decimal strings, exactly as typed.
         templateId: template.id,
         values,
         scenarioRelativeSlot: 0,
         label,
         enabled: true,
-        fetchBeforeUse: false,
+        // A stale map fails Phoenix's mark staleness check, so fork the live one first.
+        fetchBeforeUse: true,
         account: template.address,
       },
     ],
@@ -366,20 +359,19 @@ export async function createPhoenixDirectMarkScenario(
   );
 }
 
-export async function createPhoenixReferencePriceScenario(
+export async function createPhoenixMaintenanceMarginScenario(
   studioUrl: string,
   symbol: string,
-  spotTicks: string,
-  perpTicks: string
+  riskFactor: string
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixMarketScenario(
     studioUrl,
-    'phoenix-reference-price-divergence',
-    `Phoenix ${symbol.trim()} Spot/Perp Reference Divergence`,
-    'Set independent spot and external-perp references while preserving the current mark.',
-    `Phoenix ${symbol.trim()} spot/perp reference divergence`,
-    ['phoenix-eternal', 'reference-divergence', 'risk'],
-    { symbol: symbol.trim(), spot_ticks: spotTicks.trim(), perp_ticks: perpTicks.trim() }
+    'phoenix-maintenance-margin-stress',
+    `Phoenix ${symbol.trim()} Maintenance Margin Stress`,
+    'Set the maintenance margin risk factor for one Phoenix Eternal market.',
+    `Phoenix ${symbol.trim()} maintenance margin stress`,
+    ['phoenix-eternal', 'maintenance-margin', 'risk'],
+    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
   );
 }
 

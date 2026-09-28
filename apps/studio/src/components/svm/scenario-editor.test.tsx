@@ -12,7 +12,7 @@ vi.mock('@surfpool/ui', () => ({
 vi.mock('./transaction-inspector', () => ({ default: () => null }));
 vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/scenarios-api')>()),
-  fetchPhoenixMarketSymbols: vi.fn().mockResolvedValue([]),
+  fetchDynamicRefOptions: vi.fn().mockResolvedValue([]),
 }));
 
 const collateralTemplate = {
@@ -146,9 +146,9 @@ const marketTemplates = [
     prices: ['target_ticks'],
   },
   {
-    name: 'Reference prices',
-    id: 'phoenix-reference-price-divergence',
-    prices: ['spot_ticks', 'perp_ticks'],
+    name: 'Maintenance margin',
+    id: 'phoenix-maintenance-margin-stress',
+    prices: ['maintenance_risk_factor_bps'],
   },
 ];
 

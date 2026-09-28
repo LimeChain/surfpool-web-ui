@@ -8,7 +8,7 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
-  fetchPhoenixMarketSymbols,
+  fetchDynamicRefOptions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -211,7 +211,7 @@ describe('createPhoenixCollateralScenario', () => {
   });
 });
 
-describe('fetchPhoenixMarketSymbols', () => {
+describe('fetchDynamicRefOptions', () => {
   it('returns the live symbols from the list_phoenix_markets tool', async () => {
     vi.mocked(callMCPTool).mockResolvedValue({
       content: [
@@ -222,19 +222,8 @@ describe('fetchPhoenixMarketSymbols', () => {
       ],
     });
 
-    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual(['SOL', 'BTC']);
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual(['SOL', 'BTC']);
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
-  });
-
-  it('passes a custom source tool name through', async () => {
-    vi.mocked(callMCPTool).mockResolvedValue({
-      content: [{ type: 'text', text: JSON.stringify({ symbols: ['ETH'] }) }],
-    });
-
-    await expect(fetchPhoenixMarketSymbols('http://studio', 'list_other_markets')).resolves.toEqual([
-      'ETH',
-    ]);
-    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_other_markets', {}, 'session');
   });
 
   it('falls back to [] when the tool reports an error', async () => {
@@ -242,7 +231,7 @@ describe('fetchPhoenixMarketSymbols', () => {
       content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
     });
 
-    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual([]);
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
   });
 
 });

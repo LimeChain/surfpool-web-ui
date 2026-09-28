@@ -3,8 +3,8 @@
 import {
   createPhoenixCollateralScenario,
   createPhoenixDirectMarkScenario,
-  createPhoenixReferencePriceScenario,
-  fetchPhoenixMarketSymbols,
+  createPhoenixMaintenanceMarginScenario,
+  fetchDynamicRefOptions,
 } from '@/lib/scenarios-api';
 import {
   Button,
@@ -21,7 +21,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 const PhoenixStateMode = {
   Collateral: 'collateral',
   DirectMark: 'direct-mark',
-  ReferencePrices: 'reference-prices',
+  MaintenanceMargin: 'maintenance-margin',
 } as const;
 
 type PhoenixStateMode = (typeof PhoenixStateMode)[keyof typeof PhoenixStateMode];
@@ -29,7 +29,7 @@ type PhoenixStateMode = (typeof PhoenixStateMode)[keyof typeof PhoenixStateMode]
 const PhoenixStateModeLabel: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.Collateral]: 'Liquidation-risk collateral',
   [PhoenixStateMode.DirectMark]: 'Direct mark-price adjustment',
-  [PhoenixStateMode.ReferencePrices]: 'Spot/perp reference divergence',
+  [PhoenixStateMode.MaintenanceMargin]: 'Maintenance margin stress',
 };
 
 const phoenixStateModes = Object.values(PhoenixStateMode);
@@ -55,13 +55,12 @@ const renderMarketOption = (marketSymbol: string) => (
 
 export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated }: PhoenixStateDialogProps) {
   // STATE
-  const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.ReferencePrices);
+  const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.DirectMark);
   const [trader, setTrader] = useState('');
   const [symbol, setSymbol] = useState('BTC');
   const [targetQuoteLots, setTargetQuoteLots] = useState('');
   const [targetTicks, setTargetTicks] = useState('');
-  const [spotTicks, setSpotTicks] = useState('');
-  const [perpTicks, setPerpTicks] = useState('');
+  const [riskFactor, setRiskFactor] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [symbolOptions, setSymbolOptions] = useState<string[]>([]);
@@ -70,16 +69,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   // DERIVED STATE
   const hasSignedCollateral = /^-?\d+$/.test(targetQuoteLots.trim());
   const hasTargetTicks = /^\d+$/.test(targetTicks.trim());
-  const hasSpotTicks = /^\d+$/.test(spotTicks.trim());
-  const hasPerpTicks = /^\d+$/.test(perpTicks.trim());
+  const hasRiskFactor = /^\d+$/.test(riskFactor.trim()) && Number(riskFactor) >= 1 && Number(riskFactor) <= 65535;
   const hasSymbolCatalog = symbolOptions.length > 0;
   const hasSymbol = !isLoadingSymbols && symbolOptions.includes(symbol);
   const canCreate =
     !isCreating &&
     ((mode === PhoenixStateMode.Collateral && !!trader.trim() && hasSignedCollateral) ||
       (mode === PhoenixStateMode.DirectMark && hasSymbol && hasTargetTicks) ||
-      (mode === PhoenixStateMode.ReferencePrices && hasSymbol && hasSpotTicks && hasPerpTicks));
-  const visibleError = error;
+      (mode === PhoenixStateMode.MaintenanceMargin && hasSymbol && hasRiskFactor));
 
   // HANDLERS
   const handleClose = () => {
@@ -113,13 +110,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleSpotTicksChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setSpotTicks(event.target.value);
-    setError(null);
-  };
-
-  const handlePerpTicksChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setPerpTicks(event.target.value);
+  const handleRiskFactorChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setRiskFactor(event.target.value);
     setError(null);
   };
 
@@ -136,7 +128,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
           ? await createPhoenixCollateralScenario(studioUrl, trader, targetQuoteLots)
           : mode === PhoenixStateMode.DirectMark
             ? await createPhoenixDirectMarkScenario(studioUrl, symbol, targetTicks)
-            : await createPhoenixReferencePriceScenario(studioUrl, symbol, spotTicks, perpTicks);
+            : await createPhoenixMaintenanceMarginScenario(studioUrl, symbol, riskFactor);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -160,7 +152,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
       setIsLoadingSymbols(false);
     };
 
-    fetchPhoenixMarketSymbols(studioUrl).then(handleSymbolsLoaded);
+    fetchDynamicRefOptions(studioUrl, 'list_phoenix_markets').then(handleSymbolsLoaded);
 
     return () => {
       cancelled = true;
@@ -226,31 +218,23 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
                   onChange={handleTargetTicksChange}
                 />
               ) : (
-                <>
-                  <Input
-                    aria-label="Spot reference ticks"
-                    placeholder="Spot reference ticks"
-                    value={spotTicks}
-                    onChange={handleSpotTicksChange}
-                  />
-                  <Input
-                    aria-label="Perp reference ticks"
-                    placeholder="External-perp reference ticks"
-                    value={perpTicks}
-                    onChange={handlePerpTicksChange}
-                  />
-                </>
+                <Input
+                  aria-label="Maintenance risk factor"
+                  placeholder="Maintenance risk factor in bps (live markets use 5000)"
+                  value={riskFactor}
+                  onChange={handleRiskFactorChange}
+                />
               )}
             </>
           )}
-          {!!visibleError && <p className="text-sm text-red-400">{visibleError}</p>}
+          {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogActions>
           <Button type="button" color="dark" onClick={handleClose} disabled={isCreating}>
             Cancel
           </Button>
           <Button type="submit" color="pink" disabled={!canCreate}>
-            {isCreating ? 'Validating…' : 'Create scenario'}
+            {isCreating ? 'Creating…' : 'Create scenario'}
           </Button>
         </DialogActions>
       </form>

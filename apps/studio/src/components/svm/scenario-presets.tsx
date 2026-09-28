@@ -67,7 +67,7 @@ export default function ScenarioPresets({
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-zinc-100">Phoenix state</span>
             <span className="mt-1 block text-sm leading-5 text-zinc-500">
-              Prepare liquidation risk, direct mark, or spot/perp divergence.
+              Prepare liquidation risk, a direct mark shock or stricter margin.
             </span>
           </span>
           <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan-400" />

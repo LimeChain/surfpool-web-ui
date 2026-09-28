@@ -3,7 +3,7 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
-  fetchPhoenixMarketSymbols,
+  fetchDynamicRefOptions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -117,9 +117,7 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
 
-  const [dynamicOptions, setDynamicOptions] = useState<
-    Record<string, { label: string; description: string; options: { id: string; label: string; value: string }[] }>
-  >({});
+  const [dynamicOptions, setDynamicOptions] = useState<Record<string, string[]>>({});
   const isFirstSlotsChangeRef = useRef(true);
 
   useEffect(() => {
@@ -136,18 +134,11 @@ export default function ScenarioEditor({
     }
 
     let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        sources.map(async (source) => {
-          const symbols = await fetchPhoenixMarketSymbols(studioUrl, source);
-          const options = symbols.map((symbol) => ({ id: symbol, label: symbol, value: symbol }));
-          return [source, { label: 'Market', description: 'Live markets from the running fork', options }] as const;
-        })
-      );
-      if (!cancelled) {
-        setDynamicOptions(Object.fromEntries(entries));
-      }
-    })();
+    const handleOptionsLoaded = (optionLists: string[][]) => {
+      if (cancelled) return;
+      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
+    };
+    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, source))).then(handleOptionsLoaded);
 
     return () => {
       cancelled = true;
@@ -2147,11 +2138,15 @@ export default function ScenarioEditor({
                                           type: prop.type,
                                           constantDef:
                                             prop.type === 'dynamic_ref'
-                                              ? (dynamicOptions[prop.source] ?? {
-                                                  label: prop.label ?? 'Market',
+                                              ? {
+                                                  label: prop.label ?? prop.path,
                                                   description: prop.description,
-                                                  options: [],
-                                                })
+                                                  options: (dynamicOptions[prop.source] ?? []).map((value) => ({
+                                                    id: value,
+                                                    label: value,
+                                                    value,
+                                                  })),
+                                                }
                                               : constants[prop.constant],
                                           label: prop.label,
                                           description: prop.description,
