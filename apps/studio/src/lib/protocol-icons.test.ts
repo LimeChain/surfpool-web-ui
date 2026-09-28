@@ -44,8 +44,4 @@ describe('getProtocolIcon', () => {
   it('returns custom fallback for unknown protocol', () => {
     expect(getProtocolIcon('unknown', '/custom/fallback.svg')).toBe('/custom/fallback.svg');
   });
-
-  it('returns the default fallback when the supplied fallback is empty', () => {
-    expect(getProtocolIcon('unknown', '')).toBe('/assets/surfpool.svg');
-  });
 });

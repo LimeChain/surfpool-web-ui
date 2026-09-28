@@ -138,7 +138,7 @@ export async function createPumpGraduationScenario(
   studioUrl: string,
   tokenMint: string
 ): Promise<PumpGraduationScenarioResult> {
-  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
     tokenMint: tokenMint.trim(),
   });
 }
@@ -218,11 +218,11 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-async function createPumpScenarioWithMcp(
+async function callMcpToolJson<T>(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PumpGraduationScenarioResult> {
+): Promise<T | undefined> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;
@@ -234,9 +234,16 @@ async function createPumpScenarioWithMcp(
       break;
     }
   }
-  if (!text) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
+  return text ? (JSON.parse(text) as T) : undefined;
+}
 
-  const payload = JSON.parse(text) as { error?: string | null; url?: string | null };
+async function createScenarioWithMcp(
+  studioUrl: string,
+  toolName: string,
+  args: Record<string, string>
+): Promise<{ id: string }> {
+  const payload = await callMcpToolJson<{ error?: string | null; url?: string | null }>(studioUrl, toolName, args);
+  if (!payload) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
   if (payload.error) throw new Error(payload.error);
   if (!payload.url) throw new Error(`Surfpool MCP tool ${toolName} returned no scenario URL`);
 
@@ -254,7 +261,7 @@ export async function createPhoenixCollateralScenario(
   trader: string,
   targetQuoteLots: string
 ): Promise<PhoenixScenarioResult> {
-  return createPhoenixScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
     trader: trader.trim(),
     targetQuoteLots: targetQuoteLots.trim(),
   });
@@ -283,21 +290,8 @@ export async function fetchPhoenixMarketSymbols(
   toolName: string = 'list_phoenix_markets'
 ): Promise<string[]> {
   try {
-    const { sessionId } = await fetchMCPTools(studioUrl);
-    const result = (await callMCPTool(studioUrl, toolName, {}, sessionId)) as {
-      content?: Array<{ type?: string; text?: string }>;
-    };
-    let text: string | undefined;
-    for (const content of result.content ?? []) {
-      if (content.type === 'text' && content.text) {
-        text = content.text;
-        break;
-      }
-    }
-    if (!text) return [];
-
-    const payload = JSON.parse(text) as { error?: string | null; symbols?: string[] };
-    if (payload.error) return [];
+    const payload = await callMcpToolJson<{ error?: string | null; symbols?: string[] }>(studioUrl, toolName, {});
+    if (!payload || payload.error) return [];
     return payload.symbols ?? [];
   } catch {
     return [];
@@ -387,37 +381,6 @@ export async function createPhoenixReferencePriceScenario(
     ['phoenix-eternal', 'reference-divergence', 'risk'],
     { symbol: symbol.trim(), spot_ticks: spotTicks.trim(), perp_ticks: perpTicks.trim() }
   );
-}
-
-/**
- * Collateral stress is the one Phoenix scenario a template cannot express: the tool refuses to
- * raise collateral past the vault backing it, which needs the live trader account.
- */
-async function createPhoenixScenarioWithMcp(
-  studioUrl: string,
-  toolName: string,
-  args: Record<string, string>
-): Promise<PhoenixScenarioResult> {
-  const { sessionId } = await fetchMCPTools(studioUrl);
-  const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
-    content?: Array<{ type?: string; text?: string }>;
-  };
-  let text: string | undefined;
-  for (const content of result.content ?? []) {
-    if (content.type === 'text' && content.text) {
-      text = content.text;
-      break;
-    }
-  }
-  if (!text) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
-
-  const payload = JSON.parse(text) as { error?: string | null; url?: string | null };
-  if (payload.error) throw new Error(payload.error);
-  if (!payload.url) throw new Error(`Surfpool MCP tool ${toolName} returned no scenario URL`);
-
-  const scenarioId = new URL(payload.url, studioUrl).searchParams.get('id');
-  if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
-  return { id: scenarioId };
 }
 
 /**

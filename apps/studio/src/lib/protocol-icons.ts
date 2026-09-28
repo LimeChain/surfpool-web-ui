@@ -23,5 +23,5 @@ export const PROTOCOLS: Protocol[] = [
 export const PROTOCOL_ICONS: Record<string, string> = Object.fromEntries(PROTOCOLS.map((p) => [p.id, p.icon]));
 
 export function getProtocolIcon(protocolId: string, fallback = '/assets/surfpool.svg'): string {
-  return PROTOCOL_ICONS[protocolId] || fallback || '/assets/surfpool.svg';
+  return PROTOCOL_ICONS[protocolId] || fallback;
 }

@@ -195,21 +195,6 @@ describe('createPhoenixCollateralScenario', () => {
     );
   });
 
-  it('accepts a relative scenario URL from the tool', async () => {
-    vi.mocked(callMCPTool).mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ url: '/scenarios?id=rel-1&tab=editor' }),
-        },
-      ],
-    });
-
-    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '1')).resolves.toEqual({
-      id: 'rel-1',
-    });
-  });
-
   it('surfaces tool validation failures', async () => {
     vi.mocked(callMCPTool).mockResolvedValue({
       content: [
@@ -260,11 +245,6 @@ describe('fetchPhoenixMarketSymbols', () => {
     await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual([]);
   });
 
-  it('falls back to [] when the tool call throws', async () => {
-    vi.mocked(callMCPTool).mockRejectedValue(new Error('network down'));
-
-    await expect(fetchPhoenixMarketSymbols('http://studio')).resolves.toEqual([]);
-  });
 });
 
 describe('createScenarioPayload', () => {

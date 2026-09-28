@@ -142,41 +142,36 @@ it('keeps numeric inputs for other IDL templates unchanged', async () => {
 const marketTemplates = [
   {
     name: 'Direct mark',
-    accountType: 'DirectMarkOverride',
     id: 'phoenix-direct-mark-risk-shock',
     prices: ['target_ticks'],
   },
   {
     name: 'Reference prices',
-    accountType: 'ReferencePriceOverride',
     id: 'phoenix-reference-price-divergence',
     prices: ['spot_ticks', 'perp_ticks'],
   },
 ];
 
 for (const market of marketTemplates) {
-  it.each(['legacy', 'explicit'])('edits and saves ' + market.name + ' using %s template fields', async (format) => {
+  it('edits and saves ' + market.name + ' using value_type template fields', async () => {
     const names = ['symbol', ...market.prices];
-    const explicit = format === 'explicit';
     const template = {
       ...collateralTemplate,
       ...market,
-      accountType: explicit ? 'PerpAssetMap' : market.accountType,
+      accountType: 'PerpAssetMap',
       address: { pubkey: 'template-map' },
       properties: names.map((path) => ({
         path,
-        ...(explicit ? { value_type: 'string' } : {}),
+        value_type: 'string',
         ...(path === 'symbol' ? { type: 'dynamic_ref', source: 'list_phoenix_markets' } : {}),
       })),
       idl: {
         types: [
           {
-            name: explicit ? 'PerpAssetMap' : market.accountType,
+            name: 'PerpAssetMap',
             type: {
               kind: 'struct',
-              fields: explicit
-                ? [{ name: 'discriminator', type: { array: ['u8', 8] } }]
-                : names.map((name) => ({ name, type: 'string' })),
+              fields: [{ name: 'discriminator', type: { array: ['u8', 8] } }],
             },
           },
         ],

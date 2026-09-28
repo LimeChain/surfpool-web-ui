@@ -1,6 +1,5 @@
 'use client';
 
-import { getScenarioFields } from '@/lib/scenario-fields';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
@@ -435,6 +434,42 @@ export default function ScenarioEditor({
     );
   });
 
+  // Helper function to extract fields from IDL using accountType
+  const getFieldsFromIDL = (template: any) => {
+    if (!template?.idl || !template?.accountType) return [];
+
+    // First, try to find the account in the accounts array
+    if (template.idl.accounts && Array.isArray(template.idl.accounts)) {
+      const account = template.idl.accounts.find((acc: any) => acc.name === template.accountType);
+
+      if (account?.type?.fields) {
+        return account.type.fields;
+      }
+    }
+
+    // Second, try to find in the types array using accountType
+    if (template.idl.types && Array.isArray(template.idl.types)) {
+      const typeDefinition = template.idl.types.find(
+        (type: any) => type.name === template.accountType && type.type?.kind === 'struct'
+      );
+
+      if (typeDefinition?.type?.fields) {
+        return typeDefinition.type.fields;
+      }
+    }
+
+    // Fallback: find any struct type (old behavior)
+    if (template.idl.types) {
+      const structType = template.idl.types.find((type: any) => type.type?.kind === 'struct');
+
+      if (structType?.type?.fields) {
+        return structType.type.fields;
+      }
+    }
+
+    return [];
+  };
+
   // Helper function to look up a type definition in the IDL
   const lookupTypeDefinition = (typeName: string, idl: any): any => {
     if (!idl?.types) return null;
@@ -715,8 +750,8 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A saved override may target an address discovered at creation (the live
-                    // Phoenix PerpAssetMap); the template's address is only for a new action.
+                    // A saved override keeps the account it was created for (such as a Phoenix
+                    // Trader); the template's address is only for a new action.
                     account:
                       existingAction.actionId === action.id && existingAction.account
                         ? existingAction.account
@@ -1702,7 +1737,15 @@ export default function ScenarioEditor({
                               ) : (
                                 <div className="mb-6 flex-1 space-y-4">
                                   {(() => {
-                                    const fields = getScenarioFields(selectedAction.template);
+                                    const fields = [...getFieldsFromIDL(selectedAction.template)];
+                                    // value_type lets a property without an IDL field still render an input
+                                    for (const prop of selectedAction.template?.properties ?? []) {
+                                      if (typeof prop === 'string' || prop.value_type == null) continue;
+                                      const index = fields.findIndex((field: any) => field.name === prop.path);
+                                      const field = { ...fields[index], name: prop.path, type: prop.value_type };
+                                      if (index === -1) fields.push(field);
+                                      else fields[index] = field;
+                                    }
 
                                     logger.log('🔍 Fields extracted from IDL:', fields);
                                     logger.log('🔍 Account type:', selectedAction.template?.accountType);
@@ -1728,6 +1771,38 @@ export default function ScenarioEditor({
                                     const constants = selectedAction.template?.constants || {};
                                     logger.log('🔍 Properties (raw):', rawProperties);
                                     logger.log('🔍 Constants:', constants);
+
+                                    // Helper to check if a field is a constant_ref
+                                    // Note: Backend serializes PropertyKind as "type" field (not "kind")
+                                    const getConstantRefInfo = (
+                                      fieldPath: string
+                                    ): {
+                                      isConstantRef: boolean;
+                                      constantDef?: any;
+                                      label?: string;
+                                      description?: string;
+                                    } => {
+                                      // Find the property by path in the new unified format
+                                      const prop = rawProperties.find(
+                                        (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
+                                      );
+                                      // Check prop.type (serialized from Rust's PropertyKind via #[serde(rename = "type")])
+                                      if (
+                                        prop &&
+                                        typeof prop !== 'string' &&
+                                        prop.type === 'constant_ref' &&
+                                        prop.constant &&
+                                        constants[prop.constant]
+                                      ) {
+                                        return {
+                                          isConstantRef: true,
+                                          constantDef: constants[prop.constant],
+                                          label: prop.label,
+                                          description: prop.description,
+                                        };
+                                      }
+                                      return { isConstantRef: false };
+                                    };
 
                                     // Helper to get property metadata (label, description)
                                     const getPropertyMeta = (
