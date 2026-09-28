@@ -40,6 +40,36 @@ export function toScenarioNumber(input: string): number | LosslessNumber {
 }
 
 /**
+ * Tessera convention: a direct-pubkey template may publish alternative targets in
+ * `constants.market`. A constant already referenced by a property remains a field selector.
+ */
+export function getDirectAccountMarketConstantName(template: unknown): 'market' | undefined {
+  if (!template || typeof template !== 'object') return undefined;
+  const candidate = template as {
+    address?: { pubkey?: unknown };
+    constants?: { market?: { options?: unknown } };
+    properties?: Array<{ constant?: unknown }>;
+  };
+  if (typeof candidate.address?.pubkey !== 'string') return undefined;
+  if (!Array.isArray(candidate.constants?.market?.options) || candidate.constants.market.options.length === 0) {
+    return undefined;
+  }
+  if (candidate.properties?.some((property) => property.constant === 'market')) return undefined;
+  return 'market';
+}
+
+/** Resolve a Tessera-style market choice into the ordinary scenario account shape. */
+export function resolveTemplateAccount(
+  templateAddress: unknown,
+  directAccountConstantName: string | undefined,
+  selectedPubkey: string
+): unknown {
+  if (!directAccountConstantName) return templateAddress;
+  const pubkey = selectedPubkey.trim();
+  return pubkey ? { pubkey } : undefined;
+}
+
+/**
  * Turn the contents of a downloaded scenario file into a POST /v1/scenarios body.
  * The id is replaced so importing never collides with the scenario it came from,
  * and lossless-json keeps i64 values exact on the way back in.
@@ -150,9 +180,10 @@ export type PumpSwapPriceShockScenarioResult = {
   virtualQuoteReserves?: string;
 };
 
-type ScenarioTemplate = {
+export type ScenarioTemplate = {
   id: string;
   address: unknown;
+  constants?: Record<string, { options?: unknown } | undefined>;
 };
 
 function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string): ScenarioTemplate | undefined {
@@ -211,6 +242,37 @@ export async function createPumpSwapPriceShockScenario(
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Failed to create PumpSwap price shock scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+export async function fetchScenarioTemplates(studioUrl: string): Promise<ScenarioTemplate[]> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  return (await response.json()) as ScenarioTemplate[];
+}
+
+export async function createTemplateScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<{ id: string }> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create scenario: ${response.status}`);
   }
 
   const result = (await response.json()) as { id?: string };
