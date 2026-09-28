@@ -56,6 +56,27 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'Tessera Risk-Off',
+    prompt:
+      'Create an editable WSOL/USDC scenario where SOL crashes to $50 and the Tessera maker goes risk-off. It reprices both directions to $50 but stops taking on more SOL: anyone selling SOL is turned away, while buyers can still get SOL at $50 for the next 100 slots. To achieve this, use the Tessera price override, keep the quote fresh throughout those 100 slots, and halt only the liquidity that fills SOL sellers. Select the market only through the override account; do not put a market value in values.',
+    icon: '🛡️',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Stale Quote',
+    prompt:
+      "Age the quote of the default WSOL/USDC Tessera market from the catalog to its rejection boundary so swaps in both directions are rejected as stale. Read that market's freshness limit from the catalog and age the quote by exactly that many slots. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+    icon: '⏳',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Depth Stress',
+    prompt:
+      'Prepare one editable Tessera WSOL/USDC scenario that reduces both buy and sell quoting depth by 90% from the current local state. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.',
+    icon: '📉',
+    protocols: ['tessera'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
