@@ -14,6 +14,16 @@ import {
 
 const SOL_USDC = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
 
+function binArrayAccount(binArrayIndex: number, activeId: number, amountX: bigint, amountY: bigint) {
+  const data = new Uint8Array(BIN_ARRAY_LEN);
+  data.set(BIN_ARRAY_DISCRIMINATOR);
+  const view = new DataView(data.buffer);
+  const offset = 56 + (activeId - binArrayIndex * 70) * 144;
+  view.setBigUint64(offset, amountX, true);
+  view.setBigUint64(offset + 8, amountY, true);
+  return { owner: METEORA_DLMM_PROGRAM_ID, data };
+}
+
 function poolAccount() {
   const data = new Uint8Array(LB_PAIR_LEN);
   data.set(LB_PAIR_DISCRIMINATOR);
@@ -77,5 +87,19 @@ describe('meteora price shock', () => {
     new DataView(onEdge.data.buffer).setInt32(ACTIVE_ID_OFFSET, -2171, true);
     const pastEdge = await planMeteoraPriceShock(SOL_USDC, onEdge, 1.1);
     expect(() => assertBinArray(pastEdge, null)).toThrow('already sits on the edge of its current bin array [-2240, -2171]');
+  });
+
+  it('rejects a destination bin that holds none of the token the shocked side takes', async () => {
+    const rise = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1);
+    expect(() => assertBinArray(rise, binArrayAccount(-31, -2127, BigInt(0), BigInt(5)))).toThrow(
+      'bin -2127 holds no token X, so a buy could not fill at the shocked price.'
+    );
+    expect(() => assertBinArray(rise, binArrayAccount(-31, -2127, BigInt(5), BigInt(0)))).not.toThrow();
+
+    const drop = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.99);
+    expect(() => assertBinArray(drop, binArrayAccount(-32, drop.newActiveId, BigInt(5), BigInt(0)))).toThrow(
+      `bin ${drop.newActiveId} holds no token Y, so a sell could not fill at the shocked price.`
+    );
+    expect(() => assertBinArray(drop, binArrayAccount(-32, drop.newActiveId, BigInt(0), BigInt(5)))).not.toThrow();
   });
 });

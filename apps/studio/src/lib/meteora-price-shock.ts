@@ -11,6 +11,8 @@ export const BIN_STEP_OFFSET = 80;
 export const BIN_ARRAY_LEN = 10136;
 export const BIN_ARRAY_DISCRIMINATOR = [0x5c, 0x8e, 0x5c, 0xdc, 0x05, 0x94, 0x46, 0xb5];
 const BINS_PER_ARRAY = 70;
+const BINS_OFFSET = 56;
+const BIN_LEN = 144;
 
 const I32_MIN = -2147483648;
 const I32_MAX = 2147483647;
@@ -103,6 +105,14 @@ export function assertBinArray(plan: MeteoraPriceShockPlan, binArrayAccount: Met
   }
   if (!hasPrefix(data, BIN_ARRAY_DISCRIMINATOR)) {
     throw new Error(`bin array ${binArray} does not carry the BinArray discriminator`);
+  }
+  // A rise is felt by buys, which take token X out of the new bin; a drop by sells, which take Y.
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const binOffset = BINS_OFFSET + (newActiveId - index * BINS_PER_ARRAY) * BIN_LEN;
+  const [amount, token, side] =
+    priceFactor > 1 ? [view.getBigUint64(binOffset, true), 'X', 'buy'] : [view.getBigUint64(binOffset + 8, true), 'Y', 'sell'];
+  if (amount === BigInt(0)) {
+    throw new Error(`bin ${newActiveId} holds no token ${token}, so a ${side} could not fill at the shocked price.`);
   }
 }
 
