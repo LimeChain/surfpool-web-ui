@@ -7,11 +7,16 @@ export const RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID = 'raydium-clmm-pool-state';
 const POOL_STATE_DISCRIMINATOR = [247, 237, 227, 245, 215, 195, 222, 70];
 const POOL_STATE_LEN = 1544;
 const TICK_SPACING_OFFSET = 235;
+const LIQUIDITY_OFFSET = 237;
 const SQRT_PRICE_X64_OFFSET = 253;
 const TICK_CURRENT_OFFSET = 269;
 
 const TICK_ARRAY_SIZE = 60;
 const TICK_ARRAY_LEN = 10240;
+// TickArrayState: discriminator 8, pool_id 32, start_tick_index 4, then 60 ticks of 168 bytes
+// (tick 4, liquidity_net 16, liquidity_gross 16, fee and reward growths, padding).
+const TICKS_OFFSET = 44;
+const TICK_LEN = 168;
 
 const MIN_TICK = -443636;
 const MAX_TICK = 443636;
@@ -76,6 +81,15 @@ export function planPriceShock(pool: string, { owner, data }: RaydiumClmmAccount
     (view.getBigUint64(SQRT_PRICE_X64_OFFSET + 8, true) << BigInt(64)) | view.getBigUint64(SQRT_PRICE_X64_OFFSET, true);
   const newSqrtPriceX64 = shockedSqrtPriceX64(oldSqrtPriceX64, priceFactor);
   const newTickCurrent = tickAtSqrtPriceX64(newSqrtPriceX64);
+  const oldTickCurrent = view.getInt32(TICK_CURRENT_OFFSET, true);
+
+  // Every array from the current one to the destination, in the direction of the move.
+  const destinationStart = tickArrayStartIndex(newTickCurrent, tickSpacing);
+  const step = newTickCurrent >= oldTickCurrent ? TICK_ARRAY_SIZE * tickSpacing : -TICK_ARRAY_SIZE * tickSpacing;
+  const pathStartIndexes = [tickArrayStartIndex(oldTickCurrent, tickSpacing)];
+  while (pathStartIndexes[pathStartIndexes.length - 1] !== destinationStart) {
+    pathStartIndexes.push(pathStartIndexes[pathStartIndexes.length - 1] + step);
+  }
 
   return {
     pool,
@@ -83,10 +97,41 @@ export function planPriceShock(pool: string, { owner, data }: RaydiumClmmAccount
     tickSpacing,
     oldSqrtPriceX64,
     newSqrtPriceX64,
-    oldTickCurrent: view.getInt32(TICK_CURRENT_OFFSET, true),
+    oldTickCurrent,
+    oldLiquidity:
+      (view.getBigUint64(LIQUIDITY_OFFSET + 8, true) << BigInt(64)) | view.getBigUint64(LIQUIDITY_OFFSET, true),
     newTickCurrent,
-    tickArrayStartIndex: tickArrayStartIndex(newTickCurrent, tickSpacing),
+    tickArrayStartIndex: destinationStart,
+    pathStartIndexes,
   };
+}
+
+/**
+ * The active liquidity at the new tick. A real swap adds each crossed tick's liquidity_net when the
+ * price rises and subtracts it when it falls; writing only the price would keep the old range's
+ * liquidity. `pathAccounts` follows `plan.pathStartIndexes`; a missing array holds no initialized ticks.
+ */
+export function liquidityAfterShock(plan: RaydiumClmmPriceShockPlan, pathAccounts: (RaydiumClmmAccount | null)[]): bigint {
+  const [low, high] = [Math.min(plan.oldTickCurrent, plan.newTickCurrent), Math.max(plan.oldTickCurrent, plan.newTickCurrent)];
+  let crossed = BigInt(0);
+  plan.pathStartIndexes.forEach((startIndex, index) => {
+    const account = pathAccounts[index];
+    if (!account) return;
+    assertTickArrayAccount(`at start index ${startIndex}`, account);
+    const view = new DataView(account.data.buffer, account.data.byteOffset, account.data.byteLength);
+    for (let slot = 0; slot < TICK_ARRAY_SIZE; slot++) {
+      const offset = TICKS_OFFSET + slot * TICK_LEN;
+      const tick = view.getInt32(offset, true);
+      const gross = (view.getBigUint64(offset + 28, true) << BigInt(64)) | view.getBigUint64(offset + 20, true);
+      if (gross === BigInt(0) || tick <= low || tick > high) continue;
+      crossed += (view.getBigInt64(offset + 12, true) << BigInt(64)) | view.getBigUint64(offset + 4, true);
+    }
+  });
+  const liquidity = plan.newTickCurrent > plan.oldTickCurrent ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
+  if (liquidity < BigInt(0)) {
+    throw new Error(`the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`);
+  }
+  return liquidity;
 }
 
 /** A swap resumes from the array covering the new tick, so a missing one is rejected here rather than at swap time. */
@@ -95,16 +140,27 @@ export function checkTickArray(plan: RaydiumClmmPriceShockPlan, tickArray: strin
     const currentStart = tickArrayStartIndex(plan.oldTickCurrent, plan.tickSpacing);
     const currentEnd = currentStart + TICK_ARRAY_SIZE * plan.tickSpacing - 1;
     const isRaise = plan.priceFactor > 1;
-    const safeFactor = Math.pow(TICK_BASE, (isRaise ? currentEnd : currentStart) - plan.oldTickCurrent);
+    const edgeTick = isRaise ? currentEnd : currentStart;
+    const missing = `tick array ${tickArray} (start index ${plan.tickArrayStartIndex}) does not exist, so a swap could not resume from tick ${plan.newTickCurrent}.`;
+    if (edgeTick === plan.oldTickCurrent) {
+      throw new Error(`${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`);
+    }
+    // Rounded toward the array's interior, so the suggestion itself lands inside it.
+    const exact = Math.pow(TICK_BASE, edgeTick - plan.oldTickCurrent) * 1e6;
+    const safeFactor = (isRaise ? Math.floor(exact) : Math.ceil(exact)) / 1e6;
     throw new Error(
-      `tick array ${tickArray} (start index ${plan.tickArrayStartIndex}) does not exist, so a swap could not resume from tick ${plan.newTickCurrent}. The ${isRaise ? 'largest' : 'smallest'} factor that stays on the pool's current tick array [${currentStart}, ${currentEnd}] is ${safeFactor.toFixed(6)}.`
+      `${missing} The ${isRaise ? 'largest' : 'smallest'} factor that stays on the pool's current tick array [${currentStart}, ${currentEnd}] is ${safeFactor.toFixed(6)}.`
     );
   }
+  assertTickArrayAccount(tickArray, account);
+}
+
+function assertTickArrayAccount(tickArray: string, account: RaydiumClmmAccount) {
   if (account.owner !== RAYDIUM_CLMM_PROGRAM_ID) throw new Error(`tick array ${tickArray} is not owned by CLMM`);
   if (account.data.length !== TICK_ARRAY_LEN) throw new Error(`tick array ${tickArray} is not a TickArrayState`);
 }
 
-export function buildPriceShockScenario(plan: RaydiumClmmPriceShockPlan) {
+export function buildPriceShockScenario(plan: RaydiumClmmPriceShockPlan, liquidity: bigint) {
   return {
     id: crypto.randomUUID(),
     name: 'Raydium CLMM Price Shock',
@@ -113,7 +169,11 @@ export function buildPriceShockScenario(plan: RaydiumClmmPriceShockPlan) {
       {
         id: crypto.randomUUID(),
         templateId: RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID,
-        values: { sqrt_price_x64: plan.newSqrtPriceX64.toString(), tick_current: plan.newTickCurrent },
+        values: {
+          sqrt_price_x64: plan.newSqrtPriceX64.toString(),
+          tick_current: plan.newTickCurrent,
+          liquidity: liquidity.toString(),
+        },
         scenarioRelativeSlot: 1,
         label: `CLMM price x${plan.priceFactor}`,
         enabled: true,
