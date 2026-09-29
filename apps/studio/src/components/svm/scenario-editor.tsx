@@ -580,8 +580,15 @@ export default function ScenarioEditor({
       }
       if (accountPubkey) addressString = accountPubkey;
 
-      // Step 1: Fetch account info with parsed JSON
+      // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
+
+      // A template whose properties all carry value_type (the Phoenix market templates) edits no
+      // field of the account, so its decoded data would only be sent back as override values.
+      // An empty slice still forks the account in for Play, without decoding it.
+      const properties = action.template.properties ?? [];
+      const inputsOnly =
+        properties.length > 0 && properties.every((prop: any) => typeof prop !== 'string' && prop.value_type != null);
 
       const getAccountInfoRequest = {
         jsonrpc: '2.0',
@@ -589,10 +596,9 @@ export default function ScenarioEditor({
         method: 'getAccountInfo',
         params: [
           addressString,
-          {
-            commitment: 'confirmed',
-            encoding: 'jsonParsed',
-          },
+          inputsOnly
+            ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
+            : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
       };
 

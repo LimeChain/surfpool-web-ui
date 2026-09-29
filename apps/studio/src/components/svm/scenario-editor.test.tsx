@@ -1,3 +1,4 @@
+import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
@@ -39,6 +40,7 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal('fetch', fetchMock);
+  vi.mocked(fetchDynamicRefOptions).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -152,31 +154,32 @@ const marketTemplates = [
   },
 ];
 
+const marketTemplate = (market: (typeof marketTemplates)[number]) => ({
+  ...collateralTemplate,
+  ...market,
+  accountType: 'PerpAssetMap',
+  address: { pubkey: 'template-map' },
+  properties: ['symbol', ...market.prices].map((path) => ({
+    path,
+    value_type: 'string',
+    ...(path === 'symbol' ? { type: 'dynamic_ref', source: 'list_phoenix_markets' } : {}),
+  })),
+  idl: {
+    types: [
+      {
+        name: 'PerpAssetMap',
+        type: {
+          kind: 'struct',
+          fields: [{ name: 'discriminator', type: { array: ['u8', 8] } }],
+        },
+      },
+    ],
+  },
+});
+
 for (const market of marketTemplates) {
   it('edits and saves ' + market.name + ' using value_type template fields', async () => {
-    const names = ['symbol', ...market.prices];
-    const template = {
-      ...collateralTemplate,
-      ...market,
-      accountType: 'PerpAssetMap',
-      address: { pubkey: 'template-map' },
-      properties: names.map((path) => ({
-        path,
-        value_type: 'string',
-        ...(path === 'symbol' ? { type: 'dynamic_ref', source: 'list_phoenix_markets' } : {}),
-      })),
-      idl: {
-        types: [
-          {
-            name: 'PerpAssetMap',
-            type: {
-              kind: 'struct',
-              fields: [{ name: 'discriminator', type: { array: ['u8', 8] } }],
-            },
-          },
-        ],
-      },
-    };
+    const template = marketTemplate(market);
     const values: Record<string, string> = { symbol: 'SOL' };
     for (const name of market.prices) values[name] = '1';
     await openEditor(template, values, { pubkey: 'saved-map' });
@@ -200,14 +203,57 @@ for (const market of marketTemplates) {
   });
 }
 
-const rpcAccounts = () =>
-  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params[0]);
+const rpcParams = () =>
+  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params);
+const rpcAccounts = () => rpcParams().map(([account]) => account);
 
 it('fetches the saved account when reopening a saved override', async () => {
   const template = { ...collateralTemplate, address: { pubkey: 'template-trader' } };
   await openEditor(template, {}, { pubkey: 'saved-trader' });
   await waitFor(() => expect(rpcAccounts()).toEqual(['saved-trader']));
 });
+
+it('reads the account of a template with IDL fields as parsed JSON', async () => {
+  await openEditor();
+  await waitFor(() => expect(rpcParams()).toEqual([['trader', { commitment: 'confirmed', encoding: 'jsonParsed' }]]));
+});
+
+for (const market of marketTemplates) {
+  it('sends only the inputs of a newly selected ' + market.name + ' action', async () => {
+    const template = marketTemplate(market);
+    vi.mocked(fetchDynamicRefOptions).mockResolvedValue(['SOL']);
+    await openEditor(template);
+    // As on a surfnet with the Phoenix IDL: jsonParsed decodes the map, base64 returns its bytes.
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const config = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params[1] : undefined;
+      const data =
+        config?.encoding === 'jsonParsed'
+          ? { parsed: { numAssets: 90, padding0: [0, 0, 0, 0, 0, 0] } }
+          : ['', 'base64'];
+      return { ok: true, json: async () => ({ result: { value: { data } } }) };
+    });
+
+    fireEvent.click(await screen.findByRole('heading', { name: template.name }));
+    const symbol = await screen.findByRole('option', { name: 'SOL' });
+    fireEvent.change(symbol.closest('select')!, { target: { value: 'SOL' } });
+    const values: Record<string, string> = { symbol: 'SOL' };
+    for (const name of market.prices) {
+      fireEvent.change(await screen.findByPlaceholderText(`Enter ${name}...`), { target: { value: '1' } });
+      values[name] = '1';
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+      expect(patch).toBeDefined();
+      expect(JSON.parse(patch![1].body).overrides[0].values).toEqual(values);
+    });
+    expect(rpcParams().at(-1)).toEqual([
+      'template-map',
+      { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
+    ]);
+  });
+}
 
 it('ignores an older account response that resolves after a newer selection', async () => {
   const other = { ...collateralTemplate, id: 'other-collateral', name: 'Other collateral', address: { pubkey: 'b' } };
