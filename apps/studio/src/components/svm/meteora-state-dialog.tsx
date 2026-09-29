@@ -140,6 +140,9 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
                 onChange={handlePriceFactorChange}
                 disabled={isCreating}
               />
+              <p className="mt-1.5 text-sm text-zinc-400">
+                Only one side sees the shock: buys of the base token after a rise, sells after a drop.
+              </p>
             </div>
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}

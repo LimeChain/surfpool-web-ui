@@ -65,7 +65,15 @@ export async function planMeteoraPriceShock(pool: string, account: MeteoraAccoun
   if (binStep === 0) throw new Error('pool declares a bin step of zero');
   const oldActiveId = view.getInt32(ACTIVE_ID_OFFSET, true);
 
-  const newActiveId = oldActiveId + activeIdDelta(priceFactor, binStep);
+  const delta = activeIdDelta(priceFactor, binStep);
+  if (delta === 0) {
+    const oneBin = 1 + binStep / 10000;
+    throw new Error(
+      `price factor ${priceFactor} moves the price by less than half a bin, so the active bin would not change. ` +
+        `With a bin step of ${binStep / 100}%, use at least ${Math.sqrt(oneBin).toFixed(6)} or at most ${(1 / Math.sqrt(oneBin)).toFixed(6)}.`
+    );
+  }
+  const newActiveId = oldActiveId + delta;
   if (newActiveId < I32_MIN || newActiveId > I32_MAX) throw new Error('shocked active bin id overflows an i32');
   const index = binArrayIndex(newActiveId);
   const binArray = await binArrayAddress(pool, index);
@@ -79,10 +87,12 @@ export function assertBinArray(plan: MeteoraPriceShockPlan, binArrayAccount: Met
     const start = binArrayIndex(oldActiveId) * BINS_PER_ARRAY;
     const end = start + BINS_PER_ARRAY - 1;
     const [bound, adjective] = priceFactor > 1 ? [end, 'largest'] : [start, 'smallest'];
+    const missing = `bin array ${binArray} (index ${index}) does not exist, so a swap could not resume from bin ${newActiveId}.`;
+    if (bound === oldActiveId) {
+      throw new Error(`${missing} The pool already sits on the edge of its current bin array [${start}, ${end}].`);
+    }
     const safeFactor = ((1 + binStep / 10000) ** (bound - oldActiveId)).toFixed(6);
-    throw new Error(
-      `bin array ${binArray} (index ${index}) does not exist, so a swap could not resume from bin ${newActiveId}. The ${adjective} factor that stays on the pool's current bin array [${start}, ${end}] is ${safeFactor}.`
-    );
+    throw new Error(`${missing} The ${adjective} factor that stays on the pool's current bin array [${start}, ${end}] is ${safeFactor}.`);
   }
   const { owner, data } = binArrayAccount;
   if (owner !== METEORA_DLMM_PROGRAM_ID) {
@@ -100,7 +110,9 @@ export function buildMeteoraPriceShockScenario(plan: MeteoraPriceShockPlan, temp
   return {
     id: crypto.randomUUID(),
     name: 'Meteora DLMM Price Shock',
-    description: `Move Meteora DLMM pool ${plan.pool} to ${plan.priceFactor}x its price, onto bin ${plan.newActiveId} of the bin array at index ${plan.binArrayIndex}.`,
+    // Only active_id moves, so the skipped bins keep the token they held: after a rise buys fill at
+    // the new price while sells fall back to the old one, and the reverse after a drop.
+    description: `Move Meteora DLMM pool ${plan.pool} to ${plan.priceFactor}x its price, onto bin ${plan.newActiveId} of the bin array at index ${plan.binArrayIndex}. ${plan.priceFactor > 1 ? 'Buys' : 'Sells'} of the base token see the new price; ${plan.priceFactor > 1 ? 'sells' : 'buys'} still fill at the old one.`,
     overrides: [
       {
         id: crypto.randomUUID(),
