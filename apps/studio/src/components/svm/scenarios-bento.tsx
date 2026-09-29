@@ -34,6 +34,7 @@ import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
 import ScenarioPresets from './scenario-presets';
 import type { ScenarioBentoItem, ScenariosBentoProps } from './scenarios-bento.types';
+import WhirlpoolStateDialog from './whirlpool-state-dialog';
 
 const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
   ssr: false,
@@ -52,7 +53,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { studioUrl, rpcUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export default function ScenariosBento({
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
+  const [whirlpoolStateDialogOpen, setWhirlpoolStateDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -187,6 +189,20 @@ export default function ScenariosBento({
 
   const handlePumpSwapPriceShockCreated = (scenarioId: string) => {
     setPumpSwapPriceShockDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenWhirlpoolStateDialog = () => {
+    setWhirlpoolStateDialogOpen(true);
+  };
+
+  const handleCloseWhirlpoolStateDialog = () => {
+    setWhirlpoolStateDialogOpen(false);
+  };
+
+  const handleWhirlpoolStateCreated = (scenarioId: string) => {
+    setWhirlpoolStateDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -333,6 +349,7 @@ export default function ScenariosBento({
           <ScenarioPresets
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
+            onWhirlpoolStateSelect={handleOpenWhirlpoolStateDialog}
           />
         </>
       )}
@@ -436,6 +453,13 @@ export default function ScenariosBento({
         studioUrl={studioUrl}
         onClose={handleClosePumpSwapPriceShockDialog}
         onCreated={handlePumpSwapPriceShockCreated}
+      />
+      <WhirlpoolStateDialog
+        open={whirlpoolStateDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleCloseWhirlpoolStateDialog}
+        onCreated={handleWhirlpoolStateCreated}
       />
     </div>
   );
