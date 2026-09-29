@@ -6,6 +6,7 @@ import {
   BIN_ARRAY_LEN,
   BIN_STEP_OFFSET,
   LB_PAIR_DISCRIMINATOR,
+  buildMeteoraPriceShockScenario,
   LB_PAIR_LEN,
   METEORA_DLMM_PROGRAM_ID,
   planMeteoraPriceShock,
@@ -51,11 +52,30 @@ describe('meteora price shock', () => {
     }
   });
 
+  it('rejects a factor that rounds to no bin change and names the smallest move', async () => {
+    await expect(planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.0001)).rejects.toThrow(
+      'less than half a bin, so the active bin would not change. With a bin step of 0.1%, use at least 1.000500 or at most 0.999500.'
+    );
+    expect((await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.000501)).newActiveId).toBe(-2221);
+  });
+
+  it('says which side of the market sees the shock', async () => {
+    const rise = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1), 'template');
+    const drop = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.9), 'template');
+    expect(rise.description).toContain('Buys of the base token see the new price; sells still fill at the old one.');
+    expect(drop.description).toContain('Sells of the base token see the new price; buys still fill at the old one.');
+  });
+
   it('names the missing bin array and the largest safe factor', async () => {
     const plan = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1);
 
     expect(() => assertBinArray(plan, null)).toThrow(
       "bin array 28WnLxAM6rpjMToCVqaDys7dpiRmVUeQus1pvzGVR4G2 (index -31) does not exist, so a swap could not resume from bin -2127. The largest factor that stays on the pool's current bin array [-2240, -2171] is 1.052296."
     );
+
+    const onEdge = poolAccount();
+    new DataView(onEdge.data.buffer).setInt32(ACTIVE_ID_OFFSET, -2171, true);
+    const pastEdge = await planMeteoraPriceShock(SOL_USDC, onEdge, 1.1);
+    expect(() => assertBinArray(pastEdge, null)).toThrow('already sits on the edge of its current bin array [-2240, -2171]');
   });
 });
