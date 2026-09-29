@@ -97,9 +97,10 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['raydium'],
   },
   {
-    label: 'Raydium CLMM Price Shock',
-    prompt: 'Halve the price of the Raydium CLMM SOL/USDC pool 3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv.',
-    icon: '⚡',
+    label: 'Raydium CLMM Swap Freeze',
+    prompt:
+      'Disable swaps on the Raydium CLMM SOL/USDC pool 3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv, leaving deposits, withdrawals and fee collection open.',
+    icon: '⛔',
     protocols: ['raydium'],
   },
 ];

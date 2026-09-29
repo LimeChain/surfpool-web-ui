@@ -171,32 +171,36 @@ describe('createPumpSwapPriceShockScenario', () => {
 describe('Raydium scenarios', () => {
   const pool = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
   const clmm = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
-  const account = (data: Uint8Array) =>
-    jsonResponse({ result: { value: { owner: clmm, data: [Buffer.from(data).toString('base64'), 'base64'] } } });
+  const accounts = (...data: Uint8Array[]) =>
+    jsonResponse({
+      result: { value: data.map((bytes) => ({ owner: clmm, data: [Buffer.from(bytes).toString('base64'), 'base64'] })) },
+    });
   const postedOverride = (call: number) =>
     JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string).overrides[0];
 
-  it('reads the pool and its covering tick array, then posts the price shock', async () => {
+  it('reads the pool and every tick array on the path, then posts price, tick and liquidity', async () => {
     const poolData = new Uint8Array(1544);
     poolData.set([247, 237, 227, 245, 215, 195, 222, 70]);
     const view = new DataView(poolData.buffer);
     view.setUint16(235, 1, true);
     view.setBigUint64(253, BigInt('6404133718641369980'), true);
     view.setInt32(269, -21160, true);
+    view.setBigUint64(237, BigInt(1000), true);
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-pool-state', address: { type: 'pubkey' } }]))
-      .mockResolvedValueOnce(account(poolData))
-      .mockResolvedValueOnce(account(new Uint8Array(10240)))
+      .mockResolvedValueOnce(accounts(poolData))
+      .mockResolvedValueOnce(accounts(new Uint8Array(10240)))
       .mockResolvedValueOnce(jsonResponse({ id: 'shock' }));
 
     await expect(createRaydiumClmmPriceShockScenario('http://studio', 'http://rpc', pool, '1.001')).resolves.toEqual({
       id: 'shock',
     });
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toBe('GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK');
+    // Ticks -21160 and -21150 share the array starting at -21180, so the path is that one array.
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual(['GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK']);
     expect(postedOverride(3)).toMatchObject({
       templateId: 'raydium-clmm-pool-state',
-      values: { sqrt_price_x64: '6407334985383984128', tick_current: -21150 },
+      values: { sqrt_price_x64: '6407334985383984128', tick_current: -21150, liquidity: '1000' },
       scenarioRelativeSlot: 1,
       account: { pubkey: pool },
     });

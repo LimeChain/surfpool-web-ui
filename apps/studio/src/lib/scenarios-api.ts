@@ -6,6 +6,7 @@ import { PROTOCOLS } from './protocol-icons';
 import {
   buildPriceShockScenario,
   checkTickArray,
+  liquidityAfterShock,
   planPriceShock,
   RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID,
   type RaydiumClmmAccount,
@@ -299,28 +300,31 @@ function templateScenario(
   };
 }
 
-async function fetchRaydiumAccount(rpcUrl: string, account: string): Promise<RaydiumClmmAccount | null> {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getAccountInfo',
-      params: [account, { encoding: 'base64', commitment: 'confirmed' }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Failed to read ${account} from the surfnet: ${response.status}`);
+async function fetchRaydiumAccounts(rpcUrl: string, accounts: string[]): Promise<(RaydiumClmmAccount | null)[]> {
+  const found: (RaydiumClmmAccount | null)[] = [];
+  for (let start = 0; start < accounts.length; start += 100) {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getMultipleAccounts',
+        params: [accounts.slice(start, start + 100), { encoding: 'base64', commitment: 'confirmed' }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Failed to read accounts from the surfnet: ${response.status}`);
 
-  const payload = (await response.json()) as {
-    result?: { value: { owner: string; data: [string, string] } | null };
-    error?: { message?: string };
-  };
-  if (payload.error) throw new Error(payload.error.message || `Failed to read ${account} from the surfnet`);
-  const value = payload.result?.value;
-  if (!value) return null;
-
-  return { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) };
+    const payload = (await response.json()) as {
+      result?: { value: ({ owner: string; data: [string, string] } | null)[] };
+      error?: { message?: string };
+    };
+    if (payload.error) throw new Error(payload.error.message || 'Failed to read accounts from the surfnet');
+    for (const value of payload.result?.value ?? []) {
+      found.push(value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null);
+    }
+  }
+  return found;
 }
 
 /** sqrt_price_x64 and tick_current move together, and a swap resumes from the array covering the new tick. */
@@ -339,14 +343,15 @@ export async function createRaydiumClmmPriceShockScenario(
   if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
 
   await raydiumTemplate(studioUrl, RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID);
-  const poolAccount = await fetchRaydiumAccount(rpcUrl, normalizedPool);
+  const [poolAccount] = await fetchRaydiumAccounts(rpcUrl, [normalizedPool]);
   if (!poolAccount) throw new Error(`Raydium CLMM pool ${normalizedPool} was not found`);
 
   const plan = planPriceShock(normalizedPool, poolAccount, factor);
-  const tickArray = await tickArrayAddress(normalizedPool, plan.tickArrayStartIndex);
-  checkTickArray(plan, tickArray, await fetchRaydiumAccount(rpcUrl, tickArray));
+  const pathArrays = await Promise.all(plan.pathStartIndexes.map((start) => tickArrayAddress(normalizedPool, start)));
+  const pathAccounts = await fetchRaydiumAccounts(rpcUrl, pathArrays);
+  checkTickArray(plan, pathArrays[pathArrays.length - 1], pathAccounts[pathAccounts.length - 1]);
 
-  return postRaydiumScenario(studioUrl, buildPriceShockScenario(plan));
+  return postRaydiumScenario(studioUrl, buildPriceShockScenario(plan, liquidityAfterShock(plan, pathAccounts)));
 }
 
 /** AMM v4 pools are keypair accounts (no PDA to derive), so the pool address is the override's pubkey. */
