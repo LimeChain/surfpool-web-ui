@@ -4,7 +4,12 @@ import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
-import { assertTickArrayExists, planWhirlpoolPriceShock, type WhirlpoolAccount } from './whirlpool-price-shock';
+import {
+  assertTickArrayExists,
+  liquidityAfterShock,
+  planWhirlpoolPriceShock,
+  type WhirlpoolAccount,
+} from './whirlpool-price-shock';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -287,27 +292,30 @@ async function postWhirlpoolScenario(
   return { id: result.id };
 }
 
-async function fetchWhirlpoolAccount(rpcUrl: string, pubkey: string): Promise<WhirlpoolAccount | null> {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getAccountInfo',
-      params: [pubkey, { encoding: 'base64', commitment: 'confirmed' }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Failed to read accounts from Surfnet: ${response.status}`);
-
-  const payload = (await response.json()) as {
-    result?: { value: { owner: string; data: [string, string] } | null };
-    error?: { message?: string };
-  };
-  if (payload.error) throw new Error(`Failed to read accounts from Surfnet: ${payload.error.message ?? 'RPC error'}`);
-
-  const value = payload.result?.value;
-  return value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null;
+async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promise<(WhirlpoolAccount | null)[]> {
+  const accounts: (WhirlpoolAccount | null)[] = [];
+  for (let start = 0; start < pubkeys.length; start += 100) {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getMultipleAccounts',
+        params: [pubkeys.slice(start, start + 100), { encoding: 'base64', commitment: 'confirmed' }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Failed to read accounts from Surfnet: ${response.status}`);
+    const payload = (await response.json()) as {
+      result?: { value: ({ owner: string; data: [string, string] } | null)[] };
+      error?: { message?: string };
+    };
+    if (payload.error) throw new Error(`Failed to read accounts from Surfnet: ${payload.error.message ?? 'RPC error'}`);
+    for (const value of payload.result?.value ?? []) {
+      accounts.push(value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null);
+    }
+  }
+  return accounts;
 }
 
 export async function createWhirlpoolPriceShockScenario(
@@ -318,14 +326,19 @@ export async function createWhirlpoolPriceShockScenario(
 ): Promise<WhirlpoolScenarioResult> {
   const normalizedPool = pool.trim();
   const factor = Number(priceFactor.trim());
-  const [template, poolAccount] = await Promise.all([
+  const [template, [poolAccount]] = await Promise.all([
     whirlpoolPoolTemplate(studioUrl),
-    fetchWhirlpoolAccount(rpcUrl, normalizedPool),
+    fetchWhirlpoolAccounts(rpcUrl, [normalizedPool]),
   ]);
   if (!poolAccount) throw new Error(`Whirlpool pool ${normalizedPool} was not found`);
 
   const plan = await planWhirlpoolPriceShock(normalizedPool, poolAccount, factor);
-  assertTickArrayExists(plan, await fetchWhirlpoolAccount(rpcUrl, plan.tickArray));
+  const pathAccounts = await fetchWhirlpoolAccounts(
+    rpcUrl,
+    plan.pathTickArrays.map((tickArray) => tickArray.address)
+  );
+  assertTickArrayExists(plan, pathAccounts[pathAccounts.length - 1]);
+  const liquidity = liquidityAfterShock(plan, pathAccounts);
 
   return postWhirlpoolScenario(
     studioUrl,
@@ -334,7 +347,11 @@ export async function createWhirlpoolPriceShockScenario(
     ['whirlpool', 'orca', 'price-shock'],
     {
       templateId: template.id,
-      values: { sqrt_price: plan.newSqrtPrice.toString(), tick_current_index: plan.newTickCurrentIndex },
+      values: {
+        sqrt_price: plan.newSqrtPrice.toString(),
+        tick_current_index: plan.newTickCurrentIndex,
+        liquidity: liquidity.toString(),
+      },
       scenarioRelativeSlot: 1,
       label: `Whirlpool price x${factor}`,
       account: { pubkey: normalizedPool },
