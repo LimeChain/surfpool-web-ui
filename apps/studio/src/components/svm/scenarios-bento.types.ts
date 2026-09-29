@@ -97,9 +97,10 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['pancakeswap'],
   },
   {
-    label: 'PancakeSwap Price Shock',
-    prompt: 'Halve the price of the PancakeSwap SOL/USDC pool DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ.',
-    icon: '⚡',
+    label: 'PancakeSwap Swap Freeze',
+    prompt:
+      'Disable swaps on the PancakeSwap SOL/USDC pool DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ, leaving deposits, withdrawals and fee collection open.',
+    icon: '⛔',
     protocols: ['pancakeswap'],
   },
 ];
