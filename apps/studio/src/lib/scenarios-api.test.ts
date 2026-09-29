@@ -189,6 +189,10 @@ describe('Meteora scenarios', () => {
       new DataView(data.buffer).setInt32(ACTIVE_ID_OFFSET, -2222, true);
       new DataView(data.buffer).setUint16(BIN_STEP_OFFSET, 10, true);
     }
+    if (length === BIN_ARRAY_LEN) {
+      // Token X in bin -2127 of array -31, where a 1.1x rise lands.
+      new DataView(data.buffer).setBigUint64(56 + (-2127 + 31 * 70) * 144, BigInt(1), true);
+    }
     const value = { owner: METEORA_DLMM_PROGRAM_ID, data: [Buffer.from(data).toString('base64'), 'base64'] };
     return jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } });
   }

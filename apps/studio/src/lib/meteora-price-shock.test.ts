@@ -69,6 +69,17 @@ describe('meteora price shock', () => {
     expect((await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.000501)).newActiveId).toBe(-2221);
   });
 
+  it('suggests factors that move the active bin themselves', async () => {
+    for (const binStep of [10, 15, 21, 25, 80, 200, 400]) {
+      const pool = poolAccount();
+      new DataView(pool.data.buffer).setUint16(BIN_STEP_OFFSET, binStep, true);
+      const message = await planMeteoraPriceShock(SOL_USDC, pool, 1.00001).catch((error: Error) => error.message);
+      const [, atLeast, atMost] = String(message).match(/at least (\d\.\d+) or at most (\d\.\d+)\./)!.map(Number);
+      expect((await planMeteoraPriceShock(SOL_USDC, pool, atLeast)).newActiveId).toBe(-2221);
+      expect((await planMeteoraPriceShock(SOL_USDC, pool, atMost)).newActiveId).toBe(-2223);
+    }
+  });
+
   it('says which side of the market sees the shock', async () => {
     const rise = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1), 'template');
     const drop = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.9), 'template');

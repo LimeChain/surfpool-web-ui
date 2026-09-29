@@ -69,10 +69,13 @@ export async function planMeteoraPriceShock(pool: string, account: MeteoraAccoun
 
   const delta = activeIdDelta(priceFactor, binStep);
   if (delta === 0) {
-    const oneBin = 1 + binStep / 10000;
+    const halfBin = Math.sqrt(1 + binStep / 10000);
+    // Rounded outward, so the suggestions themselves move the active bin.
+    const atLeast = Math.ceil(halfBin * 1e6) / 1e6;
+    const atMost = Math.floor(1e6 / halfBin) / 1e6;
     throw new Error(
       `price factor ${priceFactor} moves the price by less than half a bin, so the active bin would not change. ` +
-        `With a bin step of ${binStep / 100}%, use at least ${Math.sqrt(oneBin).toFixed(6)} or at most ${(1 / Math.sqrt(oneBin)).toFixed(6)}.`
+        `With a bin step of ${binStep / 100}%, use at least ${atLeast.toFixed(6)} or at most ${atMost.toFixed(6)}.`
     );
   }
   const newActiveId = oldActiveId + delta;
