@@ -290,28 +290,31 @@ async function postPancakeswapScenario(studioUrl: string, scenario: object): Pro
   return { id: result.id };
 }
 
-async function fetchSurfnetAccount(rpcUrl: string, account: string): Promise<PoolAccount | null> {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getAccountInfo',
-      params: [account, { encoding: 'base64', commitment: 'confirmed' }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Failed to read ${account} from the surfnet: ${response.status}`);
+async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise<(PoolAccount | null)[]> {
+  const found: (PoolAccount | null)[] = [];
+  for (let start = 0; start < accounts.length; start += 100) {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getMultipleAccounts',
+        params: [accounts.slice(start, start + 100), { encoding: 'base64', commitment: 'confirmed' }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Failed to read accounts from the surfnet: ${response.status}`);
 
-  const result = (await response.json()) as {
-    error?: { message?: string };
-    result?: { value: { owner: string; data: [string, string] } | null };
-  };
-  if (result.error) throw new Error(`Failed to read ${account} from the surfnet: ${result.error.message}`);
-
-  const value = result.result?.value;
-  if (!value) return null;
-  return { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) };
+    const result = (await response.json()) as {
+      error?: { message?: string };
+      result?: { value: ({ owner: string; data: [string, string] } | null)[] };
+    };
+    if (result.error) throw new Error(`Failed to read accounts from the surfnet: ${result.error.message}`);
+    for (const value of result.result?.value ?? []) {
+      found.push(value ? { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) } : null);
+    }
+  }
+  return found;
 }
 
 // A swap could not resume from a tick whose covering tick array does not exist, so that shock is refused.
@@ -326,12 +329,15 @@ export async function createPancakeswapPriceShockScenario(
   const factor = Number(priceFactor.trim());
   validatePriceFactor(factor);
 
-  const poolAccount = await fetchSurfnetAccount(rpcUrl, normalizedPool);
+  const [poolAccount] = await fetchSurfnetAccounts(rpcUrl, [normalizedPool]);
   if (!poolAccount) throw new Error(`PancakeSwap pool ${normalizedPool} was not found`);
 
   const plan = await planPancakeswapPriceShock(normalizedPool, poolAccount, factor);
-  const tickArray = await fetchSurfnetAccount(rpcUrl, plan.tickArray);
-  return postPancakeswapScenario(studioUrl, buildPancakeswapPriceShockScenario(plan, tickArray));
+  const pathAccounts = await fetchSurfnetAccounts(
+    rpcUrl,
+    plan.pathTickArrays.map((tickArray) => tickArray.address)
+  );
+  return postPancakeswapScenario(studioUrl, buildPancakeswapPriceShockScenario(plan, pathAccounts));
 }
 
 // Read off the template's constant catalog so the picker never drifts from the backend's fee tier list.

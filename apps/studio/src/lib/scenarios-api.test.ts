@@ -185,20 +185,25 @@ describe('PancakeSwap scenarios', () => {
     data.set(POOL_STATE_DISCRIMINATOR);
     new DataView(data.buffer).setUint16(TICK_SPACING_OFFSET, 1, true);
     new DataView(data.buffer).setBigUint64(SQRT_PRICE_X64_OFFSET + 8, BigInt(1), true);
+    new DataView(data.buffer).setBigUint64(237, BigInt(1000), true);
+    // Tick 0 to tick 13863 at spacing 1 covers the arrays starting at 0, 60, ... 13860.
+    const path = Array.from({ length: 232 }, () => ({ owner, data: base64(new Uint8Array(10240)) }));
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ result: { value: { owner, data: base64(data) } } }))
-      .mockResolvedValueOnce(jsonResponse({ result: { value: { owner, data: base64(new Uint8Array(10240)) } } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(data) }] } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(0, 100) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(100, 200) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(200) } }))
       .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
     await expect(createPancakeswapPriceShockScenario('http://studio', 'http://rpc', pool, '4')).resolves.toEqual({
       id: 'scenario-id',
     });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).params[0]).toBe(pool);
-    expect(fetchMock.mock.calls[2][0]).toBe('http://studio/v1/scenarios');
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).overrides[0]).toMatchObject({
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).params[0]).toEqual([pool]);
+    expect(fetchMock.mock.calls[4][0]).toBe('http://studio/v1/scenarios');
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body).overrides[0]).toMatchObject({
       templateId: 'pancakeswap-clmm-pool-state',
-      values: { sqrt_price_x64: '36893488147419103232', tick_current: 13863 },
+      values: { sqrt_price_x64: '36893488147419103232', tick_current: 13863, liquidity: '1000' },
       scenarioRelativeSlot: 1,
       fetchBeforeUse: true,
       account: { pubkey: pool },
