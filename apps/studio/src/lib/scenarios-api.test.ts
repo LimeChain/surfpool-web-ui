@@ -3,10 +3,12 @@ import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  createPhoenixCollateralScenario,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  fetchDynamicRefOptions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -164,6 +166,74 @@ describe('createPumpSwapPriceShockScenario', () => {
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
   });
+});
+
+vi.mock('./ai-client', () => ({
+  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
+  callMCPTool: vi.fn(),
+}));
+
+describe('createPhoenixCollateralScenario', () => {
+  it('creates the scenario through the Phoenix MCP tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ url: 'http://studio/scenarios?id=phoenix-1&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', ' trader ', ' -5 ')).resolves.toEqual({
+      id: 'phoenix-1',
+    });
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'create_phoenix_collateral_scenario',
+      { trader: 'trader', targetQuoteLots: '-5' },
+      'session'
+    );
+  });
+
+  it('surfaces tool validation failures', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: 'Phoenix collateral stress can only lower collateral' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
+      'Phoenix collateral stress can only lower collateral'
+    );
+  });
+});
+
+describe('fetchDynamicRefOptions', () => {
+  it('returns the live symbols from the list_phoenix_markets tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ perpAssetMap: 'map1', count: 2, symbols: ['SOL', 'BTC'] }),
+        },
+      ],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual(['SOL', 'BTC']);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
+  });
+
+  it('falls back to [] when the tool reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
+  });
+
 });
 
 describe('createScenarioPayload', () => {

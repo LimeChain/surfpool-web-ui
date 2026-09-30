@@ -88,6 +88,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('Phoenix Liquidation Cascade')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -123,6 +124,16 @@ describe('AIHeader', () => {
     expect(prompt).toContain('pump-amm-canonical-pool');
     expect(prompt).toContain('create_scenario');
     expect(prompt).toContain('do not build or execute a swap');
+  });
+
+  it('loads a two-stage Phoenix liquidation preparation prompt', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Phoenix Liquidation Cascade'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('<PASTE_PHOENIX_TRADER_ACCOUNT>');
+    expect(prompt).toContain('<PASTE_MARKET_SYMBOL>');
   });
 
   it('renders the model selector button', () => {

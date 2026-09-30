@@ -3,6 +3,7 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
+  fetchDynamicRefOptions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -114,6 +115,7 @@ const ENABLED_PROTOCOLS = [
   'kamino-liquidity',
   // Whirlpool: the Kamino liquidation-arbitrage scenario overrides its pools
   'Whirlpool',
+  'Phoenix Eternal',
 ];
 
 // Kamino ships six programs. Collapse them behind one icon and let the panel
@@ -155,11 +157,39 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const accountRequestRef = useRef(0);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
+
+  const [dynamicOptions, setDynamicOptions] = useState<Record<string, string[]>>({});
   const isFirstSlotsChangeRef = useRef(true);
+
+  useEffect(() => {
+    const properties = (selectedAction?.template?.properties ?? []) as any[];
+    const sources = Array.from(
+      new Set(
+        properties
+          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
+          .map((prop) => prop.source as string)
+      )
+    );
+    if (sources.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const handleOptionsLoaded = (optionLists: string[][]) => {
+      if (cancelled) return;
+      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
+    };
+    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, source))).then(handleOptionsLoaded);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAction, studioUrl]);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -603,7 +633,8 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action) => {
+  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
+    const requestId = ++accountRequestRef.current;
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
@@ -612,6 +643,7 @@ export default function ScenarioEditor({
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
+      setLoadingAccountData(false);
       return;
     }
 
@@ -629,9 +661,17 @@ export default function ScenarioEditor({
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
+      if (accountPubkey) addressString = accountPubkey;
 
-      // Step 1: Fetch account info with parsed JSON
+      // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
+
+      // A template whose properties all carry value_type (the Phoenix market templates) edits no
+      // field of the account, so its decoded data would only be sent back as override values.
+      // An empty slice still forks the account in for Play, without decoding it.
+      const properties = action.template.properties ?? [];
+      const inputsOnly =
+        properties.length > 0 && properties.every((prop: any) => typeof prop !== 'string' && prop.value_type != null);
 
       const getAccountInfoRequest = {
         jsonrpc: '2.0',
@@ -639,10 +679,9 @@ export default function ScenarioEditor({
         method: 'getAccountInfo',
         params: [
           addressString,
-          {
-            commitment: 'confirmed',
-            encoding: 'jsonParsed',
-          },
+          inputsOnly
+            ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
+            : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
       };
 
@@ -656,6 +695,7 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
+      if (requestId !== accountRequestRef.current) return;
 
       if (accountInfoData.result?.value?.data?.parsed) {
         // Populate accountData with the parsed data
@@ -667,7 +707,7 @@ export default function ScenarioEditor({
       setLoadingAccountData(false);
     } catch (error) {
       console.error('Error loading account data:', error);
-      setLoadingAccountData(false);
+      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
   };
 
@@ -790,7 +830,12 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    // A saved override keeps the account it was created for (such as a Phoenix
+                    // Trader); the template's address is only for a new action.
+                    account:
+                      existingAction.actionId === action.id && existingAction.account
+                        ? existingAction.account
+                        : action.template?.address,
                   }
                 : existingAction
             ),
@@ -1260,7 +1305,7 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction);
+                                                    await handleActionSelect(foundAction, action.account?.pubkey);
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1837,7 +1882,15 @@ export default function ScenarioEditor({
                                 ) : (
                                   <div className="mb-6 flex-1 space-y-4">
                                     {(() => {
-                                      const fields = getFieldsFromIDL(selectedAction.template);
+                                      const fields = [...getFieldsFromIDL(selectedAction.template)];
+                                      // value_type lets a property without an IDL field still render an input
+                                      for (const prop of selectedAction.template?.properties ?? []) {
+                                        if (typeof prop === 'string' || prop.value_type == null) continue;
+                                        const index = fields.findIndex((field: any) => field.name === prop.path);
+                                        const field = { ...fields[index], name: prop.path, type: prop.value_type };
+                                        if (index === -1) fields.push(field);
+                                        else fields[index] = field;
+                                      }
 
                                       logger.log('🔍 Fields extracted from IDL:', fields);
                                       logger.log('🔍 Account type:', selectedAction.template?.accountType);
@@ -1960,7 +2013,11 @@ export default function ScenarioEditor({
                                         const prop = rawProperties.find(
                                           (p: any) => (typeof p === 'string' ? p : p.path) === fieldPath
                                         );
-                                        return prop && typeof prop !== 'string' && prop.type === 'constant_ref';
+                                        return (
+                                          prop &&
+                                          typeof prop !== 'string' &&
+                                          (prop.type === 'constant_ref' || prop.type === 'dynamic_ref')
+                                        );
                                       };
 
                                       // Helper to check if a field or any of its children should be rendered
@@ -2156,8 +2213,12 @@ export default function ScenarioEditor({
 
                                         // Regular field - render input based on type
                                         const typeString = String(typeInfo.type);
+                                        const isPhoenixCollateral =
+                                          selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
+                                          fieldPath === 'traderState.quoteLotCollateral';
                                         const inputType =
-                                          typeString.startsWith('i') || typeString.startsWith('u')
+                                          !isPhoenixCollateral &&
+                                          (typeString.startsWith('i') || typeString.startsWith('u'))
                                             ? 'number'
                                             : typeString === 'bool'
                                               ? 'checkbox'
@@ -2302,18 +2363,30 @@ export default function ScenarioEditor({
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
                                         const constantRefProps = rawProperties
-                                          .filter(
-                                            (prop: any) =>
-                                              typeof prop !== 'string' &&
-                                              prop.type === 'constant_ref' &&
-                                              prop.constant &&
-                                              constants[prop.constant]
-                                          )
+                                          .filter((prop: any) => {
+                                            if (typeof prop === 'string') return false;
+                                            if (prop.type === 'constant_ref')
+                                              return prop.constant && constants[prop.constant];
+                                            if (prop.type === 'dynamic_ref') return Boolean(prop.source);
+                                            return false;
+                                          })
                                           .map((prop: any) => ({
-                                            // Map to the old format for compatibility with existing rendering logic
+                                            // Map to the old format for compatibility with existing rendering logic.
+                                            // dynamic_ref resolves its options live; constant_ref reads the static catalog.
                                             name: prop.path,
-                                            type: 'constant_ref',
-                                            constant: prop.constant,
+                                            type: prop.type,
+                                            constantDef:
+                                              prop.type === 'dynamic_ref'
+                                                ? {
+                                                    label: prop.label ?? prop.path,
+                                                    description: prop.description,
+                                                    options: (dynamicOptions[prop.source] ?? []).map((value) => ({
+                                                      id: value,
+                                                      label: value,
+                                                      value,
+                                                    })),
+                                                  }
+                                                : constants[prop.constant],
                                             label: prop.label,
                                             description: prop.description,
                                           }));
@@ -2409,7 +2482,7 @@ export default function ScenarioEditor({
                                               PDA Configuration
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = constants[prop.constant];
+                                              const constantDef = prop.constantDef;
                                               const fieldPath = prop.name;
                                               const rawValue = getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
@@ -2418,6 +2491,10 @@ export default function ScenarioEditor({
 
                                               // Use searchable Combobox for constants with many options (e.g., verified tokens)
                                               const useCombobox = constantDef.options.length > 20;
+                                              const { options, selectedOption } = resolveTokenSelectorOptions(
+                                                constantDef.options,
+                                                currentValue
+                                              );
 
                                               return (
                                                 <div key={fieldPath} className="space-y-2">
@@ -2444,17 +2521,7 @@ export default function ScenarioEditor({
                                                     />
                                                   ) : (
                                                     <Select
-                                                      value={
-                                                        // For hex values (like Pyth feed IDs), find matching option case-insensitively
-                                                        currentValue.startsWith('0x')
-                                                          ? constantDef.options.find(
-                                                              (opt: any) =>
-                                                                opt.value?.toLowerCase() === currentValue.toLowerCase()
-                                                            )?.value ||
-                                                            currentValue ||
-                                                            ''
-                                                          : currentValue || ''
-                                                      }
+                                                      value={String(selectedOption?.value ?? '')}
                                                       onChange={(e) => {
                                                         setValue(fieldPath, e.target.value);
                                                       }}
@@ -2465,9 +2532,9 @@ export default function ScenarioEditor({
                                                       <option value="">
                                                         Select {constantDef.label.toLowerCase()}...
                                                       </option>
-                                                      {constantDef.options.map((option: any) => (
+                                                      {options.map((option) => (
                                                         <option key={option.id} value={option.value}>
-                                                          {option.label}
+                                                          {option.metadata?.symbol ?? option.label}
                                                         </option>
                                                       ))}
                                                     </Select>
