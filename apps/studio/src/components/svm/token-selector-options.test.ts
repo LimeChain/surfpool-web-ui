@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getSolFiCustomAccountKind,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
   type TokenSelectorOption,
@@ -36,6 +37,21 @@ describe('resolveTokenSelectorOptions', () => {
 
     expect(result.selectedOption).toBe(catalogOptions[1]);
     expect(result.options).toBe(catalogOptions);
+  });
+});
+
+describe('getSolFiCustomAccountKind', () => {
+  it('names the concrete account expected by each SolFi template', () => {
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-spread')).toBe('market');
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-size-impact')).toBe('market');
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-price')).toBe('oracle');
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-freshness')).toBe('oracle');
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-vault-balance')).toBe('vault');
+  });
+
+  it('does not add a custom-address control to other protocols', () => {
+    expect(getSolFiCustomAccountKind('Raydium', 'solfi-spread')).toBeUndefined();
+    expect(getSolFiCustomAccountKind('SolFi', 'unknown-template')).toBeUndefined();
   });
 });
 

@@ -25,12 +25,16 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { resolveTokenSelectorOptions, shouldUseConstantCombobox } from './token-selector-options';
+import {
+  getSolFiCustomAccountKind,
+  resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -2463,6 +2467,19 @@ export default function ScenarioEditor({
                                               const onValueChange = prop.isAccountSelector
                                                 ? setSelectedAccountPubkey
                                                 : (value: string) => setValue(fieldPath, value);
+                                              const solfiCustomAccountKind = prop.isAccountSelector
+                                                ? getSolFiCustomAccountKind(
+                                                    selectedAction.template?.protocol,
+                                                    selectedAction.template?.id
+                                                  )
+                                                : undefined;
+                                              const customAccountValue =
+                                                solfiCustomAccountKind &&
+                                                !constantDef.options.some(
+                                                  (option: any) => String(option.value) === currentValue
+                                                )
+                                                  ? currentValue
+                                                  : '';
 
                                               // Use searchable Combobox for constants with many options (e.g., verified tokens)
                                               const useCombobox = shouldUseConstantCombobox(
@@ -2523,6 +2540,25 @@ export default function ScenarioEditor({
                                                         </option>
                                                       ))}
                                                     </Select>
+                                                  )}
+
+                                                  {solfiCustomAccountKind && (
+                                                    <div className="space-y-2 pt-1">
+                                                      <div className="flex items-center gap-3 text-xs text-zinc-500">
+                                                        <span className="h-px flex-1 bg-zinc-700" />
+                                                        <span>Or enter a {solfiCustomAccountKind} address</span>
+                                                        <span className="h-px flex-1 bg-zinc-700" />
+                                                      </div>
+                                                      <Input
+                                                        aria-label={`Custom SolFi ${solfiCustomAccountKind} address`}
+                                                        value={customAccountValue}
+                                                        onChange={(event) => onValueChange(event.target.value.trim())}
+                                                        placeholder={`Enter SolFi ${solfiCustomAccountKind} address...`}
+                                                        className={
+                                                          isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
+                                                        }
+                                                      />
+                                                    </div>
                                                   )}
 
                                                   {/* Show selected token details */}

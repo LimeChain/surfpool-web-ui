@@ -12,6 +12,14 @@ export type TokenSelectorOption = {
 export const shouldUseConstantCombobox = (optionCount: number, isAccountSelector: boolean) =>
   isAccountSelector || optionCount > 20;
 
+export const getSolFiCustomAccountKind = (protocol: unknown, templateId: unknown) => {
+  if (protocol !== 'SolFi' || typeof templateId !== 'string') return undefined;
+  if (templateId === 'solfi-price' || templateId === 'solfi-freshness') return 'oracle';
+  if (templateId === 'solfi-vault-balance') return 'vault';
+  if (templateId === 'solfi-spread' || templateId === 'solfi-size-impact') return 'market';
+  return undefined;
+};
+
 export const resolveTokenSelectorOptions = (
   catalogOptions: TokenSelectorOption[],
   currentValue: string | number | undefined

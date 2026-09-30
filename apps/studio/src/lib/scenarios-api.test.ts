@@ -563,6 +563,21 @@ describe('resolveTemplateAccount', () => {
     const pda = { pda: { programId: 'program', seeds: [] } };
     expect(resolveTemplateAccount(pda, undefined, '')).toBe(pda);
   });
+
+  it('carries a user-entered account through the scenario registration RPC payload', () => {
+    const customAddress = '8BrwYAr1K11sG8GvM8vUFAw45Mm1mLCuTd4ynhNMYjRC';
+    const account = resolveTemplateAccount({ pubkey: 'catalog-default' }, 'market', customAddress);
+    const payload = serializeScenarioJson({
+      method: 'surfnet_registerScenario',
+      params: [{ overrides: [{ templateId: 'solfi-spread', account }] }],
+    });
+    const parsed = parseScenariosJson(payload) as {
+      params: Array<{ overrides: Array<{ account: { pubkey: string } }> }>;
+    };
+
+    expect(parsed.params[0].overrides[0].account.pubkey).toBe(customAddress);
+    expect(payload).not.toContain('catalog-default');
+  });
 });
 
 describe('getDirectAccountMarketConstantName', () => {
