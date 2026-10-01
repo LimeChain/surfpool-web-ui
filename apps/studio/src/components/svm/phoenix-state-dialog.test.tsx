@@ -61,9 +61,11 @@ describe('PhoenixStateDialog', () => {
     renderDialog();
 
     await screen.findByRole('button', { name: 'BTC' });
-    fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '80.5' } });
-
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    // Not a whole number, a zero mark, and one past u32::MAX.
+    for (const invalid of ['80.5', '0', '4294967296']) {
+      fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: invalid } });
+      expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    }
     expect(createDirectMarkMock).not.toHaveBeenCalled();
   });
 
@@ -135,7 +137,7 @@ describe('PhoenixStateDialog', () => {
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
-    for (const invalid of ['0', '65536', '1.5']) {
+    for (const invalid of ['0', '10001', '65536', '1.5']) {
       fireEvent.change(screen.getByLabelText('Maintenance risk factor'), { target: { value: invalid } });
       expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
     }
