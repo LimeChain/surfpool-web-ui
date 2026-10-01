@@ -1,4 +1,5 @@
 import {
+  createPhoenixCollateralScenario,
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   fetchDynamicRefOptions,
@@ -65,8 +66,33 @@ describe('PhoenixStateDialog', () => {
     for (const invalid of ['80.5', '0', '4294967296']) {
       fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: invalid } });
       expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+      fireEvent.submit(screen.getByRole('button', { name: 'Create scenario' }).closest('form')!);
     }
     expect(createDirectMarkMock).not.toHaveBeenCalled();
+  });
+
+  it('creates a collateral scenario without a market catalog and keeps invalid quote lots out of the backend', async () => {
+    const createMock = vi.mocked(createPhoenixCollateralScenario);
+    createMock.mockResolvedValue({ id: 'collateral' });
+    fetchSymbolsMock.mockResolvedValue([]);
+    const onCreated = vi.fn();
+    renderDialog(onCreated);
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
+    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });
+    for (const invalid of ['', '-', '1.5']) {
+      fireEvent.change(screen.getByLabelText('Target collateral quote lots'), { target: { value: invalid } });
+      expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+      fireEvent.submit(screen.getByRole('button', { name: 'Create scenario' }).closest('form')!);
+    }
+    expect(createMock).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Target collateral quote lots'), { target: { value: '-5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'trader', '-5');
+      expect(onCreated).toHaveBeenCalledWith('collateral');
+    });
   });
 
   it('surfaces backend validation failures', async () => {
@@ -174,7 +200,11 @@ describe('PhoenixStateDialog', () => {
 
   it('locks the market while the catalog loads and takes a typed symbol when it loads empty', async () => {
     let finishLoading!: (options: DynamicRefOption[]) => void;
-    fetchSymbolsMock.mockReturnValue(new Promise((resolve) => { finishLoading = resolve; }));
+    fetchSymbolsMock.mockReturnValue(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      })
+    );
     createDirectMarkMock.mockResolvedValue({ id: 'typed' });
     renderDialog();
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'direct-mark' } });
@@ -190,10 +220,5 @@ describe('PhoenixStateDialog', () => {
     await waitFor(() => {
       expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
     });
-
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });
-    fireEvent.change(screen.getByLabelText('Target collateral quote lots'), { target: { value: '1' } });
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
   });
 });
