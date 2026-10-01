@@ -40,6 +40,15 @@ const PhoenixStateModeLabel: Record<PhoenixStateMode, string> = {
 
 const phoenixStateModes = Object.values(PhoenixStateMode);
 
+// The backend's ranges: a mark is a u32 tick count of at least 1, and Phoenix reads a risk factor
+// above 100% as 100%. A factor must also be above the market's backstop factor, which only the
+// backend can check.
+const MAX_MARK_TICKS = 4_294_967_295;
+const MAX_RISK_FACTOR_BPS = 10_000;
+
+const isWholeNumberInRange = (value: string, min: number, max: number) =>
+  /^\d+$/.test(value.trim()) && Number(value) >= min && Number(value) <= max;
+
 interface PhoenixStateDialogProps {
   open: boolean;
   studioUrl: string;
@@ -70,8 +79,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
 
   // DERIVED STATE
   const hasSignedCollateral = /^-?\d+$/.test(targetQuoteLots.trim());
-  const hasTargetTicks = /^\d+$/.test(targetTicks.trim());
-  const hasRiskFactor = /^\d+$/.test(riskFactor.trim()) && Number(riskFactor) >= 1 && Number(riskFactor) <= 65535;
+  const hasTargetTicks = isWholeNumberInRange(targetTicks, 1, MAX_MARK_TICKS);
+  const hasRiskFactor = isWholeNumberInRange(riskFactor, 1, MAX_RISK_FACTOR_BPS);
   const symbolOptions = marketOptions.map((option) => option.value);
   const addressBySymbol = new Map(marketOptions.map((option) => [option.value, option.address]));
   const hasSymbolCatalog = marketOptions.length > 0;
@@ -252,14 +261,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
               {mode === PhoenixStateMode.DirectMark ? (
                 <Input
                   aria-label="Target mark ticks"
-                  placeholder="Target mark ticks"
+                  placeholder="Target mark ticks, at least 1"
                   value={targetTicks}
                   onChange={handleTargetTicksChange}
                 />
               ) : (
                 <Input
                   aria-label="Maintenance risk factor"
-                  placeholder="Maintenance risk factor in bps (live markets use 5000)"
+                  placeholder="Maintenance risk factor in bps, up to 10000 (live markets use 5000)"
                   value={riskFactor}
                   onChange={handleRiskFactorChange}
                 />
