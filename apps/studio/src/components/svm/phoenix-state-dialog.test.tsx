@@ -110,6 +110,28 @@ describe('PhoenixStateDialog', () => {
     });
   });
 
+  it('keeps a custom market when the dialog is closed and reopened', async () => {
+    createDirectMarkMock.mockResolvedValue({ id: 'custom' });
+    const dialog = (open: boolean) => (
+      <PhoenixStateDialog open={open} studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />
+    );
+    const { rerender } = render(dialog(true));
+
+    await screen.findByRole('button', { name: 'BTC' });
+    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'XYZ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'XYZ' }));
+    fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '1000' } });
+    rerender(dialog(false));
+    rerender(dialog(true));
+    await screen.findByRole('button', { name: 'BTC' });
+
+    expect(screen.getByLabelText('Phoenix market')).toHaveValue('XYZ');
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => {
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
+    });
+  });
+
   it('creates a direct mark scenario with a market selected from the live dropdown', async () => {
     fetchSymbolsMock.mockResolvedValue(markets('SOL', 'NEW'));
     createDirectMarkMock.mockResolvedValue({ id: 'direct-mark' });

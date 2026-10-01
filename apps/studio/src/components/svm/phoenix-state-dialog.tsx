@@ -68,7 +68,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   // STATE
   const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.DirectMark);
   const [trader, setTrader] = useState('');
-  const [symbol, setSymbol] = useState('BTC');
+  const [symbol, setSymbol] = useState('');
   const [targetQuoteLots, setTargetQuoteLots] = useState('');
   const [targetTicks, setTargetTicks] = useState('');
   const [riskFactor, setRiskFactor] = useState('');
@@ -188,9 +188,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     const handleSymbolsLoaded = (options: DynamicRefOption[]) => {
       if (cancelled) return;
       setMarketOptions(options);
-      setSymbol((current) =>
-        options.some((option) => option.value === current) ? current : (options[0]?.value ?? '')
-      );
+      setSymbol((current) => current || (options.find((option) => option.value === 'BTC') ?? options[0])?.value || '');
       setIsLoadingSymbols(false);
     };
 
