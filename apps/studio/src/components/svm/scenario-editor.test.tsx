@@ -131,6 +131,22 @@ it('keeps the address a saved override was created against when updating it', as
   });
 });
 
+it('rebuilds a saved derived (PDA) address from the template when updating it', async () => {
+  const pda = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { propertyRef: 'mint' }] } };
+  const template = { ...collateralTemplate, address: pda };
+  const resolvedSeeds = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { pubkey: 'OldMint' }] } };
+  await openEditor(template, { 'traderState.quoteLotCollateral': '1' }, resolvedSeeds);
+  fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), {
+    target: { value: '2' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+  await waitFor(() => {
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    expect(JSON.parse(patch![1].body).overrides[0].account).toEqual(pda);
+  });
+});
+
 it('keeps numeric inputs for other IDL templates unchanged', async () => {
   await openEditor({ ...collateralTemplate, id: 'other-collateral' }, { 'traderState.quoteLotCollateral': 1 });
   const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');

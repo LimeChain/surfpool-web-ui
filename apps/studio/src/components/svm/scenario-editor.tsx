@@ -831,10 +831,11 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A saved override keeps the account it was created for (such as a Phoenix
-                    // Trader); the template's address is only for a new action.
+                    // A saved override keeps the plain address it was created for (such as a Phoenix
+                    // Trader). A derived (PDA) address is rebuilt from the template, so edited seed
+                    // fields such as a token or fee tier pick the new account.
                     account:
-                      existingAction.actionId === action.id && existingAction.account
+                      existingAction.actionId === action.id && existingAction.account?.pubkey
                         ? existingAction.account
                         : action.template?.address,
                   }
