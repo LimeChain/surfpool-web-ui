@@ -280,12 +280,24 @@ async function phoenixMarketTemplate(studioUrl: string, templateId: string): Pro
   return template;
 }
 
+export interface DynamicRefOption {
+  value: string;
+  address?: string;
+}
+
+interface DynamicRefPayload {
+  error?: string | null;
+  symbols?: string[];
+  markets?: { symbol: string; orderbook?: string }[];
+}
+
 /** Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. */
-export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<string[]> {
+export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<DynamicRefOption[]> {
   try {
-    const payload = await callMcpToolJson<{ error?: string | null; symbols?: string[] }>(studioUrl, source, {});
+    const payload = await callMcpToolJson<DynamicRefPayload>(studioUrl, source, {});
     if (!payload || payload.error) return [];
-    return payload.symbols ?? [];
+    if (payload.markets) return payload.markets.map((market) => ({ value: market.symbol, address: market.orderbook }));
+    return (payload.symbols ?? []).map((value) => ({ value }));
   } catch {
     return [];
   }

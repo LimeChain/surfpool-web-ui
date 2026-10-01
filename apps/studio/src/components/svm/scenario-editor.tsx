@@ -10,6 +10,7 @@ import {
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
+  type DynamicRefOption,
   type OverridePayload,
 } from '@/lib/scenarios-api';
 import {
@@ -28,7 +29,7 @@ import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpo
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
-import { resolveTokenSelectorOptions } from './token-selector-options';
+import { customValueOption, findOptionByTypedValue, resolveTokenSelectorOptions } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -163,7 +164,7 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
 
-  const [dynamicOptions, setDynamicOptions] = useState<Record<string, string[]>>({});
+  const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
   const isFirstSlotsChangeRef = useRef(true);
 
   useEffect(() => {
@@ -180,7 +181,7 @@ export default function ScenarioEditor({
     }
 
     let cancelled = false;
-    const handleOptionsLoaded = (optionLists: string[][]) => {
+    const handleOptionsLoaded = (optionLists: DynamicRefOption[][]) => {
       if (cancelled) return;
       setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
     };
@@ -2380,10 +2381,13 @@ export default function ScenarioEditor({
                                                 ? {
                                                     label: prop.label ?? prop.path,
                                                     description: prop.description,
-                                                    options: (dynamicOptions[prop.source] ?? []).map((value) => ({
-                                                      id: value,
-                                                      label: value,
-                                                      value,
+                                                    options: (dynamicOptions[prop.source] ?? []).map((option) => ({
+                                                      id: option.value,
+                                                      label: option.value,
+                                                      value: option.value,
+                                                      address: option.address,
+                                                      description: option.address,
+                                                      metadata: { symbol: option.value },
                                                     })),
                                                   }
                                                 : constants[prop.constant],
@@ -2399,16 +2403,22 @@ export default function ScenarioEditor({
                                           fieldPath,
                                           currentValue,
                                           isModified,
+                                          takesCustomValues,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
+                                          takesCustomValues: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
                                             currentValue
                                           );
+                                          // A typed value that names a catalog option (its value, symbol, label or
+                                          // address) picks that option; anything else is kept as a custom value.
+                                          const customOptionFor = (query: string) =>
+                                            findOptionByTypedValue(options, query) ? null : customValueOption(query);
 
                                           return (
                                             <Combobox
@@ -2434,7 +2444,7 @@ export default function ScenarioEditor({
                                                 ).toLowerCase();
                                                 const label = (option.label || '').toLowerCase();
                                                 const description = (option.description || '').toLowerCase();
-                                                const value = (option.value || '').toLowerCase();
+                                                const value = String(option.value ?? '').toLowerCase();
                                                 return (
                                                   symbol.includes(q) ||
                                                   label.includes(q) ||
@@ -2442,6 +2452,8 @@ export default function ScenarioEditor({
                                                   value.includes(q)
                                                 );
                                               }}
+                                              customOption={takesCustomValues ? customOptionFor : undefined}
+                                              immediate={takesCustomValues}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                               aria-label={constantDef.label}
                                               className={isModified ? '[&_[data-slot=control]]:border-yellow-500' : ''}
@@ -2489,8 +2501,10 @@ export default function ScenarioEditor({
                                               const currentValue = rawValue != null ? String(rawValue) : '';
                                               const isModified = modifiedFields.has(fieldPath);
 
-                                              // Use searchable Combobox for constants with many options (e.g., verified tokens)
-                                              const useCombobox = constantDef.options.length > 20;
+                                              // A live list (today only Phoenix markets) is always searchable and takes custom values;
+                                              // static catalogs keep the plain select below 20 options.
+                                              const isLiveList = prop.type === 'dynamic_ref';
+                                              const useCombobox = isLiveList || constantDef.options.length > 20;
                                               const { options, selectedOption } = resolveTokenSelectorOptions(
                                                 constantDef.options,
                                                 currentValue
@@ -2518,6 +2532,7 @@ export default function ScenarioEditor({
                                                       fieldPath={fieldPath}
                                                       currentValue={currentValue}
                                                       isModified={isModified}
+                                                      takesCustomValues={isLiveList}
                                                     />
                                                   ) : (
                                                     <Select
@@ -2576,7 +2591,7 @@ export default function ScenarioEditor({
                                                               )}
                                                             </div>
                                                             <div className="truncate font-mono text-xs text-zinc-500">
-                                                              {selectedOption.value}
+                                                              {selectedOption.address ?? selectedOption.value}
                                                             </div>
                                                           </div>
                                                         </div>

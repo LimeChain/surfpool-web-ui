@@ -2,7 +2,9 @@ import {
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   fetchDynamicRefOptions,
+  type DynamicRefOption,
 } from '@/lib/scenarios-api';
+import { comboboxResults } from '@/test-utils';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PhoenixStateDialog from './phoenix-state-dialog';
@@ -14,8 +16,12 @@ vi.mock('@/lib/scenarios-api', () => ({
   fetchDynamicRefOptions: vi.fn(),
 }));
 
-vi.mock('@surfpool/ui', () => ({
+vi.mock('@surfpool/ui', async () => ({
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+  Combobox: (await import('@/test-utils')).MockCombobox,
+  ComboboxDescription: ({ children }: any) => <span>{children}</span>,
+  ComboboxLabel: ({ children }: any) => <span>{children}</span>,
+  ComboboxOption: ({ children }: any) => <div>{children}</div>,
   Dialog: ({ children, open }: any) => (open ? <div>{children}</div> : null),
   DialogActions: ({ children }: any) => <div>{children}</div>,
   DialogDescription: ({ children }: any) => <p>{children}</p>,
@@ -36,8 +42,14 @@ vi.mock('@surfpool/ui', () => ({
 const createDirectMarkMock = vi.mocked(createPhoenixDirectMarkScenario);
 const fetchSymbolsMock = vi.mocked(fetchDynamicRefOptions);
 
+const markets = (...symbols: string[]): DynamicRefOption[] =>
+  symbols.map((value) => ({ value, address: `${value}Orderbook1111111111111111111111111` }));
+
+const renderDialog = (onCreated = vi.fn()) =>
+  render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={onCreated} />);
+
 beforeEach(() => {
-  fetchSymbolsMock.mockResolvedValue(['BTC', 'SOL']);
+  fetchSymbolsMock.mockResolvedValue(markets('BTC', 'SOL'));
 });
 
 afterEach(() => {
@@ -46,9 +58,9 @@ afterEach(() => {
 
 describe('PhoenixStateDialog', () => {
   it('keeps invalid exact tick inputs out of the backend', async () => {
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+    renderDialog();
 
-    await screen.findByRole('option', { name: 'BTC' });
+    await screen.findByRole('button', { name: 'BTC' });
     fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '80.5' } });
 
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
@@ -57,49 +69,55 @@ describe('PhoenixStateDialog', () => {
 
   it('surfaces backend validation failures', async () => {
     createDirectMarkMock.mockRejectedValue(new Error('Phoenix PerpAssetMap account not found'));
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+    renderDialog();
 
-    await screen.findByRole('option', { name: 'SOL' });
-    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'SOL' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
     fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '80000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     expect(await screen.findByText('Phoenix PerpAssetMap account not found')).toBeInTheDocument();
   });
 
-  it('rejects a market symbol outside the loaded catalog but accepts one inside it', async () => {
-    fetchSymbolsMock.mockResolvedValue(['BTC', 'ETH']);
-    createDirectMarkMock.mockResolvedValue({ id: 'phoenix-scenario' });
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+  it('picks a listed market typed by its symbol in any case or by its orderbook address', async () => {
+    const amat = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
+    const unlisted = '6tgCsPZqZi4rcQWLLgoMHE1XAnRqA7mYYRByGUYxyFwB';
+    fetchSymbolsMock.mockResolvedValue([
+      { value: 'AMAT', address: amat },
+      { value: 'AMD', address: 'ABBz13DENxvLRLh6pjHxNsxBPNNbEnfiMPPXrx8sK7qN' },
+    ]);
+    createDirectMarkMock.mockResolvedValue({ id: 'amat' });
+    renderDialog();
 
-    await screen.findByRole('option', { name: 'ETH' });
-    fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '80000' } });
+    await screen.findByRole('button', { name: 'AMD' });
+    const search = screen.getByLabelText('Phoenix market');
+    fireEvent.change(search, { target: { value: amat } });
+    expect(comboboxResults('Phoenix market')).toEqual(['AMAT']);
+    fireEvent.change(search, { target: { value: 'amat' } });
+    expect(comboboxResults('Phoenix market')).toEqual(['AMAT']);
+    fireEvent.change(search, { target: { value: unlisted } });
+    expect(comboboxResults('Phoenix market')).toEqual([unlisted]);
+    expect(screen.getByText('Custom symbol')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'BTCC' } });
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
-    expect(createDirectMarkMock).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'ETH' } });
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+    fireEvent.change(search, { target: { value: amat } });
+    fireEvent.click(screen.getByRole('button', { name: 'AMAT' }));
+    fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '31350' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '80000');
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
     });
   });
 
   it('creates a direct mark scenario with a market selected from the live dropdown', async () => {
-    fetchSymbolsMock.mockResolvedValue(['SOL', 'NEW']);
+    fetchSymbolsMock.mockResolvedValue(markets('SOL', 'NEW'));
     createDirectMarkMock.mockResolvedValue({ id: 'direct-mark' });
     const onCreated = vi.fn();
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={onCreated} />);
+    renderDialog(onCreated);
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'direct-mark' } });
-    await screen.findByRole('option', { name: 'NEW' });
-    const market = screen.getByRole('combobox', { name: 'Phoenix market' });
-    expect(market).toHaveValue('SOL');
-    expect(screen.queryByRole('textbox', { name: 'Phoenix market' })).not.toBeInTheDocument();
-    fireEvent.change(market, { target: { value: 'NEW' } });
+    await screen.findByRole('button', { name: 'NEW' });
+    expect(screen.getByLabelText('Phoenix market')).toHaveValue('SOL');
+    fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
     fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '12345' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
@@ -113,11 +131,10 @@ describe('PhoenixStateDialog', () => {
     const createMock = vi.mocked(createPhoenixMaintenanceMarginScenario);
     createMock.mockResolvedValue({ id: 'maintenance' });
     const onCreated = vi.fn();
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={onCreated} />);
+    renderDialog(onCreated);
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
-    await screen.findByRole('option', { name: 'SOL' });
-    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'SOL' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
     for (const invalid of ['0', '65536', '1.5']) {
       fireEvent.change(screen.getByLabelText('Maintenance risk factor'), { target: { value: invalid } });
       expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
@@ -131,24 +148,28 @@ describe('PhoenixStateDialog', () => {
     });
   });
 
-  it('disables market selection and creation while the catalog is loading or unavailable', async () => {
-    let finishLoading!: (symbols: string[]) => void;
+  it('locks the market while the catalog loads and takes a typed symbol when it loads empty', async () => {
+    let finishLoading!: (options: DynamicRefOption[]) => void;
     fetchSymbolsMock.mockReturnValue(new Promise((resolve) => { finishLoading = resolve; }));
-    render(<PhoenixStateDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+    createDirectMarkMock.mockResolvedValue({ id: 'typed' });
+    renderDialog();
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'direct-mark' } });
     fireEvent.change(screen.getByLabelText('Target mark ticks'), { target: { value: '12345' } });
 
-    expect(screen.getByRole('combobox', { name: 'Phoenix market' })).toBeDisabled();
+    expect(screen.getByLabelText('Phoenix market')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
     await act(async () => finishLoading([]));
-    expect(await screen.findByRole('status')).toHaveTextContent('No markets available');
-    expect(screen.getByRole('combobox', { name: 'Phoenix market' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    expect(await screen.findByRole('status')).toHaveTextContent('Markets could not be loaded');
+    fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: ' ETH ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ETH' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => {
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
+    });
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
     fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });
     fireEvent.change(screen.getByLabelText('Target collateral quote lots'), { target: { value: '1' } });
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
   });
-
 });

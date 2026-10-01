@@ -1,4 +1,5 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
+import { comboboxResults } from '@/test-utils';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
@@ -6,7 +7,10 @@ import ScenarioEditor from './scenario-editor';
 vi.mock('@/hooks/use-app-config', () => ({
   useAppConfig: () => ({ studioUrl: 'http://studio', rpcUrl: 'http://rpc' }),
 }));
-vi.mock('@surfpool/ui', () => ({
+vi.mock('@surfpool/ui', async () => ({
+  Combobox: (await import('@/test-utils')).MockCombobox,
+  ComboboxLabel: ({ children }: any) => <span>{children}</span>,
+  ComboboxOption: ({ children }: any) => <div>{children}</div>,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
   Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
 }));
@@ -110,8 +114,7 @@ it('keeps the saved market visible when the live catalog is unavailable', async 
     idl: { types: [{ name: 'Market', type: { kind: 'struct', fields: [{ name: 'symbol', type: 'string' }] } }] },
   };
   await openEditor(template, { symbol: 'SOL' });
-  const option = await screen.findByRole('option', { name: 'Custom · SOL' });
-  expect((option as HTMLOptionElement).selected).toBe(true);
+  expect(await screen.findByLabelText('symbol')).toHaveValue('Custom · SOL');
 });
 
 it('keeps the address a saved override was created against when updating it', async () => {
@@ -190,7 +193,7 @@ for (const market of marketTemplates) {
       fireEvent.change(input, { target: { value: target } });
       values[name] = target;
     }
-    expect(((await screen.findByRole('option', { name: 'Custom · SOL' })) as HTMLOptionElement).selected).toBe(true);
+    expect(await screen.findByLabelText('symbol')).toHaveValue('Custom · SOL');
     fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
@@ -221,7 +224,7 @@ it('reads the account of a template with IDL fields as parsed JSON', async () =>
 for (const market of marketTemplates) {
   it('sends only the inputs of a newly selected ' + market.name + ' action', async () => {
     const template = marketTemplate(market);
-    vi.mocked(fetchDynamicRefOptions).mockResolvedValue(['SOL']);
+    vi.mocked(fetchDynamicRefOptions).mockResolvedValue([{ value: 'SOL', address: 'solOrderbook' }]);
     await openEditor(template);
     // As on a surfnet with the Phoenix IDL: jsonParsed decodes the map, base64 returns its bytes.
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -234,8 +237,7 @@ for (const market of marketTemplates) {
     });
 
     fireEvent.click(await screen.findByRole('heading', { name: template.name }));
-    const symbol = await screen.findByRole('option', { name: 'SOL' });
-    fireEvent.change(symbol.closest('select')!, { target: { value: 'SOL' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
     const values: Record<string, string> = { symbol: 'SOL' };
     for (const name of market.prices) {
       fireEvent.change(await screen.findByPlaceholderText(`Enter ${name}...`), { target: { value: '1' } });
@@ -254,6 +256,52 @@ for (const market of marketTemplates) {
     ]);
   });
 }
+
+const savedSymbol = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+  let symbol: unknown;
+  await waitFor(() => {
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    symbol = JSON.parse(patch![1].body).overrides[0].values.symbol;
+  });
+  return symbol;
+};
+
+it('picks the listed market a template field is given by symbol in any case or by orderbook address', async () => {
+  const amat = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
+  vi.mocked(fetchDynamicRefOptions).mockResolvedValue([
+    { value: 'AMAT', address: amat },
+    { value: 'AMD', address: 'ABBz13DENxvLRLh6pjHxNsxBPNNbEnfiMPPXrx8sK7qN' },
+  ]);
+  await openEditor(marketTemplate(marketTemplates[0]), { symbol: 'AMD', target_ticks: '1' }, { pubkey: 'saved-map' });
+  const field = await screen.findByLabelText('symbol');
+  await waitFor(() => expect(field).toHaveValue('AMD'));
+
+  fireEvent.change(field, { target: { value: 'amat' } });
+  expect(comboboxResults('symbol')).toEqual(['AMAT']);
+  fireEvent.change(field, { target: { value: amat } });
+  expect(comboboxResults('symbol')).toEqual(['AMAT']);
+  fireEvent.click(screen.getByRole('button', { name: 'AMAT' }));
+
+  expect(await savedSymbol()).toBe('AMAT');
+});
+
+it('keeps a value a template field has no option for as a custom value', async () => {
+  const unlisted = '6tgCsPZqZi4rcQWLLgoMHE1XAnRqA7mYYRByGUYxyFwB';
+  vi.mocked(fetchDynamicRefOptions).mockResolvedValue([
+    { value: 'AMAT', address: 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW' },
+  ]);
+  await openEditor(marketTemplate(marketTemplates[0]), { symbol: 'AMAT', target_ticks: '1' }, { pubkey: 'saved-map' });
+  const field = await screen.findByLabelText('symbol');
+  await waitFor(() => expect(field).toHaveValue('AMAT'));
+
+  fireEvent.change(field, { target: { value: unlisted } });
+  expect(comboboxResults('symbol')).toEqual([`Custom · ${unlisted}`]);
+  fireEvent.click(screen.getByRole('button', { name: `Custom · ${unlisted}` }));
+
+  expect(await savedSymbol()).toBe(unlisted);
+});
 
 it('ignores an older account response that resolves after a newer selection', async () => {
   const other = { ...collateralTemplate, id: 'other-collateral', name: 'Other collateral', address: { pubkey: 'b' } };

@@ -212,18 +212,40 @@ describe('createPhoenixCollateralScenario', () => {
 });
 
 describe('fetchDynamicRefOptions', () => {
-  it('returns the live symbols from the list_phoenix_markets tool', async () => {
+  it('returns each live market with its orderbook address from the list_phoenix_markets tool', async () => {
     vi.mocked(callMCPTool).mockResolvedValue({
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ perpAssetMap: 'map1', count: 2, symbols: ['SOL', 'BTC'] }),
+          text: JSON.stringify({
+            perpAssetMap: 'map1',
+            count: 2,
+            symbols: ['BTC', 'SOL'],
+            markets: [
+              { symbol: 'BTC', orderbook: 'btcBook', markTicks: 83391, maintenanceRiskFactorBps: 5000 },
+              { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755, maintenanceRiskFactorBps: 5000 },
+            ],
+          }),
         },
       ],
     });
 
-    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual(['SOL', 'BTC']);
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
+      { value: 'BTC', address: 'btcBook' },
+      { value: 'SOL', address: 'solBook' },
+    ]);
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
+  });
+
+  it('falls back to bare symbols from a tool that lists no markets', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ symbols: ['SOL', 'BTC'] }) }],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
+      { value: 'SOL' },
+      { value: 'BTC' },
+    ]);
   });
 
   it('falls back to [] when the tool reports an error', async () => {

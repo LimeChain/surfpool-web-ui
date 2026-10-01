@@ -5,9 +5,14 @@ import {
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   fetchDynamicRefOptions,
+  type DynamicRefOption,
 } from '@/lib/scenarios-api';
 import {
   Button,
+  Combobox,
+  ComboboxDescription,
+  ComboboxLabel,
+  ComboboxOption,
   Dialog,
   DialogActions,
   DialogDescription,
@@ -16,7 +21,8 @@ import {
   Listbox,
   ListboxOption,
 } from '@surfpool/ui';
-import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { findOptionByTypedValue } from './token-selector-options';
 
 const PhoenixStateMode = {
   Collateral: 'collateral',
@@ -47,11 +53,7 @@ const renderStateModeOption = (stateMode: PhoenixStateMode) => (
   </ListboxOption>
 );
 
-const renderMarketOption = (marketSymbol: string) => (
-  <ListboxOption key={marketSymbol} value={marketSymbol}>
-    {marketSymbol}
-  </ListboxOption>
-);
+const displayMarketSymbol = (marketSymbol: string | null) => marketSymbol ?? undefined;
 
 export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated }: PhoenixStateDialogProps) {
   // STATE
@@ -63,20 +65,48 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [riskFactor, setRiskFactor] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [symbolOptions, setSymbolOptions] = useState<string[]>([]);
+  const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
 
   // DERIVED STATE
   const hasSignedCollateral = /^-?\d+$/.test(targetQuoteLots.trim());
   const hasTargetTicks = /^\d+$/.test(targetTicks.trim());
   const hasRiskFactor = /^\d+$/.test(riskFactor.trim()) && Number(riskFactor) >= 1 && Number(riskFactor) <= 65535;
-  const hasSymbolCatalog = symbolOptions.length > 0;
-  const hasSymbol = !isLoadingSymbols && symbolOptions.includes(symbol);
+  const symbolOptions = marketOptions.map((option) => option.value);
+  const addressBySymbol = new Map(marketOptions.map((option) => [option.value, option.address]));
+  const hasSymbolCatalog = marketOptions.length > 0;
+  const isCatalogUnavailable = !isLoadingSymbols && !hasSymbolCatalog;
+  const marketSymbol = isLoadingSymbols ? '' : symbol.trim();
+  const hasSymbol = !!marketSymbol;
+  const isCustomSymbol = hasSymbol && !symbolOptions.includes(marketSymbol);
   const canCreate =
     !isCreating &&
     ((mode === PhoenixStateMode.Collateral && !!trader.trim() && hasSignedCollateral) ||
       (mode === PhoenixStateMode.DirectMark && hasSymbol && hasTargetTicks) ||
       (mode === PhoenixStateMode.MaintenanceMargin && hasSymbol && hasRiskFactor));
+
+  // HELPERS
+  const matchesMarket = (optionSymbol: string | null, query: string) => {
+    if (!optionSymbol) return false;
+    const search = query.trim().toLowerCase();
+    const address = addressBySymbol.get(optionSymbol)?.toLowerCase();
+    return optionSymbol.toLowerCase().includes(search) || !!address?.includes(search);
+  };
+
+  const customMarketSymbol = (query: string) =>
+    findOptionByTypedValue(
+      marketOptions.map((option) => ({ id: option.value, label: option.value, ...option })),
+      query
+    )
+      ? null
+      : query;
+
+  const renderMarketOption = (optionSymbol: string) => (
+    <ComboboxOption key={optionSymbol} value={optionSymbol}>
+      <ComboboxLabel>{optionSymbol}</ComboboxLabel>
+      <ComboboxDescription>{addressBySymbol.get(optionSymbol) ?? 'Custom symbol'}</ComboboxDescription>
+    </ComboboxOption>
+  );
 
   // HANDLERS
   const handleClose = () => {
@@ -95,8 +125,9 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleSymbolChange = (selectedSymbol: string) => {
-    setSymbol(selectedSymbol);
+  const handleSymbolChange = (pickedSymbol: string | null) => {
+    if (!pickedSymbol) return;
+    setSymbol(pickedSymbol);
     setError(null);
   };
 
@@ -127,8 +158,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
         mode === PhoenixStateMode.Collateral
           ? await createPhoenixCollateralScenario(studioUrl, trader, targetQuoteLots)
           : mode === PhoenixStateMode.DirectMark
-            ? await createPhoenixDirectMarkScenario(studioUrl, symbol, targetTicks)
-            : await createPhoenixMaintenanceMarginScenario(studioUrl, symbol, riskFactor);
+            ? await createPhoenixDirectMarkScenario(studioUrl, marketSymbol, targetTicks)
+            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, riskFactor);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -143,12 +174,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     let cancelled = false;
 
     setIsLoadingSymbols(true);
-    setSymbolOptions([]);
+    setMarketOptions([]);
 
-    const handleSymbolsLoaded = (options: string[]) => {
+    const handleSymbolsLoaded = (options: DynamicRefOption[]) => {
       if (cancelled) return;
-      setSymbolOptions(options);
-      setSymbol((current) => (options.includes(current) ? current : (options[0] ?? '')));
+      setMarketOptions(options);
+      setSymbol((current) =>
+        options.some((option) => option.value === current) ? current : (options[0]?.value ?? '')
+      );
       setIsLoadingSymbols(false);
     };
 
@@ -164,26 +197,25 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
       <form onSubmit={handleSubmit}>
         <DialogTitle>Create Phoenix state scenario</DialogTitle>
         <DialogDescription>
-          Prepare Phoenix state for bots to trade, arbitrage, or liquidate. Surfpool does not execute their transactions.
+          Prepare Phoenix state for bots to trade, arbitrage, or liquidate. Surfpool does not execute their
+          transactions.
         </DialogDescription>
         <div className="mt-5 space-y-4">
           <div>
-            <span className="mb-1.5 block text-sm font-medium text-zinc-300">
-              State goal
-            </span>
-            <Listbox
-              aria-label="State goal"
-              value={mode}
-              onChange={handleModeChange}
-              disabled={isCreating}
-            >
+            <span className="mb-1.5 block text-sm font-medium text-zinc-300">State goal</span>
+            <Listbox aria-label="State goal" value={mode} onChange={handleModeChange} disabled={isCreating}>
               {phoenixStateModes.map(renderStateModeOption)}
             </Listbox>
           </div>
 
           {mode === PhoenixStateMode.Collateral ? (
             <>
-              <Input aria-label="Phoenix Trader account" placeholder="Trader account" value={trader} onChange={handleTraderChange} />
+              <Input
+                aria-label="Phoenix Trader account"
+                placeholder="Trader account"
+                value={trader}
+                onChange={handleTraderChange}
+              />
               <Input
                 aria-label="Target collateral quote lots"
                 placeholder="Target signed quote lots"
@@ -195,18 +227,25 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
             <>
               <div>
                 <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
-                <Listbox
+                {/* null, not undefined: Headless UI treats undefined as uncontrolled and warns once markets load. */}
+                <Combobox<string | null>
                   aria-label="Phoenix market"
-                  value={symbol}
+                  placeholder={isLoadingSymbols ? 'Loading markets…' : 'Search or type a symbol or orderbook address'}
+                  options={symbolOptions}
+                  value={symbol || null}
+                  immediate
+                  displayValue={displayMarketSymbol}
+                  filter={matchesMarket}
+                  customOption={customMarketSymbol}
                   onChange={handleSymbolChange}
-                  disabled={isCreating || isLoadingSymbols || !hasSymbolCatalog}
-                  placeholder={isLoadingSymbols ? 'Loading markets…' : 'No markets available'}
+                  disabled={isCreating || isLoadingSymbols}
                 >
-                  {symbolOptions.map(renderMarketOption)}
-                </Listbox>
-                {!isLoadingSymbols && !hasSymbolCatalog && (
+                  {renderMarketOption}
+                </Combobox>
+                {(isCatalogUnavailable || isCustomSymbol) && (
                   <p role="status" className="mt-1.5 text-sm text-zinc-400">
-                    No markets available. Check the Studio connection and reopen this dialog.
+                    {isCatalogUnavailable && 'Markets could not be loaded, so type the exact symbol. '}A symbol Phoenix
+                    does not list is skipped at Play.
                   </p>
                 )}
               </div>
