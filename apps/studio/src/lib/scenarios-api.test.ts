@@ -212,7 +212,7 @@ describe('createPhoenixCollateralScenario', () => {
 });
 
 describe('fetchDynamicRefOptions', () => {
-  it('returns each live market with its orderbook address from the list_phoenix_markets tool', async () => {
+  it('returns each live market with its orderbook address and unit inputs from the list_phoenix_markets tool', async () => {
     vi.mocked(callMCPTool).mockResolvedValue({
       content: [
         {
@@ -222,8 +222,8 @@ describe('fetchDynamicRefOptions', () => {
             count: 2,
             symbols: ['BTC', 'SOL'],
             markets: [
-              { symbol: 'BTC', orderbook: 'btcBook', markTicks: 83391, maintenanceRiskFactorBps: 5000 },
-              { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755, maintenanceRiskFactorBps: 5000 },
+              { symbol: 'BTC', orderbook: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+              { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755 },
             ],
           }),
         },
@@ -231,8 +231,8 @@ describe('fetchDynamicRefOptions', () => {
     });
 
     await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
-      { value: 'BTC', address: 'btcBook' },
-      { value: 'SOL', address: 'solBook' },
+      { value: 'BTC', address: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+      { value: 'SOL', address: 'solBook', markTicks: 11755 },
     ]);
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
   });

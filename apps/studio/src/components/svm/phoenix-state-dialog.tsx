@@ -49,6 +49,55 @@ const MAX_RISK_FACTOR_BPS = 10_000;
 const isWholeNumberInRange = (value: string, min: number, max: number) =>
   /^\d+$/.test(value.trim()) && Number(value) >= min && Number(value) <= max;
 
+type PhoenixUnit = 'percent' | 'usd' | 'raw';
+
+interface UnitChoice {
+  unit: PhoenixUnit;
+  label: string;
+  placeholder: string;
+}
+
+const unitChoices: Record<PhoenixStateMode, UnitChoice[]> = {
+  [PhoenixStateMode.Collateral]: [
+    { unit: 'usd', label: 'USD', placeholder: 'Signed amount, for example -250.5' },
+    { unit: 'raw', label: 'Quote lots', placeholder: 'Signed quote lots' },
+  ],
+  [PhoenixStateMode.DirectMark]: [
+    { unit: 'percent', label: '%', placeholder: 'Change from the current mark, for example -10' },
+    { unit: 'usd', label: 'USD', placeholder: 'Target price' },
+    { unit: 'raw', label: 'Ticks', placeholder: 'Target ticks, at least 1' },
+  ],
+  [PhoenixStateMode.MaintenanceMargin]: [
+    { unit: 'percent', label: '%', placeholder: 'Share of initial margin, live markets use 50' },
+    { unit: 'raw', label: 'bps', placeholder: 'Up to 10000, live markets use 5000' },
+  ],
+};
+
+const amountLabel: Record<PhoenixStateMode, string> = {
+  [PhoenixStateMode.Collateral]: 'Target collateral',
+  [PhoenixStateMode.DirectMark]: 'Target mark',
+  [PhoenixStateMode.MaintenanceMargin]: 'Maintenance risk factor',
+};
+
+const usdPerTick = (market?: DynamicRefOption) =>
+  (market?.tickSize ?? NaN) * 10 ** ((market?.baseLotDecimals ?? NaN) - 6);
+
+// Collateral is PhUSD with 6 decimals and risk factors are bps of initial margin. Raw input passes
+// through as typed, so large lot counts stay exact.
+const toRawAmount = (mode: PhoenixStateMode, unit: PhoenixUnit, amount: string, market?: DynamicRefOption) => {
+  if (unit === 'raw') return amount.trim();
+  const value = amount.trim() ? Number(amount) : NaN;
+  const raw =
+    mode === PhoenixStateMode.Collateral
+      ? value * 1e6
+      : mode === PhoenixStateMode.MaintenanceMargin
+        ? value * 100
+        : unit === 'usd'
+          ? value / usdPerTick(market)
+          : (market?.markTicks ?? NaN) * (1 + value / 100);
+  return Number.isSafeInteger(Math.round(raw)) ? String(Math.round(raw)) : null;
+};
+
 interface PhoenixStateDialogProps {
   open: boolean;
   studioUrl: string;
@@ -62,6 +111,12 @@ const renderStateModeOption = (stateMode: PhoenixStateMode) => (
   </ListboxOption>
 );
 
+const renderUnitOption = ({ unit, label }: UnitChoice) => (
+  <ListboxOption key={unit} value={unit}>
+    {label}
+  </ListboxOption>
+);
+
 const displayMarketSymbol = (marketSymbol: string | null) => marketSymbol ?? undefined;
 
 export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated }: PhoenixStateDialogProps) {
@@ -69,18 +124,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.DirectMark);
   const [trader, setTrader] = useState('');
   const [symbol, setSymbol] = useState('');
-  const [targetQuoteLots, setTargetQuoteLots] = useState('');
-  const [targetTicks, setTargetTicks] = useState('');
-  const [riskFactor, setRiskFactor] = useState('');
+  const [amount, setAmount] = useState('');
+  const [unit, setUnit] = useState<PhoenixUnit>('percent');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
 
   // DERIVED STATE
-  const hasSignedCollateral = /^-?\d+$/.test(targetQuoteLots.trim());
-  const hasTargetTicks = isWholeNumberInRange(targetTicks, 1, MAX_MARK_TICKS);
-  const hasRiskFactor = isWholeNumberInRange(riskFactor, 1, MAX_RISK_FACTOR_BPS);
   const symbolOptions = marketOptions.map((option) => option.value);
   const addressBySymbol = new Map(marketOptions.map((option) => [option.value, option.address]));
   const hasSymbolCatalog = marketOptions.length > 0;
@@ -88,6 +139,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const marketSymbol = isLoadingSymbols ? '' : symbol.trim();
   const hasSymbol = !!marketSymbol;
   const isCustomSymbol = hasSymbol && !symbolOptions.includes(marketSymbol);
+  const market = marketOptions.find((option) => option.value === marketSymbol);
+  const units = unitChoices[mode].filter((choice) => toRawAmount(mode, choice.unit, '0', market) !== null);
+  const activeChoice = units.find((choice) => choice.unit === unit) ?? units[0];
+  const rawAmount = toRawAmount(mode, activeChoice.unit, amount, market) ?? '';
+  const markUsd = (market?.markTicks ?? NaN) * usdPerTick(market);
+  const hasSignedCollateral = /^-?\d+$/.test(rawAmount);
+  const hasTargetTicks = isWholeNumberInRange(rawAmount, 1, MAX_MARK_TICKS);
+  const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS);
   const canCreate =
     !isCreating &&
     ((mode === PhoenixStateMode.Collateral && !!trader.trim() && hasSignedCollateral) ||
@@ -126,6 +185,13 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
 
   const handleModeChange = (selectedMode: PhoenixStateMode) => {
     setMode(selectedMode);
+    setUnit(unitChoices[selectedMode][0].unit);
+    setAmount('');
+    setError(null);
+  };
+
+  const handleUnitChange = (selectedUnit: PhoenixUnit) => {
+    setUnit(selectedUnit);
     setError(null);
   };
 
@@ -140,18 +206,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleTargetQuoteLotsChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setTargetQuoteLots(event.target.value);
-    setError(null);
-  };
-
-  const handleTargetTicksChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setTargetTicks(event.target.value);
-    setError(null);
-  };
-
-  const handleRiskFactorChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setRiskFactor(event.target.value);
+  const handleAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setAmount(event.target.value);
     setError(null);
   };
 
@@ -165,10 +221,10 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     try {
       const result =
         mode === PhoenixStateMode.Collateral
-          ? await createPhoenixCollateralScenario(studioUrl, trader, targetQuoteLots)
+          ? await createPhoenixCollateralScenario(studioUrl, trader, rawAmount)
           : mode === PhoenixStateMode.DirectMark
-            ? await createPhoenixDirectMarkScenario(studioUrl, marketSymbol, targetTicks)
-            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, riskFactor);
+            ? await createPhoenixDirectMarkScenario(studioUrl, marketSymbol, rawAmount)
+            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -199,6 +255,35 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     };
   }, [open, studioUrl]);
 
+  const amountField = (
+    <div>
+      <span className="mb-1.5 block text-sm font-medium text-zinc-300">{amountLabel[mode]}</span>
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <Input
+            aria-label={amountLabel[mode]}
+            placeholder={activeChoice.placeholder}
+            value={amount}
+            onChange={handleAmountChange}
+          />
+        </div>
+        <div className="w-36">
+          <Listbox aria-label="Unit" value={activeChoice.unit} onChange={handleUnitChange} disabled={isCreating}>
+            {units.map(renderUnitOption)}
+          </Listbox>
+        </div>
+      </div>
+      {activeChoice.unit !== 'raw' && !!rawAmount && (
+        <p className="mt-1.5 text-sm text-zinc-400">
+          Sends {rawAmount} {unitChoices[mode].at(-1)?.label.toLowerCase()}
+          {mode === PhoenixStateMode.DirectMark &&
+            Number.isFinite(markUsd) &&
+            ` (${marketSymbol} mark $${markUsd.toLocaleString('en-US', { maximumFractionDigits: 6 })})`}
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
       <form onSubmit={handleSubmit}>
@@ -223,12 +308,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
                 value={trader}
                 onChange={handleTraderChange}
               />
-              <Input
-                aria-label="Target collateral quote lots"
-                placeholder="Target signed quote lots"
-                value={targetQuoteLots}
-                onChange={handleTargetQuoteLotsChange}
-              />
+              {amountField}
             </>
           ) : (
             <>
@@ -256,21 +336,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
                   </p>
                 )}
               </div>
-              {mode === PhoenixStateMode.DirectMark ? (
-                <Input
-                  aria-label="Target mark ticks"
-                  placeholder="Target mark ticks, at least 1"
-                  value={targetTicks}
-                  onChange={handleTargetTicksChange}
-                />
-              ) : (
-                <Input
-                  aria-label="Maintenance risk factor"
-                  placeholder="Maintenance risk factor in bps, up to 10000 (live markets use 5000)"
-                  value={riskFactor}
-                  onChange={handleRiskFactorChange}
-                />
-              )}
+              {amountField}
             </>
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}
