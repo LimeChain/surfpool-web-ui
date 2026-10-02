@@ -90,10 +90,10 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['pumpswap'],
   },
   {
-    label: 'Phoenix Liquidation Cascade',
+    label: 'Phoenix Price Shock',
     prompt:
-      'Prepare an editable Phoenix liquidation cascade for Trader <PASTE_PHOENIX_TRADER_ACCOUNT> on market <PASTE_MARKET_SYMBOL>: reduce collateral to 1 quote lot, then lower the mark price to 1 tick in the following slot. Use the current scenario templates. Prepare state only; do not submit trades or liquidations.',
-    icon: '🔥',
+      'Create an editable Phoenix price shock that drops the mark price of market <PASTE_MARKET_SYMBOL_OR_ADDRESS> by 10% from its current mark. Prepare state only; do not submit trades or liquidations.',
+    icon: '📉',
     protocols: ['phoenix-eternal'],
   },
 ];
