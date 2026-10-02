@@ -79,6 +79,8 @@ const amountLabel: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MaintenanceMargin]: 'Maintenance risk factor',
 };
 
+const formatUsd = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 6 })}`;
+
 const usdPerTick = (market?: DynamicRefOption) =>
   (market?.tickSize ?? NaN) * 10 ** ((market?.baseLotDecimals ?? NaN) - 6);
 
@@ -144,6 +146,13 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const activeChoice = units.find((choice) => choice.unit === unit) ?? units[0];
   const rawAmount = toRawAmount(mode, activeChoice.unit, amount, market) ?? '';
   const markUsd = (market?.markTicks ?? NaN) * usdPerTick(market);
+  const markChange = (Number(rawAmount) / (market?.markTicks ?? NaN) - 1) * 100;
+  const hint =
+    mode === PhoenixStateMode.DirectMark && !!rawAmount && Number.isFinite(markUsd)
+      ? `${formatUsd(markUsd)} → ${formatUsd(Number(rawAmount) * usdPerTick(market))} (${markChange > 0 ? '+' : ''}${Number(markChange.toFixed(1))}%), ${rawAmount} ticks`
+      : activeChoice.unit !== 'raw' && !!rawAmount
+        ? `Sends ${rawAmount} ${unitChoices[mode].at(-1)?.label.toLowerCase()}`
+        : null;
   const hasSignedCollateral = /^-?\d+$/.test(rawAmount);
   const hasTargetTicks = isWholeNumberInRange(rawAmount, 1, MAX_MARK_TICKS);
   const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS);
@@ -273,14 +282,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
           </Listbox>
         </div>
       </div>
-      {activeChoice.unit !== 'raw' && !!rawAmount && (
-        <p className="mt-1.5 text-sm text-zinc-400">
-          Sends {rawAmount} {unitChoices[mode].at(-1)?.label.toLowerCase()}
-          {mode === PhoenixStateMode.DirectMark &&
-            Number.isFinite(markUsd) &&
-            ` (${marketSymbol} mark $${markUsd.toLocaleString('en-US', { maximumFractionDigits: 6 })})`}
-        </p>
-      )}
+      {!!hint && <p className="mt-1.5 text-sm text-zinc-400">{hint}</p>}
     </div>
   );
 

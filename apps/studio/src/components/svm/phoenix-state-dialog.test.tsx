@@ -242,6 +242,7 @@ describe('PhoenixStateDialog', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     };
     submit('Target mark', '-10');
+    expect(screen.getByText('$85,957 → $77,361 (-10%), 77361 ticks')).toBeInTheDocument();
     await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'usd' } });
     submit('Target mark', '85000.4');
