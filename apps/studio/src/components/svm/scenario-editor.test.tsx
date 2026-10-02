@@ -378,3 +378,44 @@ it('ignores an older account response that resolves after a newer selection', as
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(collateral()).toBe('3');
 });
+
+it('keeps the later of two saved overrides reopened before the first one loaded', async () => {
+  let releaseFirst = () => {};
+  const firstLoaded = new Promise<void>((resolve) => (releaseFirst = resolve));
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (String(init?.body).includes('first-trader')) await firstLoaded;
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { value: null } }),
+    };
+  });
+  const saved = (pubkey: string, collateral: string) => ({
+    protocolId: 'phoenix-eternal',
+    actionId: collateralTemplate.id,
+    protocol: 'Phoenix Eternal',
+    action: collateralTemplate.name,
+    account: { pubkey },
+    overrides: { 'traderState.quoteLotCollateral': collateral },
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="race-test"
+      initialSteps={[
+        { id: 'slot', name: 'Slot', type: 'slot', actions: [saved('first-trader', '1'), saved('second-trader', '2')] },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  const savedAction = async (index: number) => (await screen.findAllByText(collateralTemplate.name))[index];
+  // The first click selects the slot, the next ones reopen a saved override.
+  fireEvent.click(await savedAction(0));
+  fireEvent.click(await savedAction(0));
+  await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).toContain('first-trader'));
+  fireEvent.click(await savedAction(1));
+  const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');
+  await waitFor(() => expect(input).toHaveValue('2'));
+
+  releaseFirst();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
+});

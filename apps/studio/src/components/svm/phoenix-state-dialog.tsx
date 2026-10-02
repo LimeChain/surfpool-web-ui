@@ -100,6 +100,10 @@ const toRawAmount = (mode: PhoenixStateMode, unit: PhoenixUnit, amount: string, 
   return Number.isSafeInteger(Math.round(raw)) ? String(Math.round(raw)) : null;
 };
 
+// The units a market can convert; one without price data takes raw ticks only.
+const availableUnits = (mode: PhoenixStateMode, market?: DynamicRefOption) =>
+  unitChoices[mode].filter((choice) => toRawAmount(mode, choice.unit, '0', market) !== null);
+
 interface PhoenixStateDialogProps {
   open: boolean;
   studioUrl: string;
@@ -142,7 +146,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const hasSymbol = !!marketSymbol;
   const isCustomSymbol = hasSymbol && !symbolOptions.includes(marketSymbol);
   const market = marketOptions.find((option) => option.value === marketSymbol);
-  const units = unitChoices[mode].filter((choice) => toRawAmount(mode, choice.unit, '0', market) !== null);
+  const units = availableUnits(mode, market);
   const activeChoice = units.find((choice) => choice.unit === unit) ?? units[0];
   const rawAmount = toRawAmount(mode, activeChoice.unit, amount, market) ?? '';
   const markUsd = (market?.markTicks ?? NaN) * usdPerTick(market);
@@ -211,11 +215,23 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
 
   const handleSymbolChange = (pickedSymbol: string | null) => {
     if (!pickedSymbol) return;
+    const pickedUnits = availableUnits(
+      mode,
+      marketOptions.find((option) => option.value === pickedSymbol)
+    );
+    const pickedUnit = (pickedUnits.find((choice) => choice.unit === unit) ?? pickedUnits[0]).unit;
+    // The same amount means something else in another unit, so 10% must not become 10 ticks.
+    if (pickedUnit !== activeChoice.unit) {
+      setUnit(pickedUnit);
+      setAmount('');
+    }
     setSymbol(pickedSymbol);
     setError(null);
   };
 
   const handleAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    // The amount means the unit shown beside it, also the ticks shown while markets load.
+    setUnit(activeChoice.unit);
     setAmount(event.target.value);
     setError(null);
   };

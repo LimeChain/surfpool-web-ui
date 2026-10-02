@@ -224,6 +224,37 @@ describe('PhoenixStateDialog', () => {
     });
   });
 
+  it('clears an amount typed in a unit the newly picked market cannot take', async () => {
+    fetchSymbolsMock.mockResolvedValue([
+      { value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 },
+      { value: 'NEW', address: 'NEWOrderbook1111111111111111111111111' },
+    ]);
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'BTC' }));
+    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
+
+    expect(screen.getByLabelText('Target mark')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+  });
+
+  it('keeps an amount typed while markets load in the ticks it was typed in', async () => {
+    let finishLoading!: (options: DynamicRefOption[]) => void;
+    fetchSymbolsMock.mockReturnValue(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      })
+    );
+    createDirectMarkMock.mockResolvedValue({ id: 'typed' });
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '12345' } });
+
+    await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
+  });
+
   it('converts percent and USD inputs to the raw values the backend takes', async () => {
     const createMarginMock = vi.mocked(createPhoenixMaintenanceMarginScenario);
     const createCollateralMock = vi.mocked(createPhoenixCollateralScenario);

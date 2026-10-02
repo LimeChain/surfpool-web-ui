@@ -1308,7 +1308,13 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction, action.account?.pubkey);
+                                                    const loading = handleActionSelect(
+                                                      foundAction,
+                                                      action.account?.pubkey
+                                                    );
+                                                    const requestId = accountRequestRef.current;
+                                                    await loading;
+                                                    if (requestId !== accountRequestRef.current) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data

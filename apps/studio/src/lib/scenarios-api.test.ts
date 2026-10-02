@@ -4,6 +4,8 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   createPhoenixCollateralScenario,
+  createPhoenixDirectMarkScenario,
+  createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
@@ -207,6 +209,44 @@ describe('createPhoenixCollateralScenario', () => {
 
     await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
       'Phoenix collateral stress can only lower collateral'
+    );
+  });
+});
+
+describe('Phoenix market scenarios', () => {
+  const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+
+  it.each([
+    [createPhoenixDirectMarkScenario, 'phoenix-direct-mark-risk-shock', 'target_ticks'],
+    [createPhoenixMaintenanceMarginScenario, 'phoenix-maintenance-margin-stress', 'maintenance_risk_factor_bps'],
+  ] as const)(
+    '%#: posts the template with its map address, string values and fetchBeforeUse',
+    async (create, templateId, field) => {
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock
+        .mockResolvedValueOnce(templates(templateId))
+        .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-market' }));
+
+      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
+      expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
+      const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+      expect(override).toMatchObject({
+        templateId,
+        values: { symbol: 'SOL', [field]: '6000' },
+        fetchBeforeUse: true,
+        account: { pubkey: 'perp-asset-map' },
+      });
+    }
+  );
+
+  it('surfaces failed requests', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(templates('phoenix-maintenance-margin-stress'))
+      .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
+
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
+      'Scenario store unavailable'
     );
   });
 });
