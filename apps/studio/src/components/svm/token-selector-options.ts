@@ -37,3 +37,13 @@ export const resolveTokenSelectorOptions = (
     selectedOption: catalogOption || customOption,
   };
 };
+
+const PUBKEY_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+export const isAccountAddress = (text: string) => PUBKEY_PATTERN.test(text);
+
+// A typed account address an account picker does not list yet, offered as its last option.
+export const typedAccountOption = (query: string, options: TokenSelectorOption[]): TokenSelectorOption | null =>
+  isAccountAddress(query) && !options.some((option) => option.value === query)
+    ? { id: `custom-${query}`, label: 'Custom address', value: query, metadata: { symbol: `Custom · ${query}` } }
+    : null;

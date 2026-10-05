@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPmmFairValueScenario, PMM_FAIR_VALUE_ADAPTERS, PmmProtocols, tesseraPriceRatios } from './pmm-fair-value';
-import { toScenarioNumber } from './scenarios-api';
+import { tesseraPriceRatios } from './pmm-fair-value';
 
 describe('tesseraPriceRatios', () => {
   it.each([
@@ -24,36 +23,5 @@ describe('tesseraPriceRatios', () => {
     expect(() => tesseraPriceRatios('100.0000000000001', 9, 6)).toThrow(
       'Price has more decimals than this market supports, at most 12'
     );
-  });
-});
-
-describe('buildPmmFairValueScenario', () => {
-  it('assembles the Tessera fair value scenario for WSOL/USDC at $100', () => {
-    const market = {
-      label: 'WSOL / USDC',
-      value: 'FLckHLGMJy5gEoXWwcE68Nprde1D4araK4TGLw4pQq2n',
-      metadata: { pair: 'WSOL/USDC', base_decimals: 9, quote_decimals: 6 },
-    };
-    const scenario = buildPmmFairValueScenario(PMM_FAIR_VALUE_ADAPTERS[PmmProtocols.Tessera], market, ' 100 ');
-    const shared = { account: { pubkey: market.value }, scenarioRelativeSlot: 0, enabled: true, fetchBeforeUse: true };
-
-    expect(scenario).toMatchObject({
-      name: 'Tessera WSOL / USDC fair value 100',
-      description: 'Set the Tessera WSOL / USDC fair value to 100 and keep the quote fresh.',
-      tags: ['tessera', 'pmm', 'fair-value'],
-      overrides: [
-        {
-          ...shared,
-          templateId: 'tessera-price',
-          values: {
-            quote_atoms_per_base_atom_x1e15: toScenarioNumber('100000000000000'),
-            base_atoms_per_quote_atom_x1e15: toScenarioNumber('10000000000000000'),
-          },
-        },
-        { ...shared, templateId: 'tessera-freshness', values: { last_update_slot: 0 } },
-      ],
-    });
-    expect(scenario.overrides).toHaveLength(2);
-    expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(2);
   });
 });

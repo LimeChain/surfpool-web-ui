@@ -30,7 +30,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { resolveTokenSelectorOptions, shouldUseConstantCombobox } from './token-selector-options';
+import { resolveTokenSelectorOptions, shouldUseConstantCombobox, typedAccountOption } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -2366,12 +2366,14 @@ export default function ScenarioEditor({
                                           currentValue,
                                           isModified,
                                           onValueChange,
+                                          acceptsTypedAddress,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                           onValueChange: (value: string) => void;
+                                          acceptsTypedAddress: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2387,6 +2389,11 @@ export default function ScenarioEditor({
                                                 }
                                               }}
                                               options={options}
+                                              customOption={
+                                                acceptsTypedAddress
+                                                  ? (query: string) => typedAccountOption(query, options)
+                                                  : undefined
+                                              }
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
@@ -2496,6 +2503,7 @@ export default function ScenarioEditor({
                                                       currentValue={currentValue}
                                                       isModified={isModified}
                                                       onValueChange={onValueChange}
+                                                      acceptsTypedAddress={Boolean(prop.isAccountSelector)}
                                                     />
                                                   ) : (
                                                     <Select

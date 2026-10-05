@@ -3,6 +3,7 @@ import {
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
   type TokenSelectorOption,
+  typedAccountOption,
 } from './token-selector-options';
 
 const catalogOptions: TokenSelectorOption[] = [
@@ -47,5 +48,17 @@ describe('shouldUseConstantCombobox', () => {
   it('preserves the existing threshold for ordinary constant fields', () => {
     expect(shouldUseConstantCombobox(2, false)).toBe(false);
     expect(shouldUseConstantCombobox(21, false)).toBe(true);
+  });
+});
+
+describe('typedAccountOption', () => {
+  it('offers only a typed address the picker does not list', () => {
+    const market = 'FLckHLGMJy5gEoXWwcE68Nprde1D4araK4TGLw4pQq2n';
+    const unlisted = '9NkuAWB4LgCVFV77omEkJEjXqgV5PGupwMTu3B3pBRhc';
+    const listed: TokenSelectorOption[] = [{ id: market, label: 'SOL / USDC', value: market }];
+
+    expect(typedAccountOption(unlisted, listed)).toMatchObject({ label: 'Custom address', value: unlisted });
+    expect(typedAccountOption(market, listed)).toBeNull();
+    expect(typedAccountOption('SOL / USDC', listed)).toBeNull();
   });
 });

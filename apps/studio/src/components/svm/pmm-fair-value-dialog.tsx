@@ -14,6 +14,10 @@ import {
 import { createTemplateScenario, fetchScenarioTemplates, type ScenarioTemplate } from '@/lib/scenarios-api';
 import {
   Button,
+  Combobox,
+  ComboboxDescription,
+  ComboboxLabel,
+  ComboboxOption,
   Dialog,
   DialogActions,
   DialogDescription,
@@ -23,10 +27,12 @@ import {
   ListboxOption,
 } from '@surfpool/ui';
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { isAccountAddress } from './token-selector-options';
 
 interface PmmFairValueDialogProps {
   open: boolean;
   studioUrl: string;
+  rpcUrl: string;
   onClose: () => void;
   onCreated: (scenarioId: string) => void;
 }
@@ -37,13 +43,24 @@ const renderProtocolOption = (adapter: PmmFairValueAdapter) => (
   </ListboxOption>
 );
 
+const displayMarket = (market: PmmMarketOption | null) => market?.label;
+
+const normalizeSearch = (text: string) => text.replace(/\s+/g, '').toLowerCase();
+
+const matchesMarket = (market: PmmMarketOption | null, query: string) => {
+  if (!market) return false;
+  const search = normalizeSearch(query);
+  return normalizeSearch(market.label).includes(search) || normalizeSearch(market.value).includes(search);
+};
+
 const renderMarketOption = (market: PmmMarketOption) => (
-  <ListboxOption key={market.value} value={market.value}>
-    {market.label}
-  </ListboxOption>
+  <ComboboxOption key={market.value} value={market}>
+    <ComboboxLabel>{market.label}</ComboboxLabel>
+    <ComboboxDescription>{market.value}</ComboboxDescription>
+  </ComboboxOption>
 );
 
-export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated }: PmmFairValueDialogProps) {
+export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: PmmFairValueDialogProps) {
   // STATE
   const [protocol, setProtocol] = useState<PmmProtocol>(PmmProtocols.Tessera);
   const [market, setMarket] = useState('');
@@ -51,6 +68,7 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [templates, setTemplates] = useState<ScenarioTemplate[] | null>(null);
+  const [customMarket, setCustomMarket] = useState<PmmMarketOption | null>(null);
 
   // DERIVED STATE
   const availableAdapters = Object.values(PMM_FAIR_VALUE_ADAPTERS).filter(
@@ -59,7 +77,10 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
   const adapter = availableAdapters.find((candidate) => candidate.protocol === protocol) ?? availableAdapters[0];
   const marketTemplate = templates?.find((template) => template.id === adapter?.marketTemplateId);
   const marketOptions = templates === null ? null : marketTemplate ? readMarketOptions(marketTemplate) : [];
-  const selectedMarket = marketOptions?.find((option) => option.value === market) ?? marketOptions?.[0];
+  const listedMarket = marketOptions?.find((option) => option.value === market);
+  const loadedCustomMarket = customMarket?.value === market ? customMarket : undefined;
+  const selectedMarket = listedMarket ?? (market === '' ? marketOptions?.[0] : loadedCustomMarket);
+  const pickerOptions = loadedCustomMarket ? [...(marketOptions ?? []), loadedCustomMarket] : (marketOptions ?? []);
   const canCreate = !!selectedMarket && isValidPmmPrice(price) && !isCreating;
   const priceLabel = marketPairLabel(selectedMarket);
   const catalogError =
@@ -84,9 +105,23 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleMarketSelect = (selectedValue: string) => {
-    setMarket(selectedValue);
+  const typedMarket = (query: string): PmmMarketOption | null =>
+    isAccountAddress(query) && !marketOptions?.some((option) => option.value === query)
+      ? { label: `Custom · ${query}`, value: query }
+      : null;
+
+  const handleMarketSelect = (selectedMarketOption: PmmMarketOption | null) => {
+    if (!selectedMarketOption || !adapter) return;
+    const address = selectedMarketOption.value;
+    setMarket(address);
     setError(null);
+    if (marketOptions?.some((option) => option.value === address) || customMarket?.value === address) return;
+    adapter
+      .readMarket(rpcUrl, address, marketOptions ?? [])
+      .then(setCustomMarket)
+      .catch((readError: unknown) =>
+        setError(readError instanceof Error ? readError.message : `Failed to read market ${address}`)
+      );
   };
 
   const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -156,15 +191,21 @@ export default function PmmFairValueDialog({ open, studioUrl, onClose, onCreated
           </div>
           <div>
             <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
-            <Listbox
+            <Combobox<PmmMarketOption | null>
               aria-label="PMM market"
-              placeholder={marketOptions === null ? 'Loading markets…' : undefined}
-              value={selectedMarket?.value ?? ''}
+              placeholder={marketOptions === null ? 'Loading markets…' : 'Search by pair or address'}
+              options={pickerOptions}
+              value={selectedMarket ?? null}
+              by="value"
+              immediate
+              displayValue={displayMarket}
+              filter={matchesMarket}
+              customOption={typedMarket}
               onChange={handleMarketSelect}
               disabled={isCreating || !marketOptions?.length}
             >
-              {marketOptions?.map(renderMarketOption)}
-            </Listbox>
+              {renderMarketOption}
+            </Combobox>
           </div>
           <div>
             <label htmlFor="pmm-fair-value-price" className="mb-1.5 block text-sm font-medium text-zinc-300">

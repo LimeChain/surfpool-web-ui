@@ -1,3 +1,4 @@
+import { PublicKey } from '@solana/web3.js';
 import { type ScenarioTemplate, toScenarioNumber } from './scenarios-api';
 
 export const PmmProtocols = {
@@ -25,6 +26,8 @@ export type PmmFairValueAdapter = {
   /** Template whose `constants.market` catalog lists the markets this adapter can target. */
   marketTemplateId: string;
   buildOverrides: (market: PmmMarketOption, price: string) => PmmFairValueOverride[];
+  /** Reads a typed market address the catalog does not list, with the decimals the price needs. */
+  readMarket: (rpcUrl: string, address: string, listed: PmmMarketOption[]) => Promise<PmmMarketOption>;
 };
 
 const ZERO = BigInt(0);
@@ -80,6 +83,61 @@ export function tesseraPriceRatios(
   return { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 };
 }
 
+const TESSERA_PROGRAM = 'TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH';
+const TESSERA_MARKET_SIZE = 1264;
+
+async function rpcResult<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const body = await response.json();
+  if (body.error) throw new Error(body.error.message ?? `${method} failed`);
+  return body.result as T;
+}
+
+const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
+  for (const { metadata } of listed) {
+    const [base, quote] = String(metadata?.pair ?? '').split('/');
+    if (metadata?.base_mint === mint && base) return base;
+    if (metadata?.quote_mint === mint && quote) return quote;
+  }
+  return mint.slice(0, 4);
+};
+
+export async function readTesseraMarket(
+  rpcUrl: string,
+  address: string,
+  listed: PmmMarketOption[]
+): Promise<PmmMarketOption> {
+  const { value } = await rpcResult<{ value: { owner: string; data: [string, string] } | null }>(
+    rpcUrl,
+    'getAccountInfo',
+    [address, { encoding: 'base64' }]
+  );
+  const data = value ? Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) : null;
+  if (!value || !data || value.owner !== TESSERA_PROGRAM || data.length !== TESSERA_MARKET_SIZE || data[96] !== 5) {
+    throw new Error(`${address} is not a Tessera market account`);
+  }
+  const [base, quote] = [24, 56].map((offset) => new PublicKey(data.slice(offset, offset + 32)).toBase58());
+  const mints = await rpcResult<{ value: Array<{ data?: { parsed?: { info?: { decimals?: number } } } } | null> }>(
+    rpcUrl,
+    'getMultipleAccounts',
+    [[base, quote], { encoding: 'jsonParsed' }]
+  );
+  const [baseDecimals, quoteDecimals] = mints.value.map((mint) => mint?.data?.parsed?.info?.decimals);
+  if (baseDecimals === undefined || quoteDecimals === undefined) {
+    throw new Error(`The mints of ${address} have no decimals on this surfnet`);
+  }
+  const [baseSymbol, quoteSymbol] = [base, quote].map((mint) => listedSymbol(mint, listed));
+  return {
+    label: `${baseSymbol} / ${quoteSymbol}`,
+    value: address,
+    metadata: { base_decimals: baseDecimals, quote_decimals: quoteDecimals, pair: `${baseSymbol}/${quoteSymbol}` },
+  };
+}
+
 const tesseraAdapter: PmmFairValueAdapter = {
   protocol: PmmProtocols.Tessera,
   label: 'Tessera',
@@ -109,6 +167,7 @@ const tesseraAdapter: PmmFairValueAdapter = {
       },
     ];
   },
+  readMarket: readTesseraMarket,
 };
 
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {

@@ -53,7 +53,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { studioUrl, rpcUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -457,6 +457,7 @@ export default function ScenariosBento({
       <PmmFairValueDialog
         open={pmmFairValueDialogOpen}
         studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
         onClose={handleClosePmmFairValueDialog}
         onCreated={handlePmmFairValueCreated}
       />
