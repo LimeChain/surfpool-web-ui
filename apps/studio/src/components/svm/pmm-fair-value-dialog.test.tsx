@@ -215,6 +215,29 @@ describe('PmmFairValueDialog', () => {
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
+  it('ignores a market read that resolves after a newer selection', async () => {
+    const secondMarket = 'H3chk8rgniKXnToGTdPUFieuHGLQQfBMXVbGp6bR1uMD';
+    const fetchMock = stubSurfnet(TESSERA_PROGRAM);
+    const respond = fetchMock.getMockImplementation()!;
+    let releaseFirstRead = () => {};
+    fetchMock.mockImplementationOnce(
+      (url, init) => new Promise((resolve) => (releaseFirstRead = () => resolve(respond(url, init))))
+    );
+    renderDialog();
+
+    await screen.findByLabelText('Price of WSOL in USDC');
+    for (const address of [UNLISTED_MARKET, secondMarket]) {
+      fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: address } });
+      fireEvent.click(screen.getByRole('button', { name: `Custom · ${address}` }));
+    }
+    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    releaseFirstRead();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+  });
+
   it('shows an error and disables Create when the surfnet serves no PMM template', async () => {
     fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool', address: {} }]);
     renderDialog();

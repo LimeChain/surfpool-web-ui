@@ -26,7 +26,7 @@ import {
   Listbox,
   ListboxOption,
 } from '@surfpool/ui';
-import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { isAccountAddress } from './token-selector-options';
 
 interface PmmFairValueDialogProps {
@@ -69,6 +69,9 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
   const [isCreating, setIsCreating] = useState(false);
   const [templates, setTemplates] = useState<ScenarioTemplate[] | null>(null);
   const [customMarket, setCustomMarket] = useState<PmmMarketOption | null>(null);
+
+  // REFS
+  const marketRequestRef = useRef(0);
 
   // DERIVED STATE
   const availableAdapters = Object.values(PMM_FAIR_VALUE_ADAPTERS).filter(
@@ -113,15 +116,19 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
   const handleMarketSelect = (selectedMarketOption: PmmMarketOption | null) => {
     if (!selectedMarketOption || !adapter) return;
     const address = selectedMarketOption.value;
+    const requestId = ++marketRequestRef.current;
     setMarket(address);
     setError(null);
     if (marketOptions?.some((option) => option.value === address) || customMarket?.value === address) return;
     adapter
       .readMarket(rpcUrl, address, marketOptions ?? [])
-      .then(setCustomMarket)
-      .catch((readError: unknown) =>
-        setError(readError instanceof Error ? readError.message : `Failed to read market ${address}`)
-      );
+      .then((read) => {
+        if (requestId === marketRequestRef.current) setCustomMarket(read);
+      })
+      .catch((readError: unknown) => {
+        if (requestId !== marketRequestRef.current) return;
+        setError(readError instanceof Error ? readError.message : `Failed to read market ${address}`);
+      });
   };
 
   const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
