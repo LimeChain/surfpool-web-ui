@@ -3,14 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  createdScenarioIdFromToolResult,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
-  getDirectAccountMarketConstantName,
   parseScenariosJson,
-  resolveTemplateAccount,
   scenarioDownloadFile,
   scenarioImportPayload,
   scenarioToBentoItem,
@@ -366,6 +365,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured SolFi account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['solfi']));
+
+    expect(result).toContain('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic');
+    expect(result).toContain('USDC vault');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -374,6 +380,32 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=solfi-five-usdc&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('solfi-five-usdc');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
   });
 });
 
@@ -545,64 +577,6 @@ describe('flattenOverrideValues', () => {
 
   it('returns empty object for undefined input', () => {
     expect(flattenOverrideValues(undefined, ['a.b'])).toEqual({});
-  });
-});
-
-describe('resolveTemplateAccount', () => {
-  it('turns an account dropdown choice into a concrete pubkey account', () => {
-    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', ' market-b ')).toEqual({
-      pubkey: 'market-b',
-    });
-  });
-
-  it('does not emit an unresolved account when no option is selected', () => {
-    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', '   ')).toBeUndefined();
-  });
-
-  it('preserves fixed and PDA template addresses', () => {
-    const pda = { pda: { programId: 'program', seeds: [] } };
-    expect(resolveTemplateAccount(pda, undefined, '')).toBe(pda);
-  });
-
-  it('carries a user-entered account through the scenario registration RPC payload', () => {
-    const customAddress = '8BrwYAr1K11sG8GvM8vUFAw45Mm1mLCuTd4ynhNMYjRC';
-    const account = resolveTemplateAccount({ pubkey: 'catalog-default' }, 'market', customAddress);
-    const payload = serializeScenarioJson({
-      method: 'surfnet_registerScenario',
-      params: [{ overrides: [{ templateId: 'solfi-spread', account }] }],
-    });
-    const parsed = parseScenariosJson(payload) as {
-      params: Array<{ overrides: Array<{ account: { pubkey: string } }> }>;
-    };
-
-    expect(parsed.params[0].overrides[0].account.pubkey).toBe(customAddress);
-    expect(payload).not.toContain('catalog-default');
-  });
-});
-
-describe('getDirectAccountMarketConstantName', () => {
-  const directMarketTemplate = {
-    address: { pubkey: 'market-a' },
-    constants: { market: { options: [{ label: 'Market A', value: 'market-a' }] } },
-    properties: [{ path: 'price' }],
-  };
-
-  it('recognizes the existing Tessera direct-market convention', () => {
-    expect(getDirectAccountMarketConstantName(directMarketTemplate)).toBe('market');
-  });
-
-  it('does not reinterpret a constant referenced by an account field', () => {
-    expect(
-      getDirectAccountMarketConstantName({
-        ...directMarketTemplate,
-        properties: [{ path: 'market', constant: 'market' }],
-      })
-    ).toBeUndefined();
-  });
-
-  it('requires both a direct pubkey and market options', () => {
-    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, address: { pda: {} } })).toBeUndefined();
-    expect(getDirectAccountMarketConstantName({ ...directMarketTemplate, constants: {} })).toBeUndefined();
   });
 });
 

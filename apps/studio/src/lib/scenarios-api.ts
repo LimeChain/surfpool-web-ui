@@ -1,4 +1,5 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { getProtocolAiContext } from '@/components/svm/token-selector-options';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
@@ -37,42 +38,6 @@ export function snapshotDownloadContents(rawResponse: string): string | null {
 export function toScenarioNumber(input: string): number | LosslessNumber {
   if (input.trim() === '' || Number.isNaN(Number(input))) return Number(input);
   return isSafeNumber(input) ? Number(input) : new LosslessNumber(input);
-}
-
-/** Whether editing a dropdown-selected direct account changes the override identity. */
-export function directAccountSelectionChanged(previousAccount: unknown, nextPubkey: string): boolean {
-  const previousPubkey = (previousAccount as { pubkey?: unknown } | null)?.pubkey;
-  return previousPubkey !== nextPubkey;
-}
-
-/**
- * Tessera convention: a direct-pubkey template may publish alternative targets in
- * `constants.market`. A constant already referenced by a property remains a field selector.
- */
-export function getDirectAccountMarketConstantName(template: unknown): 'market' | undefined {
-  if (!template || typeof template !== 'object') return undefined;
-  const candidate = template as {
-    address?: { pubkey?: unknown };
-    constants?: { market?: { options?: unknown } };
-    properties?: Array<{ constant?: unknown }>;
-  };
-  if (typeof candidate.address?.pubkey !== 'string') return undefined;
-  if (!Array.isArray(candidate.constants?.market?.options) || candidate.constants.market.options.length === 0) {
-    return undefined;
-  }
-  if (candidate.properties?.some((property) => property.constant === 'market')) return undefined;
-  return 'market';
-}
-
-/** Resolve a Tessera-style market choice into the ordinary scenario account shape. */
-export function resolveTemplateAccount(
-  templateAddress: unknown,
-  directAccountConstantName: string | undefined,
-  selectedPubkey: string
-): unknown {
-  if (!directAccountConstantName) return templateAddress;
-  const pubkey = selectedPubkey.trim();
-  return pubkey ? { pubkey } : undefined;
 }
 
 /**
@@ -428,5 +393,53 @@ export function buildAiPrompt(basePrompt: string, selectedProtocolIds: Set<strin
     return trimmed;
   }
 
-  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.`;
+  const protocolContext = [...selectedProtocolIds]
+    .map(getProtocolAiContext)
+    .filter((context): context is string => Boolean(context))
+    .join('\n\n');
+
+  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.${
+    protocolContext ? `\n\n${protocolContext}` : ''
+  }`;
+}
+
+/** Extract the created scenario id from the MCP result returned by create_scenario. */
+export function createdScenarioIdFromToolResult(result: unknown): string | null {
+  const candidates: unknown[] = [result];
+  if (result && typeof result === 'object') {
+    const record = result as Record<string, unknown>;
+    if (record.isError === true) return null;
+    candidates.push(record.structuredContent);
+    if (Array.isArray(record.content)) {
+      for (const item of record.content) {
+        if (!item || typeof item !== 'object') continue;
+        const text = (item as Record<string, unknown>).text;
+        if (typeof text !== 'string') continue;
+        try {
+          candidates.push(JSON.parse(text));
+        } catch {
+          // Non-JSON text cannot identify a created scenario.
+        }
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const record = candidate as Record<string, unknown>;
+    if (record.error) continue;
+    for (const key of ['scenarioId', 'scenario_id', 'id']) {
+      if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+    }
+    if (typeof record.url === 'string') {
+      try {
+        const id = new URL(record.url).searchParams.get('id');
+        if (id) return id;
+      } catch {
+        // Ignore malformed URLs returned by a tool.
+      }
+    }
+  }
+
+  return null;
 }

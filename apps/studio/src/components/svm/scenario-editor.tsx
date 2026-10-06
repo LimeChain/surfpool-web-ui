@@ -4,9 +4,7 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   flattenOverrideValues,
-  getDirectAccountMarketConstantName,
   parseScenariosJson,
-  resolveTemplateAccount,
   scenarioDownloadFile,
   serializeScenarioJson,
   snapshotDownloadContents,
@@ -35,7 +33,6 @@ import {
   getSolFiCustomAccountKind,
   resolveSolFiAccount,
   resolveTokenSelectorOptions,
-  shouldUseConstantCombobox,
 } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
@@ -167,11 +164,8 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const directAccountConstantName = getDirectAccountMarketConstantName(selectedAction?.template);
   const solfiAccountKind = getSolFiCustomAccountKind(selectedAction?.template?.protocol, selectedAction?.template?.id);
-  const isAddressSelectionMissing = Boolean(
-    (directAccountConstantName || solfiAccountKind) && selectedAccountPubkey.trim() === ''
-  );
+  const isAddressSelectionMissing = Boolean(solfiAccountKind && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -623,14 +617,9 @@ export default function ScenarioEditor({
   const handleActionSelect = async (action: Action, savedAccount?: any) => {
     setSelectedAction(action);
     setAccountData({});
-    const marketConstantName = getDirectAccountMarketConstantName(action.template);
     const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
     const actionSolFiAccountKind = getSolFiCustomAccountKind(action.template?.protocol, action.template?.id);
-    const selectedPubkey = actionSolFiAccountKind
-      ? savedPubkey
-      : marketConstantName
-        ? savedPubkey || (action.template?.address?.pubkey ?? '')
-        : '';
+    const selectedPubkey = actionSolFiAccountKind ? savedPubkey : '';
     setSelectedAccountPubkey(selectedPubkey);
     setUsesCustomDirectAccountAddress(
       Boolean(
@@ -648,7 +637,7 @@ export default function ScenarioEditor({
       return;
     }
 
-    if ((marketConstantName || actionSolFiAccountKind) && !selectedPubkey) return;
+    if (actionSolFiAccountKind && !selectedPubkey) return;
 
     setLoadingAccountData(true);
 
@@ -787,11 +776,7 @@ export default function ScenarioEditor({
                 fetchBeforeUse: fetchBeforeUse,
                 account: resolveSolFiAccount(
                   action.id,
-                  resolveTemplateAccount(
-                    action.template?.address,
-                    getDirectAccountMarketConstantName(action.template),
-                    selectedAccountPubkey
-                  ),
+                  action.template?.address,
                   selectedAccountPubkey
                 ),
               },
@@ -835,11 +820,7 @@ export default function ScenarioEditor({
                     fetchBeforeUse: fetchBeforeUse,
                     account: resolveSolFiAccount(
                       action.id,
-                      resolveTemplateAccount(
-                        action.template?.address,
-                        getDirectAccountMarketConstantName(action.template),
-                        selectedAccountPubkey
-                      ),
+                      action.template?.address,
                       selectedAccountPubkey
                     ),
                   }
@@ -2450,22 +2431,7 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
-                                        const directMarketConstant = getDirectAccountMarketConstantName(
-                                          selectedAction.template
-                                        );
-                                        const constantRefProps = [
-                                          ...(directMarketConstant && constants[directMarketConstant]
-                                            ? [
-                                                {
-                                                  name: '__account__',
-                                                  type: 'constant_ref',
-                                                  constant: directMarketConstant,
-                                                  isAccountSelector: true,
-                                                },
-                                              ]
-                                            : []),
-                                          ...propertyConstantRefs,
-                                        ];
+                                        const constantRefProps = propertyConstantRefs;
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2560,27 +2526,18 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              {directMarketConstant ? 'Account selection' : 'PDA Configuration'}
+                                              PDA Configuration
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
                                               const constantDef = constants[prop.constant];
                                               const fieldPath = prop.name;
-                                              const rawValue = prop.isAccountSelector
-                                                ? selectedAccountPubkey
-                                                : getValue(fieldPath);
+                                              const rawValue = getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
-                                              const isModified = prop.isAccountSelector
-                                                ? currentValue !== ''
-                                                : modifiedFields.has(fieldPath);
-                                              const onValueChange = prop.isAccountSelector
-                                                ? setSelectedAccountPubkey
-                                                : (value: string) => setValue(fieldPath, value);
+                                              const isModified = modifiedFields.has(fieldPath);
+                                              const onValueChange = (value: string) => setValue(fieldPath, value);
                                               // Use searchable Combobox for constants with many options (e.g., verified tokens)
-                                              const useCombobox = shouldUseConstantCombobox(
-                                                constantDef.options.length,
-                                                Boolean(prop.isAccountSelector)
-                                              );
+                                              const useCombobox = constantDef.options.length > 20;
 
                                               return (
                                                 <div key={fieldPath} className="space-y-2">

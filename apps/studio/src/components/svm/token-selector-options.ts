@@ -9,9 +9,6 @@ export type TokenSelectorOption = {
   description?: string;
 };
 
-export const shouldUseConstantCombobox = (optionCount: number, isAccountSelector: boolean) =>
-  isAccountSelector || optionCount > 20;
-
 export const getSolFiCustomAccountKind = (protocol: unknown, templateId: unknown) => {
   if (protocol !== 'SolFi' || typeof templateId !== 'string') return undefined;
   if (templateId === 'solfi-price' || templateId === 'solfi-freshness') return 'oracle';
@@ -65,6 +62,24 @@ const SOLFI_FEATURED_MARKETS = [
     quoteVault: 'CMghWj6TEDfGTN5CSzo9p27kPMb73fsDPM22LqTe2C9y',
   },
 ] as const;
+
+const getSolFiAiContext = () =>
+  [
+    'Featured SolFi accounts available in Studio:',
+    ...SOLFI_FEATURED_MARKETS.map(
+      (market) =>
+        `- ${market.label}: market ${market.market}; oracle ${market.oracle}; ` +
+        `${market.baseSymbol} vault ${market.baseVault}; ` +
+        `${market.quoteSymbol} vault ${market.quoteVault}.`
+    ),
+  ].join('\n');
+
+const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
+  solfi: getSolFiAiContext,
+};
+
+export const getProtocolAiContext = (protocolId: string): string | undefined =>
+  PROTOCOL_AI_CONTEXT[protocolId]?.();
 
 export const getSolFiAccountOptions = (accountKind: 'market' | 'oracle' | 'vault'): TokenSelectorOption[] => {
   if (accountKind === 'market') {

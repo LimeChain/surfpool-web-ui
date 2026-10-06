@@ -4,7 +4,6 @@ import {
   getSolFiCustomAccountKind,
   resolveSolFiAccount,
   resolveTokenSelectorOptions,
-  shouldUseConstantCombobox,
   type TokenSelectorOption,
 } from './token-selector-options';
 
@@ -99,16 +98,5 @@ describe('resolveSolFiAccount', () => {
 
     expect(resolveSolFiAccount('bisonfi-spread', address, 'IgnoredAccount111')).toBe(address);
     expect(resolveSolFiAccount('solfi-spread', { pubkey: '' }, '  ')).toBeUndefined();
-  });
-});
-
-describe('shouldUseConstantCombobox', () => {
-  it('uses the shared searchable protocol selector for account choices of any size', () => {
-    expect(shouldUseConstantCombobox(2, true)).toBe(true);
-  });
-
-  it('preserves the existing threshold for ordinary constant fields', () => {
-    expect(shouldUseConstantCombobox(2, false)).toBe(false);
-    expect(shouldUseConstantCombobox(21, false)).toBe(true);
   });
 });
