@@ -40,7 +40,7 @@ export function toScenarioNumber(input: string): number | LosslessNumber {
 }
 
 /**
- * Tessera convention: a direct-pubkey template may publish alternative targets in
+ * A direct-pubkey template may publish alternative targets in
  * `constants.market`. A constant already referenced by a property remains a field selector.
  */
 export function getDirectAccountMarketConstantName(template: unknown): 'market' | undefined {
@@ -58,7 +58,7 @@ export function getDirectAccountMarketConstantName(template: unknown): 'market' 
   return 'market';
 }
 
-/** Resolve a Tessera-style market choice into the ordinary scenario account shape. */
+/** Resolve a direct-market choice into the ordinary scenario account shape. */
 export function resolveTemplateAccount(
   templateAddress: unknown,
   directAccountConstantName: string | undefined,

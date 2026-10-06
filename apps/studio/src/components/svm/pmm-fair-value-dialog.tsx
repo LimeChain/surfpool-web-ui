@@ -8,7 +8,6 @@ import {
   type PmmFairValueAdapter,
   type PmmMarketOption,
   type PmmProtocol,
-  PmmProtocols,
   readMarketOptions,
 } from '@/lib/pmm-fair-value';
 import { createTemplateScenario, fetchScenarioTemplates, type ScenarioTemplate } from '@/lib/scenarios-api';
@@ -62,7 +61,7 @@ const renderMarketOption = (market: PmmMarketOption) => (
 
 export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: PmmFairValueDialogProps) {
   // STATE
-  const [protocol, setProtocol] = useState<PmmProtocol>(PmmProtocols.Tessera);
+  const [protocol, setProtocol] = useState<PmmProtocol | null>(null);
   const [market, setMarket] = useState('');
   const [price, setPrice] = useState('100');
   const [error, setError] = useState<string | null>(null);

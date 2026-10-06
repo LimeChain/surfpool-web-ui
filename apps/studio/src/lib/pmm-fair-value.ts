@@ -26,14 +26,13 @@ export type PmmFairValueAdapter = {
   /** Template whose `constants.market` catalog lists the markets this adapter can target. */
   marketTemplateId: string;
   buildOverrides: (market: PmmMarketOption, price: string) => PmmFairValueOverride[];
-  /** Reads a typed market address the catalog does not list, with the decimals the price needs. */
+  /** Reads a typed market address the catalog does not list, with the metadata its overrides need. */
   readMarket: (rpcUrl: string, address: string, listed: PmmMarketOption[]) => Promise<PmmMarketOption>;
 };
 
 const ZERO = BigInt(0);
 const TEN = BigInt(10);
 const U64_MAX = BigInt('18446744073709551615');
-const TEN_POW_30 = TEN ** BigInt(30);
 const PRICE_PATTERN = /^\d+(?:\.\d+)?$/;
 
 export function isValidPmmPrice(price: string): boolean {
@@ -58,6 +57,61 @@ function scaleDecimal(price: string, exponent: number): bigint {
   }
   return digits / divisor;
 }
+
+async function rpcResult<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const body = await response.json();
+  if (body.error) throw new Error(body.error.message ?? `${method} failed`);
+  return body.result as T;
+}
+
+const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
+  for (const { metadata } of listed) {
+    const [base, quote] = String(metadata?.pair ?? '').split('/');
+    if (metadata?.base_mint === mint && base) return base;
+    if (metadata?.quote_mint === mint && quote) return quote;
+  }
+  return mint.slice(0, 4);
+};
+
+export function readMarketOptions(template: ScenarioTemplate): PmmMarketOption[] {
+  const options = template.constants?.market?.options;
+  if (!Array.isArray(options)) return [];
+  return options.filter(
+    (option): option is PmmMarketOption => typeof option?.value === 'string' && typeof option?.label === 'string'
+  );
+}
+
+export function marketPairLabel(market: PmmMarketOption | undefined): string {
+  const pair = typeof market?.metadata?.pair === 'string' ? market.metadata.pair : market?.label;
+  const [base, quote] = (pair ?? '').split('/').map((part) => part.trim());
+  return base && quote ? `Price of ${base} in ${quote}` : 'Price in quote tokens';
+}
+
+export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: PmmMarketOption, price: string) {
+  const normalizedPrice = price.trim();
+  const overrides = adapter.buildOverrides(market, normalizedPrice).map((override) => ({
+    id: crypto.randomUUID(),
+    ...override,
+    scenarioRelativeSlot: 0,
+    enabled: true,
+    fetchBeforeUse: true,
+  }));
+
+  return {
+    id: crypto.randomUUID(),
+    name: `${adapter.label} ${market.label} fair value ${normalizedPrice}`,
+    description: `Set the ${adapter.label} ${market.label} fair value to ${normalizedPrice} and keep the quote fresh.`,
+    overrides,
+    tags: [adapter.protocol, 'pmm', 'fair-value'],
+  };
+}
+
+const TEN_POW_30 = TEN ** BigInt(30);
 
 function readDecimals(market: PmmMarketOption, key: string): number {
   const value = market.metadata?.[key];
@@ -85,26 +139,6 @@ export function tesseraPriceRatios(
 
 const TESSERA_PROGRAM = 'TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH';
 const TESSERA_MARKET_SIZE = 1264;
-
-async function rpcResult<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
-  const body = await response.json();
-  if (body.error) throw new Error(body.error.message ?? `${method} failed`);
-  return body.result as T;
-}
-
-const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
-  for (const { metadata } of listed) {
-    const [base, quote] = String(metadata?.pair ?? '').split('/');
-    if (metadata?.base_mint === mint && base) return base;
-    if (metadata?.quote_mint === mint && quote) return quote;
-  }
-  return mint.slice(0, 4);
-};
 
 export async function readTesseraMarket(
   rpcUrl: string,
@@ -173,36 +207,3 @@ const tesseraAdapter: PmmFairValueAdapter = {
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
   [PmmProtocols.Tessera]: tesseraAdapter,
 };
-
-export function readMarketOptions(template: ScenarioTemplate): PmmMarketOption[] {
-  const options = template.constants?.market?.options;
-  if (!Array.isArray(options)) return [];
-  return options.filter(
-    (option): option is PmmMarketOption => typeof option?.value === 'string' && typeof option?.label === 'string'
-  );
-}
-
-export function marketPairLabel(market: PmmMarketOption | undefined): string {
-  const pair = typeof market?.metadata?.pair === 'string' ? market.metadata.pair : market?.label;
-  const [base, quote] = (pair ?? '').split('/').map((part) => part.trim());
-  return base && quote ? `Price of ${base} in ${quote}` : 'Price in quote tokens';
-}
-
-export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: PmmMarketOption, price: string) {
-  const normalizedPrice = price.trim();
-  const overrides = adapter.buildOverrides(market, normalizedPrice).map((override) => ({
-    id: crypto.randomUUID(),
-    ...override,
-    scenarioRelativeSlot: 0,
-    enabled: true,
-    fetchBeforeUse: true,
-  }));
-
-  return {
-    id: crypto.randomUUID(),
-    name: `${adapter.label} ${market.label} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${market.label} fair value to ${normalizedPrice} and keep the quote fresh.`,
-    overrides,
-    tags: [adapter.protocol, 'pmm', 'fair-value'],
-  };
-}
