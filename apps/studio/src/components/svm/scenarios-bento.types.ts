@@ -56,6 +56,27 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'GoonFi Price Shock',
+    prompt:
+      "Create an editable SOL/USDC scenario where GoonFi's price for SOL drops to $100 and the market keeps trading at that price instead of rejecting it, but GoonFi pays sellers no more than 25 USDC in total, so small sells still fill and larger ones fail.",
+    icon: '🎯',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Stale Quote',
+    prompt:
+      "Make GoonFi's SOL/USDC quote stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.",
+    icon: '⏳',
+    protocols: ['goonfi'],
+  },
+  {
+    label: 'GoonFi Drained Pool',
+    prompt:
+      "Empty both of GoonFi's SOL/USDC vaults, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.",
+    icon: '🏜️',
+    protocols: ['goonfi'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',

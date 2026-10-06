@@ -150,9 +150,10 @@ export type PumpSwapPriceShockScenarioResult = {
   virtualQuoteReserves?: string;
 };
 
-type ScenarioTemplate = {
+export type ScenarioTemplate = {
   id: string;
   address: unknown;
+  constants?: Record<string, { options?: unknown } | undefined>;
 };
 
 function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string): ScenarioTemplate | undefined {
@@ -211,6 +212,37 @@ export async function createPumpSwapPriceShockScenario(
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Failed to create PumpSwap price shock scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+export async function fetchScenarioTemplates(studioUrl: string): Promise<ScenarioTemplate[]> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  return (await response.json()) as ScenarioTemplate[];
+}
+
+export async function createTemplateScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<{ id: string }> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create scenario: ${response.status}`);
   }
 
   const result = (await response.json()) as { id?: string };
