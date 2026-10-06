@@ -225,6 +225,19 @@ describe('PmmFairValueDialog', () => {
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'tessera-price', account: { pubkey: UNLISTED_MARKET } });
   });
 
+  it('offers a read typed market once, not again as a custom address', async () => {
+    stubSurfnet(TESSERA_PROGRAM);
+    renderDialog();
+
+    await screen.findByLabelText('Price of WSOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
+    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
+
+    expect(marketNames()).toEqual(['4vJ9 / USDC']);
+  });
+
   it('refuses a typed address that is not a Tessera market', async () => {
     stubSurfnet('11111111111111111111111111111111');
     renderDialog();
