@@ -249,7 +249,7 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
               accumulatedResponse += resultLine;
               setStreamedResponse((prev) => prev + resultLine);
               const scenarioId =
-                event.content.name === 'create_scenario'
+                ['create_scenario', 'create_pump_graduation_scenario'].includes(event.content.name)
                   ? createdScenarioIdFromToolResult(event.content.result)
                   : null;
               if (scenarioId) {
