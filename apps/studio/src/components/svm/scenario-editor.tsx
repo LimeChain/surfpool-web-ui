@@ -733,6 +733,7 @@ export default function ScenarioEditor({
     setUsesCustomBisonFiAddress(custom);
     // Values entered for one pool must never be carried silently to another pool.
     setAccountData({});
+    accountDataBisonFiAddressRef.current = '';
     setModifiedFields(new Set());
     setLoadingAccountData(false);
 
@@ -740,7 +741,6 @@ export default function ScenarioEditor({
       pendingBisonFiAddressRef.current = pubkey;
       void loadAccountData(pubkey, selectedAction?.template, requestId);
     } else {
-      accountDataBisonFiAddressRef.current = '';
       pendingBisonFiAddressRef.current = '';
     }
   };
