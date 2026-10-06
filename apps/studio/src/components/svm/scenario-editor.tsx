@@ -668,12 +668,15 @@ export default function ScenarioEditor({
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
-      // A template whose properties all carry value_type (the Phoenix market templates) edits no
-      // field of the account, so its decoded data would only be sent back as override values.
+      // A template whose properties are all inputs or dynamic_refs (the Phoenix market templates) edits
+      // no field of the account, so its decoded data would only be sent back as override values.
       // An empty slice still forks the account in for Play, without decoding it.
       const properties = action.template.properties ?? [];
       const inputsOnly =
-        properties.length > 0 && properties.every((prop: any) => typeof prop !== 'string' && prop.value_type != null);
+        properties.length > 0 &&
+        properties.every(
+          (prop: any) => typeof prop !== 'string' && (prop.type === 'input' || prop.type === 'dynamic_ref')
+        );
 
       const getAccountInfoRequest = {
         jsonrpc: '2.0',
@@ -1892,11 +1895,19 @@ export default function ScenarioEditor({
                                   <div className="mb-6 flex-1 space-y-4">
                                     {(() => {
                                       const fields = [...getFieldsFromIDL(selectedAction.template)];
-                                      // value_type lets a property without an IDL field still render an input
+                                      // Inputs and dynamic_refs have no IDL field: an input renders from its value_type,
+                                      // a dynamic_ref as the string its source lists
                                       for (const prop of selectedAction.template?.properties ?? []) {
-                                        if (typeof prop === 'string' || prop.value_type == null) continue;
+                                        if (typeof prop === 'string') continue;
+                                        const type =
+                                          prop.type === 'input'
+                                            ? prop.value_type
+                                            : prop.type === 'dynamic_ref'
+                                              ? 'string'
+                                              : undefined;
+                                        if (type == null) continue;
                                         const index = fields.findIndex((field: any) => field.name === prop.path);
-                                        const field = { ...fields[index], name: prop.path, type: prop.value_type };
+                                        const field = { ...fields[index], name: prop.path, type };
                                         if (index === -1) fields.push(field);
                                         else fields[index] = field;
                                       }

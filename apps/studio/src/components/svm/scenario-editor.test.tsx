@@ -178,11 +178,10 @@ const marketTemplate = (market: (typeof marketTemplates)[number]) => ({
   ...market,
   accountType: 'PerpAssetMap',
   address: { pubkey: 'template-map' },
-  properties: ['symbol', ...market.prices].map((path) => ({
-    path,
-    value_type: 'string',
-    ...(path === 'symbol' ? { type: 'dynamic_ref', source: 'list_phoenix_markets' } : {}),
-  })),
+  properties: [
+    { path: 'symbol', type: 'dynamic_ref', source: 'list_phoenix_markets' },
+    ...market.prices.map((path) => ({ path, type: 'input', value_type: 'string' })),
+  ],
   idl: {
     types: [
       {
@@ -197,7 +196,7 @@ const marketTemplate = (market: (typeof marketTemplates)[number]) => ({
 });
 
 for (const market of marketTemplates) {
-  it('edits and saves ' + market.name + ' using value_type template fields', async () => {
+  it('edits and saves ' + market.name + ' using input template fields', async () => {
     const template = marketTemplate(market);
     const values: Record<string, string> = { symbol: 'SOL' };
     for (const name of market.prices) values[name] = '1';
