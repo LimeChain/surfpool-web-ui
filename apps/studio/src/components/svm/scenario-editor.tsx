@@ -3,6 +3,7 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
+  fetchConstantOptions,
   flattenOverrideValues,
   getDirectAccountMarketConstantName,
   parseScenariosJson,
@@ -11,6 +12,7 @@ import {
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
+  withConstantOptions,
   type OverridePayload,
 } from '@/lib/scenarios-api';
 import {
@@ -611,11 +613,24 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
+  const handleActionSelect = async (requestedAction: Action, accountPubkey?: string) => {
     const requestId = ++accountRequestRef.current;
+    let action = requestedAction;
     setSelectedAction(action);
     setAccountData({});
     const marketConstantName = getDirectAccountMarketConstantName(action.template);
+    if (marketConstantName && !action.template.constants[marketConstantName].options.length) {
+      setLoadingAccountData(true);
+      const options = await fetchConstantOptions(studioUrl, action.template.id, marketConstantName).catch(
+        (error: unknown) => {
+          console.warn(`Failed to load the ${marketConstantName} options of ${requestedAction.template.id}`, error);
+          return [];
+        }
+      );
+      if (requestId !== accountRequestRef.current) return;
+      action = { ...action, template: withConstantOptions(action.template, marketConstantName, options) };
+      setSelectedAction(action);
+    }
     const marketPubkey = marketConstantName ? (accountPubkey ?? action.template?.address?.pubkey ?? '') : '';
     setSelectedAccountPubkey(marketPubkey);
     setModifiedFields(new Set()); // Clear modified fields when loading new action
@@ -643,6 +658,10 @@ export default function ScenarioEditor({
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
       if (marketPubkey) addressString = marketPubkey;
+      if (!addressString) {
+        setLoadingAccountData(false);
+        return;
+      }
 
       // Step 1: Fetch account info with parsed JSON
       logger.log('🔍 Fetching account info for address:', addressString);

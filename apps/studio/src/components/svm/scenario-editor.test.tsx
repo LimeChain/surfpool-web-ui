@@ -1,6 +1,15 @@
+import { fetchConstantOptions } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
+
+vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/scenarios-api')>()),
+  fetchConstantOptions: vi.fn(async () => [
+    { label: 'Market A', value: 'market-a' },
+    { label: 'Market B', value: 'market-b' },
+  ]),
+}));
 
 vi.mock('@/hooks/use-app-config', () => ({
   useAppConfig: () => ({ rpcUrl: 'http://rpc', studioUrl: 'http://studio' }),
@@ -35,16 +44,8 @@ const tesseraPrice = {
   protocol: 'Tessera',
   idl: { accounts: [{ name: 'Market', type: { fields: [{ name: 'price', type: 'u64' }] } }] },
   accountType: 'Market',
-  address: { pubkey: 'market-a' },
-  constants: {
-    market: {
-      label: 'Market',
-      options: [
-        { label: 'Market A', value: 'market-a' },
-        { label: 'Market B', value: 'market-b' },
-      ],
-    },
-  },
+  address: { pubkey: '' },
+  constants: { market: { label: 'Market', options: [] } },
   properties: [{ path: 'price', label: 'Price' }],
 };
 
@@ -65,6 +66,7 @@ it('refetches the account when another market is selected', async () => {
   fireEvent.click(slotCard as Element);
   fireEvent.click(await screen.findByAltText('Tessera'));
   await waitFor(() => expect(fetchedAccounts()).toEqual(['market-a']));
+  expect(vi.mocked(fetchConstantOptions)).toHaveBeenCalledWith('http://studio', 'tessera-price', 'market');
 
   fireEvent.change(await screen.findByLabelText('Market'), { target: { value: 'market-b' } });
   await waitFor(() => expect(fetchedAccounts()).toEqual(['market-a', 'market-b']));

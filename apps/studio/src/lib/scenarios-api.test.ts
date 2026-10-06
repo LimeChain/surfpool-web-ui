@@ -8,6 +8,7 @@ import {
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   createTemplateScenario,
+  fetchConstantOptions,
   flattenOverrideValues,
   getDirectAccountMarketConstantName,
   parseScenariosJson,
@@ -18,6 +19,7 @@ import {
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
+  withConstantOptions,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
 
@@ -99,6 +101,64 @@ describe('createPumpGraduationScenario', () => {
     await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
       'Bonding curve is already complete'
     );
+  });
+});
+
+describe('fetchConstantOptions', () => {
+  it("reads a constant's options through MCP search_constant_options", async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    const result = {
+      constant: 'market',
+      id: 'sol-usdc',
+      label: 'SOL / USDC',
+      description: null,
+      value: 'market-a',
+      metadata: { pair: 'SOL/USDC' },
+    };
+    callMcpToolMock.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ results: [result], totalMatches: 21, truncated: true }) }],
+    });
+
+    await expect(fetchConstantOptions('http://studio', 'tessera-price', 'market')).resolves.toEqual([
+      { id: 'sol-usdc', label: 'SOL / USDC', value: 'market-a', metadata: { pair: 'SOL/USDC' } },
+    ]);
+    expect(callMcpToolMock).toHaveBeenCalledWith(
+      'http://studio',
+      'search_constant_options',
+      { templateId: 'tessera-price', constant: 'market', query: '' },
+      'session-id'
+    );
+  });
+
+  it('surfaces an MCP tool error', async () => {
+    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
+    callMcpToolMock.mockResolvedValue({ isError: true, content: [{ type: 'text', text: 'Unknown templateId "x"' }] });
+
+    await expect(fetchConstantOptions('http://studio', 'x', 'market')).rejects.toThrow('Unknown templateId "x"');
+  });
+});
+
+describe('withConstantOptions', () => {
+  it('fills the constant and points an unset address at the first option', () => {
+    const template = {
+      id: 'tessera-price',
+      address: { pubkey: '' },
+      constants: { market: { label: 'Market', options: [] } },
+    };
+    const options = [
+      { label: 'Market A', value: 'market-a' },
+      { label: 'Market B', value: 'market-b' },
+    ];
+
+    expect(withConstantOptions(template, 'market', options)).toEqual({
+      id: 'tessera-price',
+      address: { pubkey: 'market-a' },
+      constants: { market: { label: 'Market', options } },
+    });
+    expect(withConstantOptions({ ...template, address: { pubkey: 'market-b' } }, 'market', options).address).toEqual({
+      pubkey: 'market-b',
+    });
+    expect(withConstantOptions(template, 'market', []).address).toEqual({ pubkey: '' });
   });
 });
 
@@ -568,6 +628,7 @@ describe('getDirectAccountMarketConstantName', () => {
     expect(getDirectAccountMarketConstantName(referenced)).toBeUndefined();
     expect(getDirectAccountMarketConstantName({ ...template, address: { pda: {} } })).toBeUndefined();
     expect(getDirectAccountMarketConstantName({ ...template, constants: {} })).toBeUndefined();
+    expect(getDirectAccountMarketConstantName({ ...template, constants: { market: { options: [] } } })).toBe('market');
   });
 });
 

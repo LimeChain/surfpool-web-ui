@@ -8,9 +8,13 @@ import {
   type PmmFairValueAdapter,
   type PmmMarketOption,
   type PmmProtocol,
-  readMarketOptions,
 } from '@/lib/pmm-fair-value';
-import { createTemplateScenario, fetchScenarioTemplates, type ScenarioTemplate } from '@/lib/scenarios-api';
+import {
+  createTemplateScenario,
+  fetchConstantOptions,
+  fetchScenarioTemplates,
+  type ScenarioTemplate,
+} from '@/lib/scenarios-api';
 import {
   Button,
   Combobox,
@@ -67,6 +71,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [templates, setTemplates] = useState<ScenarioTemplate[] | null>(null);
+  const [markets, setMarkets] = useState<PmmMarketOption[] | null>(null);
   const [customMarket, setCustomMarket] = useState<PmmMarketOption | null>(null);
 
   // REFS
@@ -77,8 +82,8 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
     (candidate) => !!templates?.some((template) => template.id === candidate.marketTemplateId)
   );
   const adapter = availableAdapters.find((candidate) => candidate.protocol === protocol) ?? availableAdapters[0];
-  const marketTemplate = templates?.find((template) => template.id === adapter?.marketTemplateId);
-  const marketOptions = templates === null ? null : marketTemplate ? readMarketOptions(marketTemplate) : [];
+  const marketTemplateId = templates?.find((template) => template.id === adapter?.marketTemplateId)?.id;
+  const marketOptions = templates === null ? null : marketTemplateId ? markets : [];
   const listedMarket = marketOptions?.find((option) => option.value === market);
   const loadedCustomMarket = customMarket?.value === market ? customMarket : undefined;
   const selectedMarket = listedMarket ?? (market === '' ? marketOptions?.[0] : loadedCustomMarket);
@@ -174,6 +179,26 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
     };
   }, [open, studioUrl]);
 
+  useEffect(() => {
+    if (!open || !marketTemplateId) return;
+    let cancelled = false;
+    setMarkets(null);
+
+    fetchConstantOptions(studioUrl, marketTemplateId, 'market')
+      .then((loadedMarkets) => {
+        if (!cancelled) setMarkets(loadedMarkets);
+      })
+      .catch((loadError: unknown) => {
+        if (cancelled) return;
+        setMarkets([]);
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load PMM markets');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, studioUrl, marketTemplateId]);
+
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
       <form onSubmit={handleSubmit}>
@@ -208,7 +233,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
               filter={matchesMarket}
               customOption={typedMarket}
               onChange={handleMarketSelect}
-              disabled={isCreating || !marketOptions?.length}
+              disabled={isCreating || marketOptions === null}
             >
               {renderMarketOption}
             </Combobox>

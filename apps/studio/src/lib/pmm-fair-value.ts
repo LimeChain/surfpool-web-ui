@@ -1,5 +1,5 @@
 import { PublicKey } from '@solana/web3.js';
-import { type ScenarioTemplate, toScenarioNumber } from './scenarios-api';
+import { toScenarioNumber } from './scenarios-api';
 
 export const PmmProtocols = {
   Tessera: 'tessera',
@@ -77,14 +77,6 @@ const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
   }
   return mint.slice(0, 4);
 };
-
-export function readMarketOptions(template: ScenarioTemplate): PmmMarketOption[] {
-  const options = template.constants?.market?.options;
-  if (!Array.isArray(options)) return [];
-  return options.filter(
-    (option): option is PmmMarketOption => typeof option?.value === 'string' && typeof option?.label === 'string'
-  );
-}
 
 export function marketPairLabel(market: PmmMarketOption | undefined): string {
   const pair = typeof market?.metadata?.pair === 'string' ? market.metadata.pair : market?.label;
