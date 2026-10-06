@@ -171,6 +171,7 @@ export default function ScenarioEditor({
   const isFirstSlotsChangeRef = useRef(true);
   const accountLoadRequestRef = useRef(0);
   const accountDataBisonFiAddressRef = useRef('');
+  const pendingBisonFiAddressRef = useRef('');
   const isBisonFiAccountSelection = isBisonFiTemplate(selectedAction?.id);
   const isAddressSelectionMissing = isBisonFiAccountSelection && selectedAccountPubkey.trim() === '';
 
@@ -652,12 +653,14 @@ export default function ScenarioEditor({
         const parsed = responseData.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
+        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
       } else if (template?.rawLayout && Array.isArray(responseData) && typeof responseData[0] === 'string') {
         const binary = atob(responseData[0]);
         const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
         const decoded = decodeRawLayoutAccountData(template, bytes);
         logger.log('📊 Decoded raw-layout account data:', decoded);
         setAccountData(decoded);
+        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
       }
 
       return true;
@@ -668,6 +671,7 @@ export default function ScenarioEditor({
       return requestId === accountLoadRequestRef.current;
     } finally {
       if (requestId === accountLoadRequestRef.current) {
+        if (pendingBisonFiAddressRef.current === address) pendingBisonFiAddressRef.current = '';
         setLoadingAccountData(false);
       }
     }
@@ -682,7 +686,8 @@ export default function ScenarioEditor({
     const usesBisonFiMarket = isBisonFiTemplate(action.id);
     const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
     const selectedPubkey = usesBisonFiMarket ? savedPubkey : '';
-    accountDataBisonFiAddressRef.current = selectedPubkey;
+    accountDataBisonFiAddressRef.current = '';
+    pendingBisonFiAddressRef.current = '';
     setSelectedAccountPubkey(selectedPubkey);
     setUsesCustomBisonFiAddress(
       usesBisonFiMarket &&
@@ -711,11 +716,17 @@ export default function ScenarioEditor({
 
     if (!addressString) return requestId === accountLoadRequestRef.current;
 
+    if (usesBisonFiMarket) pendingBisonFiAddressRef.current = addressString;
+
     return loadAccountData(addressString, action.template, requestId);
   };
 
   const changeBisonFiAccount = (pubkey: string, custom: boolean, fetchAccount: boolean) => {
-    if (fetchAccount && pubkey === accountDataBisonFiAddressRef.current) return;
+    if (
+      fetchAccount &&
+      (pubkey === accountDataBisonFiAddressRef.current || pubkey === pendingBisonFiAddressRef.current)
+    )
+      return;
 
     const requestId = ++accountLoadRequestRef.current;
     setSelectedAccountPubkey(pubkey);
@@ -726,10 +737,11 @@ export default function ScenarioEditor({
     setLoadingAccountData(false);
 
     if (fetchAccount && pubkey) {
-      accountDataBisonFiAddressRef.current = pubkey;
+      pendingBisonFiAddressRef.current = pubkey;
       void loadAccountData(pubkey, selectedAction?.template, requestId);
     } else {
       accountDataBisonFiAddressRef.current = '';
+      pendingBisonFiAddressRef.current = '';
     }
   };
 
@@ -1542,6 +1554,12 @@ export default function ScenarioEditor({
                                                     }
 
                                                     setAccountData(restoredData);
+                                                    if (
+                                                      isBisonFiTemplate(foundAction.id) &&
+                                                      typeof action.account?.pubkey === 'string'
+                                                    ) {
+                                                      accountDataBisonFiAddressRef.current = action.account.pubkey;
+                                                    }
 
                                                     // Combine action.modifiedFields with any restored constant_ref fields
                                                     const allModifiedFields = new Set(action.modifiedFields || []);
