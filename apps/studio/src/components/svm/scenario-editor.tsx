@@ -170,6 +170,7 @@ export default function ScenarioEditor({
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
   const accountLoadRequestRef = useRef(0);
+  const accountDataBisonFiAddressRef = useRef('');
   const isBisonFiAccountSelection = isBisonFiTemplate(selectedAction?.id);
   const isAddressSelectionMissing = isBisonFiAccountSelection && selectedAccountPubkey.trim() === '';
 
@@ -675,11 +676,13 @@ export default function ScenarioEditor({
   // Register IDL and fetch account data when an action is selected
   const handleActionSelect = async (action: Action, savedAccount?: any) => {
     const requestId = ++accountLoadRequestRef.current;
+    setLoadingAccountData(false);
     setSelectedAction(action);
     setAccountData({});
     const usesBisonFiMarket = isBisonFiTemplate(action.id);
     const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
     const selectedPubkey = usesBisonFiMarket ? savedPubkey : '';
+    accountDataBisonFiAddressRef.current = selectedPubkey;
     setSelectedAccountPubkey(selectedPubkey);
     setUsesCustomBisonFiAddress(
       usesBisonFiMarket &&
@@ -712,6 +715,8 @@ export default function ScenarioEditor({
   };
 
   const changeBisonFiAccount = (pubkey: string, custom: boolean, fetchAccount: boolean) => {
+    if (fetchAccount && pubkey === accountDataBisonFiAddressRef.current) return;
+
     const requestId = ++accountLoadRequestRef.current;
     setSelectedAccountPubkey(pubkey);
     setUsesCustomBisonFiAddress(custom);
@@ -721,7 +726,10 @@ export default function ScenarioEditor({
     setLoadingAccountData(false);
 
     if (fetchAccount && pubkey) {
+      accountDataBisonFiAddressRef.current = pubkey;
       void loadAccountData(pubkey, selectedAction?.template, requestId);
+    } else {
+      accountDataBisonFiAddressRef.current = '';
     }
   };
 
