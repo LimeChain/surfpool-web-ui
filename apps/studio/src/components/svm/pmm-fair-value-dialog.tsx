@@ -107,7 +107,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
   };
 
   const typedMarket = (query: string): PmmMarketOption | null =>
-    isAccountAddress(query) && !marketOptions?.some((option) => option.value === query)
+    isAccountAddress(query) && !pickerOptions.some((option) => option.value === query)
       ? { label: `Custom · ${query}`, value: query }
       : null;
 
