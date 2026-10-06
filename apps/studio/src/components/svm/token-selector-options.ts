@@ -36,6 +36,21 @@ export const BISONFI_MARKET_OPTIONS: TokenSelectorOption[] = [
   },
 ];
 
+const getBisonFiAiContext = () =>
+  [
+    'Featured BisonFi markets available in Studio:',
+    ...BISONFI_MARKET_OPTIONS.map(
+      (market) => `- ${market.label}: pool ${market.value}; account name ${market.description}.`
+    ),
+  ].join('\n');
+
+const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
+  bisonfi: getBisonFiAiContext,
+};
+
+export const getProtocolAiContext = (protocolId: string): string | undefined =>
+  PROTOCOL_AI_CONTEXT[protocolId]?.();
+
 export const isBisonFiTemplate = (templateId: unknown) =>
   typeof templateId === 'string' && templateId.startsWith('bisonfi-');
 
