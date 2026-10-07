@@ -88,3 +88,15 @@ export const resolveFeaturedAccount = (templateId: unknown, templateAddress: unk
   const pubkey = selectedPubkey.trim();
   return pubkey ? { pubkey } : undefined;
 };
+
+const getTesseraAiContext = () =>
+  [
+    'Featured Tessera markets available in Studio:',
+    ...TESSERA_FEATURED_MARKETS.map((market) => `- ${market.label}: market ${market.market}.`),
+  ].join('\n');
+
+const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
+  tessera: getTesseraAiContext,
+};
+
+export const getProtocolAiContext = (protocolId: string): string | undefined => PROTOCOL_AI_CONTEXT[protocolId]?.();
