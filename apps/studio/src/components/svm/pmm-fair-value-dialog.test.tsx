@@ -114,6 +114,7 @@ const stubSurfnet = (owner: string) => {
   data.set(new Uint8Array(32).fill(9), 208);
   const accountData = btoa(String.fromCharCode(...data));
   const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
+    ok: true,
     json: async () => ({ result: { value: { owner, data: [accountData, 'base64'] } } }),
   }));
   vi.stubGlobal('fetch', fetchMock);
@@ -199,7 +200,7 @@ describe('PmmFairValueDialog', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe(`GoonFi Custom · ${UNLISTED_MARKET} fair value 100`);
+    expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: UNLISTED_ORACLE } });
     expect(scenario.overrides[2]).toMatchObject({
       templateId: 'goonfi-reference-band',
