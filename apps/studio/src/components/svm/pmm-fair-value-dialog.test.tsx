@@ -199,7 +199,7 @@ describe('PmmFairValueDialog', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
+    expect(scenario.name).toBe(`GoonFi Custom · ${UNLISTED_MARKET} fair value 100`);
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: UNLISTED_ORACLE } });
     expect(scenario.overrides[2]).toMatchObject({
       templateId: 'goonfi-reference-band',
@@ -217,7 +217,7 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
-    expect(marketNames()).toEqual(['4vJ9JU1b⋯4P3bkLKi / USDC']);
+    expect(marketNames()).toEqual([`Custom · ${UNLISTED_MARKET}`]);
   });
 
   it('refuses a typed address that is not a GoonFi market', async () => {

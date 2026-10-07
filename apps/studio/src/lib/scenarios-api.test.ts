@@ -660,4 +660,3 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
     expect(snapshotDownloadContents('not json')).toBeNull();
   });
 });
-
