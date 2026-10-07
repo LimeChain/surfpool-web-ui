@@ -102,3 +102,20 @@ export const resolveFeaturedAccount = (templateId: unknown, templateAddress: unk
   const pubkey = selectedPubkey.trim();
   return pubkey ? { pubkey } : undefined;
 };
+
+const getHumidiFiAiContext = () =>
+  [
+    'Featured HumidiFi accounts available in Studio:',
+    ...HUMIDIFI_FEATURED_MARKETS.map(
+      (market) =>
+        `- ${market.label}: market ${market.market}; ` +
+        `${market.baseSymbol} vault ${market.baseVault}; ` +
+        `${market.quoteSymbol} vault ${market.quoteVault}.`
+    ),
+  ].join('\n');
+
+const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
+  humidifi: getHumidiFiAiContext,
+};
+
+export const getProtocolAiContext = (protocolId: string): string | undefined => PROTOCOL_AI_CONTEXT[protocolId]?.();
