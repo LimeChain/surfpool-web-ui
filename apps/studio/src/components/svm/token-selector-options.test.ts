@@ -73,6 +73,7 @@ describe('getFeaturedAccounts', () => {
   it('offers each HumidiFi template the account it writes', () => {
     expect(values('humidifi-price')?.[0]).toBe(sol.market);
     expect(values('humidifi-freshness')?.[0]).toBe(sol.market);
+    expect(values('humidifi-spread')?.[0]).toBe(sol.market);
     expect(values('humidifi-vault-balance')?.slice(0, 2)).toEqual([sol.baseVault, sol.quoteVault]);
     expect(values('humidifi-vault-balance')).toHaveLength(2 * HUMIDIFI_FEATURED_MARKETS.length);
     expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();

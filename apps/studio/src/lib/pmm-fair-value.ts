@@ -58,6 +58,7 @@ async function rpcResult<T>(rpcUrl: string, method: string, params: unknown[]): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
+  if (!response.ok) throw new Error(`${method} failed: ${response.status}`);
   const body = await response.json();
   if (body.error) throw new Error(body.error.message ?? `${method} failed`);
   return body.result as T;
@@ -106,6 +107,8 @@ export function marketPairLabel(market: PmmMarketOption | undefined): string {
 
 export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: PmmMarketOption, price: string) {
   const normalizedPrice = price.trim();
+  const marketName =
+    typeof market.metadata?.pair === 'string' ? market.metadata.pair.replace('/', ' / ') : market.label;
   const overrides = adapter.buildOverrides(market, normalizedPrice).map((override) => ({
     id: crypto.randomUUID(),
     ...override,
@@ -116,8 +119,8 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
 
   return {
     id: crypto.randomUUID(),
-    name: `${adapter.label} ${market.label} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${market.label} fair value to ${normalizedPrice} and mark the quote fresh.`,
+    name: `${adapter.label} ${marketName} fair value ${normalizedPrice}`,
+    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice} and mark the quote fresh.`,
     overrides,
     tags: [adapter.protocol, 'pmm', 'fair-value'],
   };

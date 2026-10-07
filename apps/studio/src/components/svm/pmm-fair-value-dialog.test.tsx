@@ -127,7 +127,7 @@ const stubSurfnet = (owner: string) => {
       method === 'getMultipleAccounts'
         ? { value: [mintAccount(8), mintAccount(6)] }
         : { value: { owner, data: [base64(market), 'base64'] } };
-    return { json: async () => ({ result }) };
+    return { ok: true, json: async () => ({ result }) };
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -213,7 +213,7 @@ describe('PmmFairValueDialog', () => {
       USDC,
     ]);
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe(`HumidiFi Custom · ${UNLISTED_MARKET} fair value 100`);
+    expect(scenario.name).toBe('HumidiFi 7vfCXTUX⋯b963voxs / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'humidifi-price', account: { pubkey: UNLISTED_MARKET } });
     expect(String(scenario.overrides[0].values.fair_value)).toBe('281474976710656');
     expect(scenario.overrides[1]).toMatchObject({

@@ -90,6 +90,7 @@ const humidifiAccounts = (kind: 'market' | 'vault'): FeaturedAccounts => ({
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['humidifi-price', humidifiAccounts('market')],
   ['humidifi-freshness', humidifiAccounts('market')],
+  ['humidifi-spread', humidifiAccounts('market')],
   ['humidifi-vault-balance', humidifiAccounts('vault')],
 ]);
 
