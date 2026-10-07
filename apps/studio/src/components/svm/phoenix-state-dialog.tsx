@@ -68,8 +68,8 @@ const unitChoices: Record<PhoenixStateMode, UnitChoice[]> = {
     { unit: 'raw', label: 'Ticks', placeholder: 'Target ticks, at least 1' },
   ],
   [PhoenixStateMode.MaintenanceMargin]: [
-    { unit: 'percent', label: '%', placeholder: 'Share of initial margin, live markets use 50' },
-    { unit: 'raw', label: 'bps', placeholder: 'Up to 10000, live markets use 5000' },
+    { unit: 'percent', label: '%', placeholder: 'Share of initial margin, mainnet markets use 50' },
+    { unit: 'raw', label: 'bps', placeholder: 'Up to 10000, mainnet markets use 5000' },
   ],
 };
 

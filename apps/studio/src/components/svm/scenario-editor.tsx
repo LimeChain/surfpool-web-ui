@@ -670,7 +670,7 @@ export default function ScenarioEditor({
 
       // A template whose properties are all inputs or dynamic_refs (the Phoenix market templates) edits
       // no field of the account, so its decoded data would only be sent back as override values.
-      // An empty slice still forks the account in for Play, without decoding it.
+      // An empty slice still pulls the account into the local VM for Play, without decoding it.
       const properties = action.template.properties ?? [];
       const inputsOnly =
         properties.length > 0 &&

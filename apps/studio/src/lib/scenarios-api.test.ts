@@ -202,13 +202,13 @@ describe('createPhoenixCollateralScenario', () => {
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: 'Phoenix collateral stress can only lower collateral' }),
+          text: JSON.stringify({ error: 'Phoenix Trader account trader was not found' }),
         },
       ],
     });
 
     await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
-      'Phoenix collateral stress can only lower collateral'
+      'Phoenix Trader account trader was not found'
     );
   });
 });

@@ -314,7 +314,7 @@ export async function fetchDynamicRefOptions(studioUrl: string, source: string):
 
 /**
  * The market templates carry the perp asset map address, so these scenarios are built here and
- * posted to the generic API; only collateral stress needs a tool, for its vault-backing check.
+ * posted to the generic API; only collateral stress needs a tool, which reads the Trader from the surfnet.
  */
 async function createPhoenixMarketScenario(
   studioUrl: string,
@@ -338,7 +338,8 @@ async function createPhoenixMarketScenario(
         scenarioRelativeSlot: 0,
         label,
         enabled: true,
-        // A stale map fails Phoenix's mark staleness check, so fork the live one first.
+        // A stale map fails Phoenix's mark staleness check, so fetch the current one from the
+        // upstream datasource first.
         fetchBeforeUse: true,
         account: template.address,
       },
@@ -373,7 +374,7 @@ export async function createPhoenixDirectMarkScenario(
     studioUrl,
     'phoenix-direct-mark-risk-shock',
     `Phoenix ${symbol.trim()} Direct Mark Risk Shock`,
-    'Set exact mark-price ticks in validated Phoenix Eternal risk state.',
+    'Set exact mark-price ticks for one market in the Phoenix Eternal PerpAssetMap.',
     `Phoenix ${symbol.trim()} direct mark risk shock`,
     ['phoenix-eternal', 'direct-mark', 'risk'],
     { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
