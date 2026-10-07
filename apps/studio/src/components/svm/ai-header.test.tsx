@@ -94,7 +94,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
-    expect(screen.getByText('Tessera Risk-Off')).toBeInTheDocument();
+    expect(screen.getByText('Tessera Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
     expect(screen.getByText('Tessera Halt')).toBeInTheDocument();
   });

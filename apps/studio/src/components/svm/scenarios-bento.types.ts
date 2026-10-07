@@ -56,10 +56,10 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
-    label: 'Tessera Risk-Off',
+    label: 'Tessera Price Shock',
     prompt:
-      'Create an editable SOL/USDC scenario where SOL crashes to $50 and the Tessera maker goes risk-off. It reprices both directions to $50 but stops taking on more SOL: anyone selling SOL is turned away, while buyers can still get SOL at $50 for the next 100 slots. To achieve this, use the Tessera price override, keep the quote fresh throughout those 100 slots, and halt only the liquidity that fills SOL sellers.',
-    icon: '🛡️',
+      'Create an editable SOL/USDC scenario where Tessera reprices SOL to $100 in both directions and keeps the quote fresh, so swaps fill at that price. Prepare state only; do not build or execute a swap.',
+    icon: '🎯',
     protocols: ['tessera'],
   },
   {
