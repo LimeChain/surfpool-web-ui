@@ -45,7 +45,10 @@ const PUBKEY_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 export const isAccountAddress = (text: string) => PUBKEY_PATTERN.test(text);
 
 // A typed account address an account picker does not list yet, offered as its last option.
-export const typedAccountOption = (query: string, options: TokenSelectorOption[]): TokenSelectorOption | null =>
+export const typedAccountOption = (
+  query: string,
+  options: ReadonlyArray<{ value?: string | number }>
+): TokenSelectorOption | null =>
   isAccountAddress(query) && !options.some((option) => option.value === query)
     ? { id: `custom-${query}`, label: 'Custom address', value: query, metadata: { symbol: `Custom · ${query}` } }
     : null;
@@ -100,3 +103,20 @@ export const resolveFeaturedAccount = (templateId: unknown, templateAddress: unk
   const pubkey = selectedPubkey.trim();
   return pubkey ? { pubkey } : undefined;
 };
+
+const getGoonFiAiContext = () =>
+  [
+    'Featured GoonFi accounts available in Studio:',
+    ...GOONFI_FEATURED_MARKETS.map(
+      (market) =>
+        `- ${market.label}: market ${market.market}; oracle ${market.oracle}; ` +
+        `${market.baseSymbol} vault ${market.baseVault}; ` +
+        `${market.quoteSymbol} vault ${market.quoteVault}.`
+    ),
+  ].join('\n');
+
+const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
+  goonfi: getGoonFiAiContext,
+};
+
+export const getProtocolAiContext = (protocolId: string): string | undefined => PROTOCOL_AI_CONTEXT[protocolId]?.();
