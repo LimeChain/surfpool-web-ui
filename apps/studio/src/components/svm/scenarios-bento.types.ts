@@ -58,21 +58,21 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'HumidiFi Price Shock',
     prompt:
-      "Create an editable scenario on the HumidiFi SOL/USDC market <PASTE_HUMIDIFI_MARKET_ADDRESS> where HumidiFi's price for SOL drops to $100 and the market keeps quoting at that price instead of rejecting it as stale. Prepare state only; do not build or execute a swap.",
+      "Create an editable scenario on the HumidiFi SOL/USDC market where HumidiFi's price for SOL drops to $100 and the market keeps quoting at that price instead of rejecting it as stale. Prepare state only; do not build or execute a swap.",
     icon: '💧',
     protocols: ['humidifi'],
   },
   {
     label: 'HumidiFi Stale Quote',
     prompt:
-      'Make the quote of the HumidiFi SOL/USDC market <PASTE_HUMIDIFI_MARKET_ADDRESS> stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.',
+      'Make the quote of the HumidiFi SOL/USDC market stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.',
     icon: '⏳',
     protocols: ['humidifi'],
   },
   {
     label: 'HumidiFi Drained Vaults',
     prompt:
-      'Empty both vaults of the HumidiFi SOL/USDC market <PASTE_HUMIDIFI_MARKET_ADDRESS>, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.',
+      'Empty both vaults of the HumidiFi SOL/USDC market, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.',
     icon: '🫧',
     protocols: ['humidifi'],
   },
