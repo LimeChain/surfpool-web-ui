@@ -117,7 +117,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
     adapter
       .readMarket(rpcUrl, address, marketOptions ?? [])
       .then((read) => {
-        if (requestId === marketRequestRef.current) setCustomMarket(read);
+        if (requestId === marketRequestRef.current) setCustomMarket({ ...read, label: selectedMarketOption.label });
       })
       .catch((readError: unknown) => {
         if (requestId !== marketRequestRef.current) return;

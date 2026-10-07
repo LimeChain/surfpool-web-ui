@@ -213,7 +213,7 @@ describe('PmmFairValueDialog', () => {
       USDC,
     ]);
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('HumidiFi 7vfCXTUX⋯b963voxs / USDC fair value 100');
+    expect(scenario.name).toBe(`HumidiFi Custom · ${UNLISTED_MARKET} fair value 100`);
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'humidifi-price', account: { pubkey: UNLISTED_MARKET } });
     expect(String(scenario.overrides[0].values.fair_value)).toBe('281474976710656');
     expect(scenario.overrides[1]).toMatchObject({
@@ -232,7 +232,7 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of 7vfCXTUX⋯b963voxs in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
-    expect(marketNames()).toEqual(['7vfCXTUX⋯b963voxs / USDC']);
+    expect(marketNames()).toEqual([`Custom · ${UNLISTED_MARKET}`]);
   });
 
   it('refuses a typed address that is not a HumidiFi market', async () => {
