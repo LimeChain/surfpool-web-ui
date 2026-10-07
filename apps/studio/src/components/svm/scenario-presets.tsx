@@ -68,7 +68,7 @@ export default function ScenarioPresets({
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-zinc-100">PMM fair value</span>
             <span className="mt-1 block text-sm leading-5 text-zinc-500">
-              Choose a PMM and market, set its fair value, and keep the quote fresh.
+              Choose a PMM and market, set its fair value, and mark the quote fresh.
             </span>
           </span>
           <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-fuchsia-400" />

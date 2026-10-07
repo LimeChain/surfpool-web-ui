@@ -70,7 +70,7 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['goonfi'],
   },
   {
-    label: 'GoonFi Drained Pool',
+    label: 'GoonFi Drained Vaults',
     prompt:
       "Empty both of GoonFi's SOL/USDC vaults, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.",
     icon: '🏜️',

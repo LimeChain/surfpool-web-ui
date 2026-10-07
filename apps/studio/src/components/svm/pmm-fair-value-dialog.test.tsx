@@ -1,12 +1,12 @@
 import { GOONFI_FEATURED_MARKETS } from '@/lib/goonfi-markets';
-import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/scenarios-api';
+import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PmmFairValueDialog from './pmm-fair-value-dialog';
 
-vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/scenarios-api')>()),
+vi.mock('@/lib/pmm-fair-value', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/pmm-fair-value')>()),
   createTemplateScenario: vi.fn(),
   fetchScenarioTemplates: vi.fn(),
 }));
@@ -93,7 +93,7 @@ const renderDialog = (onCreated = vi.fn()) =>
   );
 
 beforeEach(() => {
-  fetchTemplatesMock.mockResolvedValue([{ id: 'goonfi-reference-band', address: { pubkey: '' } }]);
+  fetchTemplatesMock.mockResolvedValue([{ id: 'goonfi-reference-band' }]);
 });
 
 afterEach(() => {
@@ -121,7 +121,7 @@ const stubSurfnet = (owner: string) => {
 };
 
 describe('PmmFairValueDialog', () => {
-  it('lists the PMM protocols and the markets of the adapter catalog', async () => {
+  it('lists the PMM protocols and the featured markets of the adapter', async () => {
     renderDialog();
 
     expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
@@ -184,7 +184,7 @@ describe('PmmFairValueDialog', () => {
     expect(String(band.values.reference_price_b_x1e6)).toBe('1000100');
   });
 
-  it('reads a typed market address the catalog does not list and targets its oracle', async () => {
+  it('reads a typed market address the featured list does not offer and targets its oracle', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     const fetchMock = stubSurfnet(GOONFI_PROGRAM);
@@ -193,13 +193,13 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('GoonFi 4vJ9 / USDC fair value 100');
+    expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: UNLISTED_ORACLE } });
     expect(scenario.overrides[2]).toMatchObject({
       templateId: 'goonfi-reference-band',
@@ -214,10 +214,10 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
-    expect(marketNames()).toEqual(['4vJ9 / USDC']);
+    expect(marketNames()).toEqual(['4vJ9JU1b⋯4P3bkLKi / USDC']);
   });
 
   it('refuses a typed address that is not a GoonFi market', async () => {
@@ -247,7 +247,7 @@ describe('PmmFairValueDialog', () => {
       fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: address } });
       fireEvent.click(screen.getByRole('button', { name: `Custom · ${address}` }));
     }
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     releaseFirstRead();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -256,7 +256,7 @@ describe('PmmFairValueDialog', () => {
   });
 
   it('shows an error and disables Create when the surfnet serves no PMM template', async () => {
-    fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool', address: {} }]);
+    fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool' }]);
     renderDialog();
 
     expect(await screen.findByText('This surfnet serves no PMM fair value templates')).toBeInTheDocument();

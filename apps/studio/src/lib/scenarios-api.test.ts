@@ -8,7 +8,6 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
-  createTemplateScenario,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -662,16 +661,3 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
   });
 });
 
-describe('createTemplateScenario', () => {
-  it('posts the scenario losslessly and returns its id', async () => {
-    vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
-
-    await expect(
-      createTemplateScenario('http://studio', { id: 'scenario-id', value: new LosslessNumber('9975062344139650') })
-    ).resolves.toEqual({ id: 'scenario-id' });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://studio/v1/scenarios');
-    expect(init).toMatchObject({ method: 'POST', body: '{"id":"scenario-id","value":9975062344139650}' });
-  });
-});

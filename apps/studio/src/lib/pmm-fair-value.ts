@@ -1,6 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
+import { truncateAddress } from './address-utils';
 import { GOONFI_FEATURED_MARKETS } from './goonfi-markets';
-import { toScenarioNumber } from './scenarios-api';
+import { serializeScenarioJson, toScenarioNumber } from './scenarios-api';
 
 export const PmmProtocols = {
   GoonFi: 'goonfi',
@@ -29,7 +30,7 @@ export type PmmFairValueAdapter = {
   /** Markets the preset offers; any other market is typed as an address and read by `readMarket`. */
   markets: PmmMarketOption[];
   buildOverrides: (market: PmmMarketOption, price: string) => PmmFairValueOverride[];
-  /** Reads a typed market address the catalog does not list, with the metadata its overrides need. */
+  /** Reads a typed market address the featured list does not offer, with the metadata its overrides need. */
   readMarket: (rpcUrl: string, address: string, listed: PmmMarketOption[]) => Promise<PmmMarketOption>;
 };
 
@@ -78,8 +79,34 @@ const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
     if (metadata?.base_mint === mint && base) return base;
     if (metadata?.quote_mint === mint && quote) return quote;
   }
-  return mint.slice(0, 4);
+  return truncateAddress(mint);
 };
+
+export type ServedTemplate = { id: string };
+
+export async function fetchScenarioTemplates(studioUrl: string): Promise<ServedTemplate[]> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) throw new Error(`Failed to load scenario templates: ${response.status}`);
+  return (await response.json()) as ServedTemplate[];
+}
+
+export async function createTemplateScenario(
+  studioUrl: string,
+  scenario: Record<string, unknown>
+): Promise<{ id: string }> {
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: serializeScenarioJson(scenario),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create scenario: ${response.status}`);
+  }
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
 
 export function marketPairLabel(market: PmmMarketOption | undefined): string {
   const pair = typeof market?.metadata?.pair === 'string' ? market.metadata.pair : market?.label;
@@ -100,7 +127,7 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   return {
     id: crypto.randomUUID(),
     name: `${adapter.label} ${market.label} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${market.label} fair value to ${normalizedPrice} and keep the quote fresh.`,
+    description: `Set the ${adapter.label} ${market.label} fair value to ${normalizedPrice} and mark the quote fresh.`,
     overrides,
     tags: [adapter.protocol, 'pmm', 'fair-value'],
   };
@@ -115,7 +142,7 @@ export function goonfiPriceX1e6(price: string): bigint {
 function readPubkey(market: PmmMarketOption, key: string): string {
   const value = market.metadata?.[key];
   if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Market ${market.label} has no ${key} in its catalog metadata`);
+    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
   }
   return value;
 }
