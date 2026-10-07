@@ -116,7 +116,7 @@ const stubSurfnet = (owner: string) => {
     const { method } = JSON.parse(init.body);
     const result =
       method === 'getAccountInfo' ? { value: { owner, data: [accountData, 'base64'] } } : { value: [mint(9), mint(6)] };
-    return { json: async () => ({ result }) };
+    return { ok: true, json: async () => ({ result }) };
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -197,7 +197,7 @@ describe('PmmFairValueDialog', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe(`Tessera Custom · ${UNLISTED_MARKET} fair value 100`);
+    expect(scenario.name).toBe('Tessera 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'tessera-price', account: { pubkey: UNLISTED_MARKET } });
     expect(String(scenario.overrides[0].values.quote_atoms_per_base_atom_x1e15)).toBe('100000000000000');
   });
