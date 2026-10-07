@@ -3,16 +3,12 @@
 import { useAppConfig } from '@/hooks/use-app-config';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
-  fetchConstantOptions,
   flattenOverrideValues,
-  getDirectAccountMarketConstantName,
   parseScenariosJson,
-  resolveTemplateAccount,
   scenarioDownloadFile,
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
-  withConstantOptions,
   type OverridePayload,
 } from '@/lib/scenarios-api';
 import {
@@ -32,7 +28,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { resolveTokenSelectorOptions, shouldUseConstantCombobox, typedAccountOption } from './token-selector-options';
+import {
+  getFeaturedAccounts,
+  resolveFeaturedAccount,
+  resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+  typedAccountOption,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -162,9 +164,8 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const accountRequestRef = useRef(0);
-  const directAccountConstantName = getDirectAccountMarketConstantName(selectedAction?.template);
-  const isAddressSelectionMissing = Boolean(directAccountConstantName && selectedAccountPubkey.trim() === '');
+  const featuredAccounts = getFeaturedAccounts(selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(featuredAccounts && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -613,26 +614,10 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (requestedAction: Action, accountPubkey?: string) => {
-    const requestId = ++accountRequestRef.current;
-    let action = requestedAction;
+  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
     setSelectedAction(action);
     setAccountData({});
-    const marketConstantName = getDirectAccountMarketConstantName(action.template);
-    if (marketConstantName && !action.template.constants[marketConstantName].options.length) {
-      setLoadingAccountData(true);
-      const options = await fetchConstantOptions(studioUrl, action.template.id, marketConstantName).catch(
-        (error: unknown) => {
-          console.warn(`Failed to load the ${marketConstantName} options of ${requestedAction.template.id}`, error);
-          return [];
-        }
-      );
-      if (requestId !== accountRequestRef.current) return;
-      action = { ...action, template: withConstantOptions(action.template, marketConstantName, options) };
-      setSelectedAction(action);
-    }
-    const marketPubkey = marketConstantName ? (accountPubkey ?? action.template?.address?.pubkey ?? '') : '';
-    setSelectedAccountPubkey(marketPubkey);
+    setSelectedAccountPubkey(getFeaturedAccounts(action.template?.id) ? (accountPubkey ?? '') : '');
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
@@ -656,11 +641,6 @@ export default function ScenarioEditor({
       } else if (action.template.address && typeof action.template.address === 'object') {
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
-      }
-      if (marketPubkey) addressString = marketPubkey;
-      if (!addressString) {
-        setLoadingAccountData(false);
-        return;
       }
 
       // Step 1: Fetch account info with parsed JSON
@@ -689,7 +669,6 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
-      if (requestId !== accountRequestRef.current) return;
 
       if (accountInfoData.result?.value?.data?.parsed) {
         // Populate accountData with the parsed data
@@ -701,7 +680,7 @@ export default function ScenarioEditor({
       setLoadingAccountData(false);
     } catch (error) {
       console.error('Error loading account data:', error);
-      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
+      setLoadingAccountData(false);
     }
   };
 
@@ -784,11 +763,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: resolveTemplateAccount(
-                  action.template?.address,
-                  getDirectAccountMarketConstantName(action.template),
-                  selectedAccountPubkey
-                ),
+                account: resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -828,9 +803,9 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: resolveTemplateAccount(
+                    account: resolveFeaturedAccount(
+                      action.template?.id,
                       action.template?.address,
-                      getDirectAccountMarketConstantName(action.template),
                       selectedAccountPubkey
                     ),
                   }
@@ -2359,19 +2334,9 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
-                                        const directMarketConstant = getDirectAccountMarketConstantName(
-                                          selectedAction.template
-                                        );
                                         const constantRefProps = [
-                                          ...(directMarketConstant && constants[directMarketConstant]
-                                            ? [
-                                                {
-                                                  name: '__account__',
-                                                  type: 'constant_ref',
-                                                  constant: directMarketConstant,
-                                                  isAccountSelector: true,
-                                                },
-                                              ]
+                                          ...(featuredAccounts
+                                            ? [{ name: '__account__', type: 'constant_ref', isAccountSelector: true }]
                                             : []),
                                           ...propertyConstantRefs,
                                         ];
@@ -2476,10 +2441,12 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              {directMarketConstant ? 'Account selection' : 'PDA Configuration'}
+                                              {featuredAccounts ? 'Account selection' : 'PDA Configuration'}
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = constants[prop.constant];
+                                              const constantDef = prop.isAccountSelector
+                                                ? featuredAccounts
+                                                : constants[prop.constant];
                                               const fieldPath = prop.name;
                                               const rawValue = prop.isAccountSelector
                                                 ? selectedAccountPubkey
@@ -2490,7 +2457,7 @@ export default function ScenarioEditor({
                                                 ? currentValue !== ''
                                                 : modifiedFields.has(fieldPath);
                                               const onValueChange = prop.isAccountSelector
-                                                ? (pubkey: string) => handleActionSelect(selectedAction, pubkey)
+                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
                                                 : (value: string) => setValue(fieldPath, value);
 
                                               // Use searchable Combobox for constants with many options (e.g., verified tokens)

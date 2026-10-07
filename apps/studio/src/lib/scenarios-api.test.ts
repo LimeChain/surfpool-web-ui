@@ -7,19 +7,14 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
-  createTemplateScenario,
-  fetchConstantOptions,
   flattenOverrideValues,
-  getDirectAccountMarketConstantName,
   parseScenariosJson,
-  resolveTemplateAccount,
   scenarioDownloadFile,
   scenarioImportPayload,
   scenarioToBentoItem,
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
-  withConstantOptions,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
 
@@ -101,64 +96,6 @@ describe('createPumpGraduationScenario', () => {
     await expect(createPumpGraduationScenario('http://studio', 'mint')).rejects.toThrow(
       'Bonding curve is already complete'
     );
-  });
-});
-
-describe('fetchConstantOptions', () => {
-  it("reads a constant's options through MCP search_constant_options", async () => {
-    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
-    const result = {
-      constant: 'market',
-      id: 'sol-usdc',
-      label: 'SOL / USDC',
-      description: null,
-      value: 'market-a',
-      metadata: { pair: 'SOL/USDC' },
-    };
-    callMcpToolMock.mockResolvedValue({
-      content: [{ type: 'text', text: JSON.stringify({ results: [result], totalMatches: 21, truncated: true }) }],
-    });
-
-    await expect(fetchConstantOptions('http://studio', 'tessera-price', 'market')).resolves.toEqual([
-      { id: 'sol-usdc', label: 'SOL / USDC', value: 'market-a', metadata: { pair: 'SOL/USDC' } },
-    ]);
-    expect(callMcpToolMock).toHaveBeenCalledWith(
-      'http://studio',
-      'search_constant_options',
-      { templateId: 'tessera-price', constant: 'market', query: '' },
-      'session-id'
-    );
-  });
-
-  it('surfaces an MCP tool error', async () => {
-    fetchMcpToolsMock.mockResolvedValue({ tools: [], sessionId: 'session-id' });
-    callMcpToolMock.mockResolvedValue({ isError: true, content: [{ type: 'text', text: 'Unknown templateId "x"' }] });
-
-    await expect(fetchConstantOptions('http://studio', 'x', 'market')).rejects.toThrow('Unknown templateId "x"');
-  });
-});
-
-describe('withConstantOptions', () => {
-  it('fills the constant and points an unset address at the first option', () => {
-    const template = {
-      id: 'tessera-price',
-      address: { pubkey: '' },
-      constants: { market: { label: 'Market', options: [] } },
-    };
-    const options = [
-      { label: 'Market A', value: 'market-a' },
-      { label: 'Market B', value: 'market-b' },
-    ];
-
-    expect(withConstantOptions(template, 'market', options)).toEqual({
-      id: 'tessera-price',
-      address: { pubkey: 'market-a' },
-      constants: { market: { label: 'Market', options } },
-    });
-    expect(withConstantOptions({ ...template, address: { pubkey: 'market-b' } }, 'market', options).address).toEqual({
-      pubkey: 'market-b',
-    });
-    expect(withConstantOptions(template, 'market', []).address).toEqual({ pubkey: '' });
   });
 });
 
@@ -607,31 +544,6 @@ describe('flattenOverrideValues', () => {
   });
 });
 
-describe('resolveTemplateAccount', () => {
-  it('turns a dropdown choice into a pubkey, drops an empty one and keeps a PDA address', () => {
-    const pda = { pda: { programId: 'program', seeds: [] } };
-    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', ' market-b ')).toEqual({ pubkey: 'market-b' });
-    expect(resolveTemplateAccount({ pubkey: 'market-a' }, 'market', '   ')).toBeUndefined();
-    expect(resolveTemplateAccount(pda, undefined, '')).toBe(pda);
-  });
-});
-
-describe('getDirectAccountMarketConstantName', () => {
-  it('finds the market constant only on a direct-pubkey template that no field references', () => {
-    const template = {
-      address: { pubkey: 'market-a' },
-      constants: { market: { options: [{ label: 'Market A', value: 'market-a' }] } },
-      properties: [{ path: 'price' }],
-    };
-    const referenced = { ...template, properties: [{ path: 'market', constant: 'market' }] };
-    expect(getDirectAccountMarketConstantName(template)).toBe('market');
-    expect(getDirectAccountMarketConstantName(referenced)).toBeUndefined();
-    expect(getDirectAccountMarketConstantName({ ...template, address: { pda: {} } })).toBeUndefined();
-    expect(getDirectAccountMarketConstantName({ ...template, constants: {} })).toBeUndefined();
-    expect(getDirectAccountMarketConstantName({ ...template, constants: { market: { options: [] } } })).toBe('market');
-  });
-});
-
 describe('u64 precision across the edit/save flow (path 2)', () => {
   // An odd u64 above Number.MAX_SAFE_INTEGER (2**53 - 1). Odd + large so any rounding
   // (which snaps to an even double) is detectable. Kept as a string so the source
@@ -712,19 +624,5 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
   it('snapshotDownloadContents returns null when there is no snapshot value or invalid JSON', () => {
     expect(snapshotDownloadContents('{"result":{"context":{"slot":1}}}')).toBeNull();
     expect(snapshotDownloadContents('not json')).toBeNull();
-  });
-});
-
-describe('createTemplateScenario', () => {
-  it('posts the scenario losslessly and returns its id', async () => {
-    vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
-
-    await expect(
-      createTemplateScenario('http://studio', { id: 'scenario-id', value: new LosslessNumber('9975062344139650') })
-    ).resolves.toEqual({ id: 'scenario-id' });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://studio/v1/scenarios');
-    expect(init).toMatchObject({ method: 'POST', body: '{"id":"scenario-id","value":9975062344139650}' });
   });
 });

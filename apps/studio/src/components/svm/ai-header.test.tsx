@@ -90,7 +90,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Tessera Risk-Off')).toBeInTheDocument();
     expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
-    expect(screen.getByText('Tessera Depth Stress')).toBeInTheDocument();
+    expect(screen.getByText('Tessera Halt')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -128,7 +128,7 @@ describe('AIHeader', () => {
     expect(prompt).toContain('do not build or execute a swap');
   });
 
-  it('loads a Tessera stale-quote prompt that reads the limit per market instead of hardcoding one', () => {
+  it('loads a goal-level Tessera stale-quote prompt without a hardcoded limit', () => {
     renderWithConfig(<AIHeader />);
 
     fireEvent.click(screen.getByText('Tessera Stale Quote'));

@@ -1,5 +1,8 @@
+import { TESSERA_FEATURED_MARKETS } from '@/lib/tessera-markets';
 import { describe, expect, it } from 'vitest';
 import {
+  getFeaturedAccounts,
+  resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
   type TokenSelectorOption,
@@ -60,5 +63,25 @@ describe('typedAccountOption', () => {
     expect(typedAccountOption(unlisted, listed)).toMatchObject({ label: 'Custom address', value: unlisted });
     expect(typedAccountOption(market, listed)).toBeNull();
     expect(typedAccountOption('SOL / USDC', listed)).toBeNull();
+  });
+});
+
+describe('getFeaturedAccounts', () => {
+  const [sol] = TESSERA_FEATURED_MARKETS;
+  const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);
+
+  it('offers every Tessera template the featured markets it writes', () => {
+    for (const templateId of ['tessera-price', 'tessera-freshness', 'tessera-depth', 'tessera-curve', 'tessera-halt']) {
+      expect(values(templateId)).toEqual(TESSERA_FEATURED_MARKETS.map((market) => market.market));
+    }
+    expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();
+    expect(getFeaturedAccounts('constructor')).toBeUndefined();
+  });
+
+  it("saves the picked account for a featured template and keeps other templates' addresses", () => {
+    const pda = { pda: { programId: 'program', seeds: [] } };
+    expect(resolveFeaturedAccount('tessera-price', { pubkey: '' }, ` ${sol.market} `)).toEqual({ pubkey: sol.market });
+    expect(resolveFeaturedAccount('tessera-price', { pubkey: '' }, '   ')).toBeUndefined();
+    expect(resolveFeaturedAccount('kamino-reserve-config', pda, '')).toBe(pda);
   });
 });

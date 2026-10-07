@@ -58,22 +58,22 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'Tessera Risk-Off',
     prompt:
-      'Create an editable WSOL/USDC scenario where SOL crashes to $50 and the Tessera maker goes risk-off. It reprices both directions to $50 but stops taking on more SOL: anyone selling SOL is turned away, while buyers can still get SOL at $50 for the next 100 slots. To achieve this, use the Tessera price override, keep the quote fresh throughout those 100 slots, and halt only the liquidity that fills SOL sellers. Select the market only through the override account; do not put a market value in values.',
+      'Create an editable SOL/USDC scenario where SOL crashes to $50 and the Tessera maker goes risk-off. It reprices both directions to $50 but stops taking on more SOL: anyone selling SOL is turned away, while buyers can still get SOL at $50 for the next 100 slots. To achieve this, use the Tessera price override, keep the quote fresh throughout those 100 slots, and halt only the liquidity that fills SOL sellers.',
     icon: '🛡️',
     protocols: ['tessera'],
   },
   {
     label: 'Tessera Stale Quote',
     prompt:
-      "Age the quote of the default WSOL/USDC Tessera market from the catalog to its rejection boundary so swaps in both directions are rejected as stale. Read that market's freshness limit from the catalog and age the quote by exactly that many slots. Keep override labels short. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.",
+      "Make Tessera's SOL/USDC quote stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.",
     icon: '⏳',
     protocols: ['tessera'],
   },
   {
-    label: 'Tessera Depth Stress',
+    label: 'Tessera Halt',
     prompt:
-      'Prepare one editable Tessera WSOL/USDC scenario that reduces both buy and sell quoting depth by 90% from the current local state. Preserve the price and keep the quote fresh. If validation fails, report the error and do not retry. Prepare state only; do not build or execute a swap. Select the market only through the override account; do not put a market value in values.',
-    icon: '📉',
+      'Halt all Tessera liquidity on the cbBTC/USDC market in both directions and keep the quote fresh. Prepare state only; do not build or execute a swap.',
+    icon: '🛑',
     protocols: ['tessera'],
   },
   {

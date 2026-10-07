@@ -2,19 +2,16 @@
 
 import {
   buildPmmFairValueScenario,
+  createTemplateScenario,
+  fetchScenarioTemplates,
   isValidPmmPrice,
   marketPairLabel,
   PMM_FAIR_VALUE_ADAPTERS,
   type PmmFairValueAdapter,
   type PmmMarketOption,
   type PmmProtocol,
+  type ServedTemplate,
 } from '@/lib/pmm-fair-value';
-import {
-  createTemplateScenario,
-  fetchConstantOptions,
-  fetchScenarioTemplates,
-  type ScenarioTemplate,
-} from '@/lib/scenarios-api';
 import {
   Button,
   Combobox,
@@ -30,7 +27,7 @@ import {
   ListboxOption,
 } from '@surfpool/ui';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
-import { isAccountAddress } from './token-selector-options';
+import { typedAccountOption } from './token-selector-options';
 
 interface PmmFairValueDialogProps {
   open: boolean;
@@ -70,8 +67,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
   const [price, setPrice] = useState('100');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [templates, setTemplates] = useState<ScenarioTemplate[] | null>(null);
-  const [markets, setMarkets] = useState<PmmMarketOption[] | null>(null);
+  const [templates, setTemplates] = useState<ServedTemplate[] | null>(null);
   const [customMarket, setCustomMarket] = useState<PmmMarketOption | null>(null);
 
   // REFS
@@ -82,23 +78,15 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
     (candidate) => !!templates?.some((template) => template.id === candidate.marketTemplateId)
   );
   const adapter = availableAdapters.find((candidate) => candidate.protocol === protocol) ?? availableAdapters[0];
-  const marketTemplateId = templates?.find((template) => template.id === adapter?.marketTemplateId)?.id;
-  const marketOptions = templates === null ? null : marketTemplateId ? markets : [];
+  const marketOptions = templates === null ? null : (adapter?.markets ?? []);
   const listedMarket = marketOptions?.find((option) => option.value === market);
   const loadedCustomMarket = customMarket?.value === market ? customMarket : undefined;
   const selectedMarket = listedMarket ?? (market === '' ? marketOptions?.[0] : loadedCustomMarket);
   const pickerOptions = loadedCustomMarket ? [...(marketOptions ?? []), loadedCustomMarket] : (marketOptions ?? []);
   const canCreate = !!selectedMarket && isValidPmmPrice(price) && !isCreating;
   const priceLabel = marketPairLabel(selectedMarket);
-  const catalogError =
-    templates === null
-      ? null
-      : !adapter
-        ? 'This surfnet serves no PMM fair value templates'
-        : marketOptions?.length === 0
-          ? `No ${adapter.label} markets are listed in the template catalog`
-          : null;
-  const visibleError = error ?? catalogError;
+  const servedError = templates !== null && !adapter ? 'This surfnet serves no PMM fair value templates' : null;
+  const visibleError = error ?? servedError;
 
   // HANDLERS
   const handleClose = () => {
@@ -109,13 +97,15 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
 
   const handleProtocolSelect = (selectedProtocol: PmmProtocol) => {
     setProtocol(selectedProtocol);
+    setMarket('');
+    setCustomMarket(null);
     setError(null);
   };
 
-  const typedMarket = (query: string): PmmMarketOption | null =>
-    isAccountAddress(query) && !pickerOptions.some((option) => option.value === query)
-      ? { label: `Custom · ${query}`, value: query }
-      : null;
+  const typedMarket = (query: string): PmmMarketOption | null => {
+    const typed = typedAccountOption(query, pickerOptions);
+    return typed ? { label: typed.metadata?.symbol ?? query, value: query } : null;
+  };
 
   const handleMarketSelect = (selectedMarketOption: PmmMarketOption | null) => {
     if (!selectedMarketOption || !adapter) return;
@@ -179,26 +169,6 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
     };
   }, [open, studioUrl]);
 
-  useEffect(() => {
-    if (!open || !marketTemplateId) return;
-    let cancelled = false;
-    setMarkets(null);
-
-    fetchConstantOptions(studioUrl, marketTemplateId, 'market')
-      .then((loadedMarkets) => {
-        if (!cancelled) setMarkets(loadedMarkets);
-      })
-      .catch((loadError: unknown) => {
-        if (cancelled) return;
-        setMarkets([]);
-        setError(loadError instanceof Error ? loadError.message : 'Failed to load PMM markets');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, studioUrl, marketTemplateId]);
-
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
       <form onSubmit={handleSubmit}>
@@ -233,7 +203,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
               filter={matchesMarket}
               customOption={typedMarket}
               onChange={handleMarketSelect}
-              disabled={isCreating || marketOptions === null}
+              disabled={isCreating || !marketOptions?.length}
             >
               {renderMarketOption}
             </Combobox>
@@ -251,7 +221,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
               disabled={isCreating}
             />
             <p className="mt-1.5 text-xs text-zinc-500">
-              Positive decimal. The raw fields are derived from the selected market and its catalog metadata.
+              Positive decimal. The raw fields are derived from the selected market.
             </p>
           </div>
           {!!visibleError && <p className="text-sm text-red-400">{visibleError}</p>}

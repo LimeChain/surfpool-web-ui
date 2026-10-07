@@ -1,13 +1,13 @@
-import { createTemplateScenario, fetchConstantOptions, fetchScenarioTemplates } from '@/lib/scenarios-api';
+import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
+import { TESSERA_FEATURED_MARKETS } from '@/lib/tessera-markets';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PmmFairValueDialog from './pmm-fair-value-dialog';
 
-vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/scenarios-api')>()),
+vi.mock('@/lib/pmm-fair-value', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/pmm-fair-value')>()),
   createTemplateScenario: vi.fn(),
-  fetchConstantOptions: vi.fn(),
   fetchScenarioTemplates: vi.fn(),
 }));
 
@@ -72,15 +72,10 @@ vi.mock('@surfpool/ui', async () => {
 
 const createScenarioMock = vi.mocked(createTemplateScenario);
 const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
-const fetchOptionsMock = vi.mocked(fetchConstantOptions);
 
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const wsolUsdc = {
-  label: 'WSOL / USDC',
-  value: 'FLckHLGM',
-  metadata: { base_decimals: 9, quote_decimals: 6, pair: 'WSOL/USDC', quote_mint: USDC },
-};
-const cbbtcUsdc = { label: 'cbBTC / USDC', value: '9NkuAWB4', metadata: { base_decimals: 8, quote_decimals: 6 } };
+const [SOL_USDC, CBBTC_USDC] = TESSERA_FEATURED_MARKETS;
+const FEATURED = TESSERA_FEATURED_MARKETS.map((market) => market.label);
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -98,10 +93,7 @@ const renderDialog = (onCreated = vi.fn()) =>
   );
 
 beforeEach(() => {
-  fetchTemplatesMock.mockResolvedValue([
-    { id: 'tessera-price', address: { pubkey: '' }, constants: { market: { options: [] } } },
-  ]);
-  fetchOptionsMock.mockResolvedValue([wsolUsdc, cbbtcUsdc]);
+  fetchTemplatesMock.mockResolvedValue([{ id: 'tessera-price' }]);
 });
 
 afterEach(() => {
@@ -131,31 +123,30 @@ const stubSurfnet = (owner: string) => {
 };
 
 describe('PmmFairValueDialog', () => {
-  it('lists the PMM protocols and the markets of the adapter catalog', async () => {
+  it('lists the PMM protocols and the featured markets of the adapter', async () => {
     renderDialog();
 
-    expect(await screen.findByLabelText('Price of WSOL in USDC')).toHaveValue('100');
+    expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
     expect(fetchTemplatesMock).toHaveBeenCalledTimes(1);
     expect(fetchTemplatesMock).toHaveBeenCalledWith('http://studio');
-    expect(fetchOptionsMock).toHaveBeenCalledWith('http://studio', 'tessera-price', 'market');
     expect(optionNames('PMM protocol')).toEqual(['Tessera']);
-    expect(marketNames()).toEqual(['WSOL / USDC', 'cbBTC / USDC']);
+    expect(marketNames()).toEqual(FEATURED);
   });
 
   it('searches the markets by pair, ignoring spaces and case, and by address', async () => {
     renderDialog();
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     const search = screen.getByLabelText('PMM market');
 
     fireEvent.change(search, { target: { value: 'cbbtc/usdc' } });
     expect(marketNames()).toEqual(['cbBTC / USDC']);
 
-    fireEvent.change(search, { target: { value: 'FLck' } });
-    expect(marketNames()).toEqual(['WSOL / USDC']);
+    fireEvent.change(search, { target: { value: SOL_USDC.market.slice(0, 4) } });
+    expect(marketNames()).toEqual(['SOL / USDC']);
 
     fireEvent.change(search, { target: { value: 'usdc' } });
-    expect(marketNames()).toEqual(['WSOL / USDC', 'cbBTC / USDC']);
+    expect(marketNames()).toEqual(['SOL / USDC', 'cbBTC / USDC', 'PUMP / USDC']);
 
     fireEvent.change(search, { target: { value: 'bonk' } });
     expect(marketNames()).toEqual([]);
@@ -166,7 +157,7 @@ describe('PmmFairValueDialog', () => {
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'cbbtc' } });
     fireEvent.click(screen.getByRole('button', { name: 'cbBTC / USDC' }));
     fireEvent.change(screen.getByLabelText('Price of cbBTC in USDC'), { target: { value: '100000' } });
@@ -176,73 +167,59 @@ describe('PmmFairValueDialog', () => {
     const [studioUrl, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[] }];
     const [price, freshness] = scenario.overrides;
     expect(studioUrl).toBe('http://studio');
-    expect(price).toMatchObject({ templateId: 'tessera-price', account: { pubkey: '9NkuAWB4' }, fetchBeforeUse: true });
+    expect(price).toMatchObject({
+      templateId: 'tessera-price',
+      account: { pubkey: CBBTC_USDC.market },
+      fetchBeforeUse: true,
+    });
     expect(String(price.values.quote_atoms_per_base_atom_x1e15)).toBe('1000000000000000000');
     expect(String(price.values.base_atoms_per_quote_atom_x1e15)).toBe('1000000000000');
     expect(freshness).toMatchObject({
       templateId: 'tessera-freshness',
-      account: { pubkey: '9NkuAWB4' },
+      account: { pubkey: CBBTC_USDC.market },
       values: { last_update_slot: 0 },
       fetchBeforeUse: true,
     });
   });
 
-  it('reads a typed market address the catalog does not list and prices it with its decimals', async () => {
+  it('reads a typed market address the featured list does not offer and prices it with its decimals', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     const fetchMock = stubSurfnet(TESSERA_PROGRAM);
     renderDialog(onCreated);
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('Tessera 4vJ9 / USDC fair value 100');
+    expect(scenario.name).toBe('Tessera 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'tessera-price', account: { pubkey: UNLISTED_MARKET } });
     expect(String(scenario.overrides[0].values.quote_atoms_per_base_atom_x1e15)).toBe('100000000000000');
-  });
-
-  it('accepts a typed market address when the surfnet lists no markets', async () => {
-    const onCreated = vi.fn();
-    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
-    fetchOptionsMock.mockResolvedValue([]);
-    stubSurfnet(TESSERA_PROGRAM);
-    renderDialog(onCreated);
-
-    expect(await screen.findByText('No Tessera markets are listed in the template catalog')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
-    fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9 in EPjF');
-    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
-    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[] }];
-    expect(scenario.overrides[0]).toMatchObject({ templateId: 'tessera-price', account: { pubkey: UNLISTED_MARKET } });
   });
 
   it('offers a read typed market once, not again as a custom address', async () => {
     stubSurfnet(TESSERA_PROGRAM);
     renderDialog();
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
-    expect(marketNames()).toEqual(['4vJ9 / USDC']);
+    expect(marketNames()).toEqual(['4vJ9JU1b⋯4P3bkLKi / USDC']);
   });
 
   it('refuses a typed address that is not a Tessera market', async () => {
     stubSurfnet('11111111111111111111111111111111');
     renderDialog();
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
 
@@ -251,7 +228,7 @@ describe('PmmFairValueDialog', () => {
   });
 
   it('ignores a market read that resolves after a newer selection', async () => {
-    const secondMarket = 'H3chk8rgniKXnToGTdPUFieuHGLQQfBMXVbGp6bR1uMD';
+    const secondMarket = 'ESaTtQcbtqk3eLNUQvND9uuMKjqfEtgmzwCspr5EbALo';
     const fetchMock = stubSurfnet(TESSERA_PROGRAM);
     const respond = fetchMock.getMockImplementation()!;
     let releaseFirstRead = () => {};
@@ -260,12 +237,12 @@ describe('PmmFairValueDialog', () => {
     );
     renderDialog();
 
-    await screen.findByLabelText('Price of WSOL in USDC');
+    await screen.findByLabelText('Price of SOL in USDC');
     for (const address of [UNLISTED_MARKET, secondMarket]) {
       fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: address } });
       fireEvent.click(screen.getByRole('button', { name: `Custom · ${address}` }));
     }
-    await screen.findByLabelText('Price of 4vJ9 in USDC');
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
     releaseFirstRead();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -274,7 +251,7 @@ describe('PmmFairValueDialog', () => {
   });
 
   it('shows an error and disables Create when the surfnet serves no PMM template', async () => {
-    fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool', address: {} }]);
+    fetchTemplatesMock.mockResolvedValue([{ id: 'pump-amm-canonical-pool' }]);
     renderDialog();
 
     expect(await screen.findByText('This surfnet serves no PMM fair value templates')).toBeInTheDocument();
@@ -285,7 +262,7 @@ describe('PmmFairValueDialog', () => {
   it('refuses a malformed price and shows an out-of-range one without posting', async () => {
     renderDialog();
 
-    const price = await screen.findByLabelText('Price of WSOL in USDC');
+    const price = await screen.findByLabelText('Price of SOL in USDC');
     const createButton = screen.getByRole('button', { name: 'Create scenario' });
     fireEvent.change(price, { target: { value: '1e3' } });
     expect(createButton).toBeDisabled();

@@ -40,34 +40,6 @@ export function toScenarioNumber(input: string): number | LosslessNumber {
 }
 
 /**
- * A direct-pubkey template may publish alternative targets in
- * `constants.market`. A constant already referenced by a property remains a field selector.
- */
-export function getDirectAccountMarketConstantName(template: unknown): 'market' | undefined {
-  if (!template || typeof template !== 'object') return undefined;
-  const candidate = template as {
-    address?: { pubkey?: unknown };
-    constants?: { market?: { options?: unknown } };
-    properties?: Array<{ constant?: unknown }>;
-  };
-  if (typeof candidate.address?.pubkey !== 'string') return undefined;
-  if (!Array.isArray(candidate.constants?.market?.options)) return undefined;
-  if (candidate.properties?.some((property) => property.constant === 'market')) return undefined;
-  return 'market';
-}
-
-/** Resolve a direct-market choice into the ordinary scenario account shape. */
-export function resolveTemplateAccount(
-  templateAddress: unknown,
-  directAccountConstantName: string | undefined,
-  selectedPubkey: string
-): unknown {
-  if (!directAccountConstantName) return templateAddress;
-  const pubkey = selectedPubkey.trim();
-  return pubkey ? { pubkey } : undefined;
-}
-
-/**
  * Turn the contents of a downloaded scenario file into a POST /v1/scenarios body.
  * The id is replaced so importing never collides with the scenario it came from,
  * and lossless-json keeps i64 values exact on the way back in.
@@ -178,70 +150,10 @@ export type PumpSwapPriceShockScenarioResult = {
   virtualQuoteReserves?: string;
 };
 
-export type ScenarioTemplate = {
+type ScenarioTemplate = {
   id: string;
   address: unknown;
-  constants?: Record<string, { options?: unknown } | undefined>;
 };
-
-export type ConstantOption = {
-  id?: string;
-  label: string;
-  value: string;
-  description?: string;
-  metadata?: Record<string, unknown>;
-};
-
-type ConstantOptionResult = {
-  id?: string;
-  label?: unknown;
-  value?: unknown;
-  description?: string | null;
-  metadata?: Record<string, unknown> | null;
-};
-
-/**
- * The options a template constant reads from the surfnet. `/v1/scenarios/templates` leaves them
- * out so it never waits on the network; MCP reads them for this template and returns the first 20.
- */
-export async function fetchConstantOptions(
-  studioUrl: string,
-  templateId: string,
-  constant: string
-): Promise<ConstantOption[]> {
-  const { sessionId } = await fetchMCPTools(studioUrl);
-  const result = (await callMCPTool(
-    studioUrl,
-    'search_constant_options',
-    { templateId, constant, query: '' },
-    sessionId
-  )) as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
-  const text = result.content?.find((content) => content.type === 'text' && content.text)?.text;
-  if (!text) throw new Error(`Surfpool MCP returned no options for ${templateId}`);
-  if (result.isError) throw new Error(text);
-
-  const { results = [] } = JSON.parse(text) as { results?: ConstantOptionResult[] };
-  return results.flatMap(({ id, label, value, description, metadata }) =>
-    typeof label === 'string' && typeof value === 'string'
-      ? [{ id, label, value, description: description ?? undefined, metadata: metadata ?? undefined }]
-      : []
-  );
-}
-
-/** The template with `options` in one constant, pointing an unset address at the first, as MCP serves it. */
-export function withConstantOptions<T extends ScenarioTemplate>(
-  template: T,
-  constantName: string,
-  options: ConstantOption[]
-): T {
-  const address = template.address as { pubkey?: unknown } | undefined;
-  const unsetAddress = address?.pubkey === '' && !!options.length;
-  return {
-    ...template,
-    address: unsetAddress ? { pubkey: options[0].value } : template.address,
-    constants: { ...template.constants, [constantName]: { ...template.constants?.[constantName], options } },
-  };
-}
 
 function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string): ScenarioTemplate | undefined {
   for (const template of templates) {
@@ -299,37 +211,6 @@ export async function createPumpSwapPriceShockScenario(
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Failed to create PumpSwap price shock scenario: ${response.status}`);
-  }
-
-  const result = (await response.json()) as { id?: string };
-  if (!result.id) throw new Error('Surfpool returned no scenario id');
-  return { id: result.id };
-}
-
-export async function fetchScenarioTemplates(studioUrl: string): Promise<ScenarioTemplate[]> {
-  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
-  if (!response.ok) {
-    throw new Error(`Failed to load scenario templates: ${response.status}`);
-  }
-
-  return (await response.json()) as ScenarioTemplate[];
-}
-
-export async function createTemplateScenario(
-  studioUrl: string,
-  scenario: Record<string, unknown>
-): Promise<{ id: string }> {
-  const body = stringify(scenario);
-  if (!body) throw new Error('Failed to serialize scenario');
-
-  const response = await fetch(`${studioUrl}/v1/scenarios`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Failed to create scenario: ${response.status}`);
   }
 
   const result = (await response.json()) as { id?: string };
