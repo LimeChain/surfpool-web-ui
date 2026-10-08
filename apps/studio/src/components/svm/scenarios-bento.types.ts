@@ -89,4 +89,24 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Meteora Pair Halt',
+    prompt:
+      'Disable the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y so it rejects new swaps.',
+    icon: '🧊',
+    protocols: ['meteora'],
+  },
+  {
+    label: 'Meteora Price Shock',
+    prompt:
+      'Halve the SOL price that sellers get on the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y. Only sells see a lower active bin; buys keep filling at the old price.',
+    icon: '⚡',
+    protocols: ['meteora'],
+  },
+  {
+    label: 'Meteora Fee Spike',
+    prompt: 'Raise the base swap fee of the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y to 0.5%.',
+    icon: '🔥',
+    protocols: ['meteora'],
+  },
 ];

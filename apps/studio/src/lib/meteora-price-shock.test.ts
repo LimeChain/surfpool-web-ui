@@ -1,0 +1,116 @@
+import { describe, expect, it } from 'vitest';
+import {
+  ACTIVE_ID_OFFSET,
+  assertBinArray,
+  BIN_ARRAY_DISCRIMINATOR,
+  BIN_ARRAY_LEN,
+  BIN_STEP_OFFSET,
+  LB_PAIR_DISCRIMINATOR,
+  buildMeteoraPriceShockScenario,
+  LB_PAIR_LEN,
+  METEORA_DLMM_PROGRAM_ID,
+  planMeteoraPriceShock,
+} from './meteora-price-shock';
+
+const SOL_USDC = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
+
+function binArrayAccount(binArrayIndex: number, activeId: number, amountX: bigint, amountY: bigint) {
+  const data = new Uint8Array(BIN_ARRAY_LEN);
+  data.set(BIN_ARRAY_DISCRIMINATOR);
+  const view = new DataView(data.buffer);
+  const offset = 56 + (activeId - binArrayIndex * 70) * 144;
+  view.setBigUint64(offset, amountX, true);
+  view.setBigUint64(offset + 8, amountY, true);
+  return { owner: METEORA_DLMM_PROGRAM_ID, data };
+}
+
+function poolAccount() {
+  const data = new Uint8Array(LB_PAIR_LEN);
+  data.set(LB_PAIR_DISCRIMINATOR);
+  const view = new DataView(data.buffer);
+  view.setInt32(ACTIVE_ID_OFFSET, -2222, true);
+  view.setUint16(BIN_STEP_OFFSET, 10, true);
+  return { owner: METEORA_DLMM_PROGRAM_ID, data };
+}
+
+describe('meteora price shock', () => {
+  it('uses the LbPair and BinArray layouts from the DLMM IDL', () => {
+    expect([LB_PAIR_LEN, ACTIVE_ID_OFFSET, BIN_STEP_OFFSET, BIN_ARRAY_LEN]).toEqual([904, 76, 80, 10136]);
+    expect(LB_PAIR_DISCRIMINATOR).toEqual([0x21, 0x0b, 0x31, 0x62, 0xb5, 0x65, 0xb1, 0x0d]);
+    expect(BIN_ARRAY_DISCRIMINATOR).toEqual([0x5c, 0x8e, 0x5c, 0xdc, 0x05, 0x94, 0x46, 0xb5]);
+  });
+
+  it('moves active_id by the rounded bin count in each direction', async () => {
+    expect((await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.5)).newActiveId).toBe(-2222 - 693);
+    expect((await planMeteoraPriceShock(SOL_USDC, poolAccount(), 4)).newActiveId).toBe(-2222 + 1387);
+  });
+
+  it('derives the SOL/USDC bin arrays that exist on mainnet', async () => {
+    const rows: Array<[number, number, string]> = [
+      [0.99, -32, 'A3SKQ8z881LAcgFJ1eWyGv8LGYKoEvkuPtguVkfvYU8T'],
+      [1.1, -31, '28WnLxAM6rpjMToCVqaDys7dpiRmVUeQus1pvzGVR4G2'],
+      [0.55, -41, '2QCcp5NpkXzUk8Ch9GTtWEUorviJDnDPG9FFPkQY8S4n'],
+    ];
+    for (const [factor, binArrayIndex, binArray] of rows) {
+      expect(await planMeteoraPriceShock(SOL_USDC, poolAccount(), factor)).toMatchObject({ binArrayIndex, binArray });
+    }
+  });
+
+  it('rejects factors that are not a finite price change', async () => {
+    for (const factor of [0, -1, 1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(planMeteoraPriceShock(SOL_USDC, poolAccount(), factor)).rejects.toThrow('price factor');
+    }
+  });
+
+  it('rejects a factor that rounds to no bin change and names the smallest move', async () => {
+    await expect(planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.0001)).rejects.toThrow(
+      'less than half a bin, so the active bin would not change. With a bin step of 0.1%, use at least 1.000500 or at most 0.999500.'
+    );
+    expect((await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.000501)).newActiveId).toBe(-2221);
+  });
+
+  it('suggests factors that move the active bin themselves', async () => {
+    for (const binStep of [10, 15, 21, 25, 80, 200, 400]) {
+      const pool = poolAccount();
+      new DataView(pool.data.buffer).setUint16(BIN_STEP_OFFSET, binStep, true);
+      const message = await planMeteoraPriceShock(SOL_USDC, pool, 1.00001).catch((error: Error) => error.message);
+      const [, atLeast, atMost] = String(message).match(/at least (\d\.\d+) or at most (\d\.\d+)\./)!.map(Number);
+      expect((await planMeteoraPriceShock(SOL_USDC, pool, atLeast)).newActiveId).toBe(-2221);
+      expect((await planMeteoraPriceShock(SOL_USDC, pool, atMost)).newActiveId).toBe(-2223);
+    }
+  });
+
+  it('says which side of the market sees the shock', async () => {
+    const rise = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1), 'template');
+    const drop = buildMeteoraPriceShockScenario(await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.9), 'template');
+    expect(rise.description).toContain('Buys of the base token see the new price; sells still fill at the old one.');
+    expect(drop.description).toContain('Sells of the base token see the new price; buys still fill at the old one.');
+  });
+
+  it('names the missing bin array and the largest safe factor', async () => {
+    const plan = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1);
+
+    expect(() => assertBinArray(plan, null)).toThrow(
+      "bin array 28WnLxAM6rpjMToCVqaDys7dpiRmVUeQus1pvzGVR4G2 (index -31) does not exist, so a swap could not resume from bin -2127. The largest factor that stays on the pool's current bin array [-2240, -2171] is 1.052296."
+    );
+
+    const onEdge = poolAccount();
+    new DataView(onEdge.data.buffer).setInt32(ACTIVE_ID_OFFSET, -2171, true);
+    const pastEdge = await planMeteoraPriceShock(SOL_USDC, onEdge, 1.1);
+    expect(() => assertBinArray(pastEdge, null)).toThrow('already sits on the edge of its current bin array [-2240, -2171]');
+  });
+
+  it('rejects a destination bin that holds none of the token the shocked side takes', async () => {
+    const rise = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1);
+    expect(() => assertBinArray(rise, binArrayAccount(-31, -2127, BigInt(0), BigInt(5)))).toThrow(
+      'bin -2127 holds no token X, so a buy could not fill at the shocked price.'
+    );
+    expect(() => assertBinArray(rise, binArrayAccount(-31, -2127, BigInt(5), BigInt(0)))).not.toThrow();
+
+    const drop = await planMeteoraPriceShock(SOL_USDC, poolAccount(), 0.99);
+    expect(() => assertBinArray(drop, binArrayAccount(-32, drop.newActiveId, BigInt(5), BigInt(0)))).toThrow(
+      `bin ${drop.newActiveId} holds no token Y, so a sell could not fill at the shocked price.`
+    );
+    expect(() => assertBinArray(drop, binArrayAccount(-32, drop.newActiveId, BigInt(0), BigInt(5)))).not.toThrow();
+  });
+});
