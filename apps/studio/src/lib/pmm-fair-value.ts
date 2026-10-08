@@ -1,6 +1,6 @@
 import { PublicKey } from '@solana/web3.js';
 import { truncateAddress } from './address-utils';
-import { serializeScenarioJson, toScenarioNumber } from './scenarios-api';
+import { serializeScenarioJson } from './scenarios-api';
 import { TESSERA_FEATURED_MARKETS } from './tessera-markets';
 
 export const PmmProtocols = {
@@ -36,7 +36,6 @@ export type PmmFairValueAdapter = {
 
 const ZERO = BigInt(0);
 const TEN = BigInt(10);
-const U64_MAX = BigInt('18446744073709551615');
 const PRICE_PATTERN = /^\d+(?:\.\d+)?$/;
 
 export function isValidPmmPrice(price: string): boolean {
@@ -153,11 +152,9 @@ export function tesseraPriceRatios(
 ): { quoteAtomsPerBaseAtomX1e15: bigint; baseAtomsPerQuoteAtomX1e15: bigint } {
   const quoteAtomsPerBaseAtomX1e15 = scaleDecimal(price, quoteDecimals - baseDecimals + 15);
   if (quoteAtomsPerBaseAtomX1e15 === ZERO) throw new Error("Price is too small for this market's decimals");
-  if (quoteAtomsPerBaseAtomX1e15 > U64_MAX) throw new Error("Price is too large for this market's decimals");
 
   const baseAtomsPerQuoteAtomX1e15 = TEN_POW_30 / quoteAtomsPerBaseAtomX1e15;
   if (baseAtomsPerQuoteAtomX1e15 === ZERO) throw new Error("Price is too large for this market's decimals");
-  if (baseAtomsPerQuoteAtomX1e15 > U64_MAX) throw new Error("Price is too small for this market's decimals");
 
   return { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 };
 }
@@ -225,8 +222,8 @@ const tesseraAdapter: PmmFairValueAdapter = {
         label: 'Tessera fair value',
         account,
         values: {
-          quote_atoms_per_base_atom_x1e15: toScenarioNumber(quoteAtomsPerBaseAtomX1e15.toString()),
-          base_atoms_per_quote_atom_x1e15: toScenarioNumber(baseAtomsPerQuoteAtomX1e15.toString()),
+          quote_atoms_per_base_atom_x1e15: quoteAtomsPerBaseAtomX1e15.toString(),
+          base_atoms_per_quote_atom_x1e15: baseAtomsPerQuoteAtomX1e15.toString(),
         },
       },
       {

@@ -172,8 +172,8 @@ describe('PmmFairValueDialog', () => {
       account: { pubkey: CBBTC_USDC.market },
       fetchBeforeUse: true,
     });
-    expect(String(price.values.quote_atoms_per_base_atom_x1e15)).toBe('1000000000000000000');
-    expect(String(price.values.base_atoms_per_quote_atom_x1e15)).toBe('1000000000000');
+    expect(price.values.quote_atoms_per_base_atom_x1e15).toBe('1000000000000000000');
+    expect(price.values.base_atoms_per_quote_atom_x1e15).toBe('1000000000000');
     expect(freshness).toMatchObject({
       templateId: 'tessera-freshness',
       account: { pubkey: CBBTC_USDC.market },
@@ -199,7 +199,7 @@ describe('PmmFairValueDialog', () => {
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
     expect(scenario.name).toBe('Tessera 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'tessera-price', account: { pubkey: UNLISTED_MARKET } });
-    expect(String(scenario.overrides[0].values.quote_atoms_per_base_atom_x1e15)).toBe('100000000000000');
+    expect(scenario.overrides[0].values.quote_atoms_per_base_atom_x1e15).toBe('100000000000000');
   });
 
   it('offers a read typed market once, not again as a custom address', async () => {
@@ -267,9 +267,9 @@ describe('PmmFairValueDialog', () => {
     fireEvent.change(price, { target: { value: '1e3' } });
     expect(createButton).toBeDisabled();
 
-    fireEvent.change(price, { target: { value: '0.00000001' } });
+    fireEvent.change(price, { target: { value: '10000000000000000000' } });
     fireEvent.click(createButton);
-    expect(await screen.findByText("Price is too small for this market's decimals")).toBeInTheDocument();
+    expect(await screen.findByText("Price is too large for this market's decimals")).toBeInTheDocument();
     expect(createScenarioMock).not.toHaveBeenCalled();
   });
 });

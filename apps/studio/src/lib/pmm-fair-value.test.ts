@@ -14,8 +14,14 @@ describe('tesseraPriceRatios', () => {
     });
   });
 
-  it('rejects a price whose ratios leave the u64 range', () => {
-    expect(() => tesseraPriceRatios('0.00000001', 9, 6)).toThrow('too small');
+  it('keeps a ratio above u64 exact', () => {
+    expect(tesseraPriceRatios('0.00000001', 9, 6)).toEqual({
+      quoteAtomsPerBaseAtomX1e15: BigInt('10000'),
+      baseAtomsPerQuoteAtomX1e15: BigInt('100000000000000000000000000'),
+    });
+  });
+
+  it('rejects a price whose reverse ratio rounds to zero', () => {
     expect(() => tesseraPriceRatios('100000000000000000', 6, 6)).toThrow('too large');
   });
 
