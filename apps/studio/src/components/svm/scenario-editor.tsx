@@ -2233,12 +2233,8 @@ export default function ScenarioEditor({
 
                                         // Regular field - render input based on type
                                         const typeString = String(typeInfo.type);
-                                        const isPhoenixCollateral =
-                                          selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
-                                          fieldPath === 'traderState.quoteLotCollateral';
                                         const inputType =
-                                          !isPhoenixCollateral &&
-                                          (typeString.startsWith('i') || typeString.startsWith('u'))
+                                          typeString.startsWith('i') || typeString.startsWith('u')
                                             ? 'number'
                                             : typeString === 'bool'
                                               ? 'checkbox'

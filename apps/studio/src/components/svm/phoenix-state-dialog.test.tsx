@@ -1,7 +1,8 @@
 import {
-  createPhoenixCollateralScenario,
-  createPhoenixDirectMarkScenario,
+  createPhoenixLiquidationCascadeScenario,
+  createPhoenixLiquidationReadyScenario,
   createPhoenixMaintenanceMarginScenario,
+  createPhoenixMarketMoveScenario,
   fetchDynamicRefOptions,
   type DynamicRefOption,
 } from '@/lib/scenarios-api';
@@ -11,9 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PhoenixStateDialog from './phoenix-state-dialog';
 
 vi.mock('@/lib/scenarios-api', () => ({
-  createPhoenixCollateralScenario: vi.fn(),
-  createPhoenixDirectMarkScenario: vi.fn(),
+  createPhoenixLiquidationCascadeScenario: vi.fn(),
+  createPhoenixLiquidationReadyScenario: vi.fn(),
   createPhoenixMaintenanceMarginScenario: vi.fn(),
+  createPhoenixMarketMoveScenario: vi.fn(),
   fetchDynamicRefOptions: vi.fn(),
 }));
 
@@ -40,7 +42,7 @@ vi.mock('@surfpool/ui', async () => ({
   Input: (props: any) => <input {...props} />,
 }));
 
-const createDirectMarkMock = vi.mocked(createPhoenixDirectMarkScenario);
+const createMarketMoveMock = vi.mocked(createPhoenixMarketMoveScenario);
 const fetchSymbolsMock = vi.mocked(fetchDynamicRefOptions);
 
 const markets = (...symbols: string[]): DynamicRefOption[] =>
@@ -64,44 +66,58 @@ describe('PhoenixStateDialog', () => {
     await screen.findByRole('button', { name: 'BTC' });
     // Not a whole number, a zero mark, and one past u32::MAX.
     for (const invalid of ['80.5', '0', '4294967296']) {
-      fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: invalid } });
+      fireEvent.change(screen.getByLabelText('Target price'), { target: { value: invalid } });
       expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
       fireEvent.submit(screen.getByRole('button', { name: 'Create scenario' }).closest('form')!);
     }
-    expect(createDirectMarkMock).not.toHaveBeenCalled();
+    expect(createMarketMoveMock).not.toHaveBeenCalled();
   });
 
-  it('creates a collateral scenario without a market catalog and keeps invalid quote lots out of the backend', async () => {
-    const createMock = vi.mocked(createPhoenixCollateralScenario);
-    createMock.mockResolvedValue({ id: 'collateral' });
-    fetchSymbolsMock.mockResolvedValue([]);
+  it('creates a liquidation-ready scenario for the typed trader in the chosen market', async () => {
+    const createMock = vi.mocked(createPhoenixLiquidationReadyScenario);
+    createMock.mockResolvedValue({ id: 'liquidation-ready' });
     const onCreated = vi.fn();
     renderDialog(onCreated);
 
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
-    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'raw' } });
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-ready' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
+    expect(screen.queryByLabelText('Unit')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });
-    for (const invalid of ['', '-', '1.5']) {
-      fireEvent.change(screen.getByLabelText('Target collateral'), { target: { value: invalid } });
-      expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
-      fireEvent.submit(screen.getByRole('button', { name: 'Create scenario' }).closest('form')!);
-    }
-    expect(createMock).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Target collateral'), { target: { value: '-5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'trader', '-5');
-      expect(onCreated).toHaveBeenCalledWith('collateral');
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'trader', 'SOL');
+      expect(onCreated).toHaveBeenCalledWith('liquidation-ready');
+    });
+  });
+
+  it('creates a liquidation cascade and keeps invalid trader counts out of the backend', async () => {
+    const createMock = vi.mocked(createPhoenixLiquidationCascadeScenario);
+    createMock.mockResolvedValue({ id: 'cascade' });
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-cascade' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
+    fireEvent.change(screen.getByLabelText('Positions to liquidate'), { target: { value: 'short' } });
+    for (const invalid of ['', '0', '1.5']) {
+      fireEvent.change(screen.getByLabelText('Traders'), { target: { value: invalid } });
+      expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    }
+    fireEvent.change(screen.getByLabelText('Traders'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', 'short', '4');
     });
   });
 
   it('surfaces backend validation failures', async () => {
-    createDirectMarkMock.mockRejectedValue(new Error('Phoenix PerpAssetMap account not found'));
+    createMarketMoveMock.mockRejectedValue(new Error('Phoenix PerpAssetMap account not found'));
     renderDialog();
 
     fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '80000' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '80000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     expect(await screen.findByText('Phoenix PerpAssetMap account not found')).toBeInTheDocument();
@@ -114,7 +130,7 @@ describe('PhoenixStateDialog', () => {
       { value: 'AMAT', address: amat },
       { value: 'AMD', address: 'ABBz13DENxvLRLh6pjHxNsxBPNNbEnfiMPPXrx8sK7qN' },
     ]);
-    createDirectMarkMock.mockResolvedValue({ id: 'amat' });
+    createMarketMoveMock.mockResolvedValue({ id: 'amat' });
     renderDialog();
 
     await screen.findByRole('button', { name: 'AMD' });
@@ -129,16 +145,16 @@ describe('PhoenixStateDialog', () => {
 
     fireEvent.change(search, { target: { value: amat } });
     fireEvent.click(screen.getByRole('button', { name: 'AMAT' }));
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '31350' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '31350' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
     });
   });
 
   it('keeps a custom market when the dialog is closed and reopened', async () => {
-    createDirectMarkMock.mockResolvedValue({ id: 'custom' });
+    createMarketMoveMock.mockResolvedValue({ id: 'custom' });
     const dialog = (open: boolean) => (
       <PhoenixStateDialog open={open} studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />
     );
@@ -147,7 +163,7 @@ describe('PhoenixStateDialog', () => {
     await screen.findByRole('button', { name: 'BTC' });
     fireEvent.change(screen.getByLabelText('Phoenix market'), { target: { value: 'XYZ' } });
     fireEvent.click(screen.getByRole('button', { name: 'XYZ' }));
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '1000' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '1000' } });
     rerender(dialog(false));
     rerender(dialog(true));
     await screen.findByRole('button', { name: 'BTC' });
@@ -155,26 +171,26 @@ describe('PhoenixStateDialog', () => {
     expect(screen.getByLabelText('Phoenix market')).toHaveValue('XYZ');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
     });
   });
 
-  it('creates a direct mark scenario with a market selected from the live dropdown', async () => {
+  it('creates a market move scenario with a market selected from the live dropdown', async () => {
     fetchSymbolsMock.mockResolvedValue(markets('SOL', 'NEW'));
-    createDirectMarkMock.mockResolvedValue({ id: 'direct-mark' });
+    createMarketMoveMock.mockResolvedValue({ id: 'market-move' });
     const onCreated = vi.fn();
     renderDialog(onCreated);
 
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'direct-mark' } });
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'market-move' } });
     await screen.findByRole('button', { name: 'NEW' });
     expect(screen.getByLabelText('Phoenix market')).toHaveValue('SOL');
     fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '12345' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'NEW', '12345');
-      expect(onCreated).toHaveBeenCalledWith('direct-mark');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'NEW', '12345');
+      expect(onCreated).toHaveBeenCalledWith('market-move');
     });
   });
 
@@ -207,10 +223,10 @@ describe('PhoenixStateDialog', () => {
         finishLoading = resolve;
       })
     );
-    createDirectMarkMock.mockResolvedValue({ id: 'typed' });
+    createMarketMoveMock.mockResolvedValue({ id: 'typed' });
     renderDialog();
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'direct-mark' } });
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'market-move' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '12345' } });
 
     expect(screen.getByLabelText('Phoenix market')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
@@ -220,7 +236,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ETH' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
     });
   });
 
@@ -232,10 +248,10 @@ describe('PhoenixStateDialog', () => {
     renderDialog();
 
     fireEvent.click(await screen.findByRole('button', { name: 'BTC' }));
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
 
-    expect(screen.getByLabelText('Target mark')).toHaveValue('');
+    expect(screen.getByLabelText('Target price')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
@@ -246,21 +262,19 @@ describe('PhoenixStateDialog', () => {
         finishLoading = resolve;
       })
     );
-    createDirectMarkMock.mockResolvedValue({ id: 'typed' });
+    createMarketMoveMock.mockResolvedValue({ id: 'typed' });
     renderDialog();
-    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '12345' } });
 
     await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
   });
 
   it('converts percent and USD inputs to the raw values the backend takes', async () => {
     const createMarginMock = vi.mocked(createPhoenixMaintenanceMarginScenario);
-    const createCollateralMock = vi.mocked(createPhoenixCollateralScenario);
-    createDirectMarkMock.mockResolvedValue({ id: 'mark' });
+    createMarketMoveMock.mockResolvedValue({ id: 'mark' });
     createMarginMock.mockResolvedValue({ id: 'margin' });
-    createCollateralMock.mockResolvedValue({ id: 'collateral' });
     fetchSymbolsMock.mockResolvedValue([
       { value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 },
       { value: 'kBONK', markTicks: 1500, tickSize: 1, baseLotDecimals: -2 },
@@ -272,24 +286,19 @@ describe('PhoenixStateDialog', () => {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
       fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     };
-    submit('Target mark', '-10');
+    submit('Target price', '-10');
     expect(screen.getByText('$85,957 → $77,361 (-10%), 77361 ticks')).toBeInTheDocument();
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'usd' } });
-    submit('Target mark', '85000.4');
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000'));
+    submit('Target price', '85000.4');
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000'));
     fireEvent.click(screen.getByRole('button', { name: 'kBONK' }));
-    submit('Target mark', '0.000015');
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500'));
+    submit('Target price', '0.000015');
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500'));
 
     fireEvent.click(screen.getByRole('button', { name: 'BTC' }));
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     submit('Maintenance risk factor', '62.5');
     await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250'));
-
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });
-    submit('Target collateral', '-1.5');
-    await waitFor(() => expect(createCollateralMock).toHaveBeenCalledWith('http://studio', 'trader', '-1500000'));
   });
 });

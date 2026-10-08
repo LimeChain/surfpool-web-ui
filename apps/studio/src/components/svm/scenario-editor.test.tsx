@@ -21,8 +21,8 @@ vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
 }));
 
 const collateralTemplate = {
-  id: 'phoenix-trader-collateral-stress',
-  name: 'Collateral stress',
+  id: 'trader-collateral-field',
+  name: 'Collateral field',
   protocol: 'Phoenix Eternal',
   description: 'Set collateral',
   accountType: 'Trader',
@@ -88,27 +88,11 @@ async function openEditor(
   fireEvent.click(await screen.findByText(template.name));
 }
 
-it.each(['-9007199254740993', '9223372036854775807'])(
-  'preserves exact collateral %s when editing and saving an IDL field',
-  async (target) => {
-    await openEditor(collateralTemplate, { 'traderState.quoteLotCollateral': '1' });
-    fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), {
-      target: { value: target },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-      expect(patch).toBeDefined();
-      expect(JSON.parse(patch![1].body).overrides[0].values['traderState.quoteLotCollateral']).toBe(target);
-    });
-  }
-);
-
 it('keeps the saved market visible when the live catalog is unavailable', async () => {
   const template = {
     ...collateralTemplate,
-    id: 'phoenix-direct-mark-risk-shock',
-    name: 'Mark shock',
+    id: 'phoenix-market-move',
+    name: 'Market move',
     accountType: 'Market',
     properties: [{ path: 'symbol', type: 'dynamic_ref', source: 'list_phoenix_markets' }],
     idl: { types: [{ name: 'Market', type: { kind: 'struct', fields: [{ name: 'symbol', type: 'string' }] } }] },
@@ -147,29 +131,16 @@ it('rebuilds a saved derived (PDA) address from the template when updating it', 
   });
 });
 
-it('keeps numeric inputs for other IDL templates unchanged', async () => {
-  await openEditor({ ...collateralTemplate, id: 'other-collateral' }, { 'traderState.quoteLotCollateral': 1 });
-  const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');
-  expect(input).toHaveAttribute('type', 'number');
-  fireEvent.change(input, { target: { value: '2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].values['traderState.quoteLotCollateral']).toBe(2);
-  });
-});
-
 const marketTemplates = [
   {
-    name: 'Direct mark',
-    id: 'phoenix-direct-mark-risk-shock',
+    name: 'Market move',
+    id: 'phoenix-market-move',
     prices: ['target_ticks'],
   },
   {
-    name: 'Maintenance margin',
-    id: 'phoenix-maintenance-margin-stress',
-    prices: ['maintenance_risk_factor_bps'],
+    name: 'Risk factors',
+    id: 'phoenix-market-risk-factors',
+    prices: ['maintenanceRiskFactor'],
   },
 ];
 
@@ -412,9 +383,9 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).toContain('first-trader'));
   fireEvent.click(await savedAction(1));
   const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');
-  await waitFor(() => expect(input).toHaveValue('2'));
+  await waitFor(() => expect(input).toHaveValue(2));
 
   releaseFirst();
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
+  expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(2);
 });

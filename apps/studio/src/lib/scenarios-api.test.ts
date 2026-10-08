@@ -3,9 +3,10 @@ import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
-  createPhoenixCollateralScenario,
-  createPhoenixDirectMarkScenario,
+  createPhoenixLiquidationCascadeScenario,
+  createPhoenixLiquidationReadyScenario,
   createPhoenixMaintenanceMarginScenario,
+  createPhoenixMarketMoveScenario,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
@@ -175,50 +176,12 @@ vi.mock('./ai-client', () => ({
   callMCPTool: vi.fn(),
 }));
 
-describe('createPhoenixCollateralScenario', () => {
-  it('creates the scenario through the Phoenix MCP tool', async () => {
-    vi.mocked(callMCPTool).mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ url: 'http://studio/scenarios?id=phoenix-1&tab=editor' }),
-        },
-      ],
-    });
-
-    await expect(createPhoenixCollateralScenario('http://studio', ' trader ', ' -5 ')).resolves.toEqual({
-      id: 'phoenix-1',
-    });
-    expect(callMCPTool).toHaveBeenCalledWith(
-      'http://studio',
-      'create_phoenix_collateral_scenario',
-      { trader: 'trader', targetQuoteLots: '-5' },
-      'session'
-    );
-  });
-
-  it('surfaces tool validation failures', async () => {
-    vi.mocked(callMCPTool).mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ error: 'Phoenix Trader account trader was not found' }),
-        },
-      ],
-    });
-
-    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
-      'Phoenix Trader account trader was not found'
-    );
-  });
-});
-
-describe('Phoenix market scenarios', () => {
+describe('Phoenix scenarios', () => {
   const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
 
   it.each([
-    [createPhoenixDirectMarkScenario, 'phoenix-direct-mark-risk-shock', 'target_ticks'],
-    [createPhoenixMaintenanceMarginScenario, 'phoenix-maintenance-margin-stress', 'maintenance_risk_factor_bps'],
+    [createPhoenixMarketMoveScenario, 'phoenix-market-move', 'target_ticks'],
+    [createPhoenixMaintenanceMarginScenario, 'phoenix-market-risk-factors', 'maintenanceRiskFactor'],
   ] as const)(
     '%#: posts the template with its map address, string values and fetchBeforeUse',
     async (create, templateId, field) => {
@@ -239,10 +202,45 @@ describe('Phoenix market scenarios', () => {
     }
   );
 
+  it('targets the given Trader account for a liquidation-ready trader', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-liquidation-ready', address: null }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-trader' }));
+
+    await expect(createPhoenixLiquidationReadyScenario('http://studio', ' trader ', ' SOL ')).resolves.toEqual({
+      id: 'phoenix-trader',
+    });
+    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+    expect(override).toMatchObject({
+      templateId: 'phoenix-liquidation-ready',
+      values: { symbol: 'SOL' },
+      fetchBeforeUse: true,
+      account: { pubkey: 'trader' },
+    });
+  });
+
+  it('posts the side and count of a liquidation cascade', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(templates('phoenix-liquidation-cascade'))
+      .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-cascade' }));
+
+    await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short', ' 4 ')).resolves.toEqual({
+      id: 'phoenix-cascade',
+    });
+    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+    expect(override).toMatchObject({
+      templateId: 'phoenix-liquidation-cascade',
+      values: { symbol: 'SOL', side: 'short', count: '4' },
+      account: { pubkey: 'perp-asset-map' },
+    });
+  });
+
   it('surfaces failed requests', async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
-      .mockResolvedValueOnce(templates('phoenix-maintenance-margin-stress'))
+      .mockResolvedValueOnce(templates('phoenix-market-risk-factors'))
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(

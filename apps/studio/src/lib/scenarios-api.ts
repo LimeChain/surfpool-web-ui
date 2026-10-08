@@ -256,18 +256,7 @@ export type PhoenixScenarioResult = {
   id: string;
 };
 
-export async function createPhoenixCollateralScenario(
-  studioUrl: string,
-  trader: string,
-  targetQuoteLots: string
-): Promise<PhoenixScenarioResult> {
-  return createScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
-    trader: trader.trim(),
-    targetQuoteLots: targetQuoteLots.trim(),
-  });
-}
-
-async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+async function phoenixTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
   const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!response.ok) {
     throw new Error(`Failed to load scenario templates: ${response.status}`);
@@ -313,19 +302,20 @@ export async function fetchDynamicRefOptions(studioUrl: string, source: string):
 }
 
 /**
- * The market templates carry the perp asset map address, so these scenarios are built here and
- * posted to the generic API; only collateral stress needs a tool, which reads the Trader from the surfnet.
+ * Phoenix scenarios are built here and posted to the generic API. A market template carries the
+ * perp asset map address; a trader template targets the Trader account it is given.
  */
-async function createPhoenixMarketScenario(
+async function createPhoenixScenario(
   studioUrl: string,
   templateId: string,
   name: string,
   description: string,
   label: string,
   tags: string[],
-  values: Record<string, string>
+  values: Record<string, string>,
+  account?: string
 ): Promise<PhoenixScenarioResult> {
-  const template = await phoenixMarketTemplate(studioUrl, templateId);
+  const template = await phoenixTemplate(studioUrl, templateId);
   const scenario = {
     id: crypto.randomUUID(),
     name,
@@ -338,10 +328,10 @@ async function createPhoenixMarketScenario(
         scenarioRelativeSlot: 0,
         label,
         enabled: true,
-        // A stale map fails Phoenix's mark staleness check, so fetch the current one from the
+        // Play skips an override whose account is not in the local VM, so fetch it from the
         // upstream datasource first.
         fetchBeforeUse: true,
-        account: template.address,
+        account: account ? { pubkey: account } : template.address,
       },
     ],
     tags,
@@ -365,19 +355,53 @@ async function createPhoenixMarketScenario(
   return { id: result.id };
 }
 
-export async function createPhoenixDirectMarkScenario(
+export async function createPhoenixMarketMoveScenario(
   studioUrl: string,
   symbol: string,
   targetTicks: string
 ): Promise<PhoenixScenarioResult> {
-  return createPhoenixMarketScenario(
+  return createPhoenixScenario(
     studioUrl,
-    'phoenix-direct-mark-risk-shock',
-    `Phoenix ${symbol.trim()} Direct Mark Risk Shock`,
-    'Set exact mark-price ticks for one market in the Phoenix Eternal PerpAssetMap.',
-    `Phoenix ${symbol.trim()} direct mark risk shock`,
-    ['phoenix-eternal', 'direct-mark', 'risk'],
+    'phoenix-market-move',
+    `Phoenix ${symbol.trim()} Market Move`,
+    'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
+    `Phoenix ${symbol.trim()} market move`,
+    ['phoenix-eternal', 'market-move', 'risk'],
     { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+  );
+}
+
+export async function createPhoenixLiquidationReadyScenario(
+  studioUrl: string,
+  trader: string,
+  symbol: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(
+    studioUrl,
+    'phoenix-liquidation-ready',
+    `Phoenix ${symbol.trim()} Liquidation-Ready Trader`,
+    'Leave one Phoenix Eternal trader ready for a market-order liquidation.',
+    `Phoenix ${symbol.trim()} liquidation-ready trader`,
+    ['phoenix-eternal', 'liquidation', 'risk'],
+    { symbol: symbol.trim() },
+    trader.trim()
+  );
+}
+
+export async function createPhoenixLiquidationCascadeScenario(
+  studioUrl: string,
+  symbol: string,
+  side: 'long' | 'short',
+  count: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(
+    studioUrl,
+    'phoenix-liquidation-cascade',
+    `Phoenix ${symbol.trim()} Liquidation Cascade`,
+    'Leave several Phoenix Eternal traders liquidatable at one price, for a keeper to liquidate one after another.',
+    `Phoenix ${symbol.trim()} liquidation cascade`,
+    ['phoenix-eternal', 'liquidation', 'cascade'],
+    { symbol: symbol.trim(), side, count: count.trim() }
   );
 }
 
@@ -386,14 +410,14 @@ export async function createPhoenixMaintenanceMarginScenario(
   symbol: string,
   riskFactor: string
 ): Promise<PhoenixScenarioResult> {
-  return createPhoenixMarketScenario(
+  return createPhoenixScenario(
     studioUrl,
-    'phoenix-maintenance-margin-stress',
-    `Phoenix ${symbol.trim()} Maintenance Margin Stress`,
+    'phoenix-market-risk-factors',
+    `Phoenix ${symbol.trim()} Maintenance Margin Factor`,
     'Set the maintenance margin risk factor for one Phoenix Eternal market.',
-    `Phoenix ${symbol.trim()} maintenance margin stress`,
+    `Phoenix ${symbol.trim()} maintenance margin factor`,
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
-    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
+    { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() }
   );
 }
 
