@@ -2,8 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  PANCAKESWAP_CLMM_PROGRAM_ID,
+  POOL_STATE_DISCRIMINATOR,
+  POOL_STATE_LEN,
+  SQRT_PRICE_X64_OFFSET,
+  TICK_SPACING_OFFSET,
+} from './pancakeswap-price-shock';
+import {
   buildAiPrompt,
   buildUpdatePayload,
+  createPancakeswapClmmFeeTierScenario,
+  createPancakeswapPriceShockScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -163,6 +172,59 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
+
+describe('PancakeSwap scenarios', () => {
+  const owner = PANCAKESWAP_CLMM_PROGRAM_ID;
+  const base64 = (data: Uint8Array) => [btoa(String.fromCharCode(...data)), 'base64'];
+
+  it('reads the pool and its tick array, then posts a pool state override', async () => {
+    const pool = 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ';
+    const data = new Uint8Array(POOL_STATE_LEN);
+    data.set(POOL_STATE_DISCRIMINATOR);
+    new DataView(data.buffer).setUint16(TICK_SPACING_OFFSET, 1, true);
+    new DataView(data.buffer).setBigUint64(SQRT_PRICE_X64_OFFSET + 8, BigInt(1), true);
+    new DataView(data.buffer).setBigUint64(237, BigInt(1000), true);
+    // Tick 0 to tick 13863 at spacing 1 covers the arrays starting at 0, 60, ... 13860.
+    const path = Array.from({ length: 232 }, () => ({ owner, data: base64(new Uint8Array(10240)) }));
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(data) }] } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(0, 100) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(100, 200) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(200) } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await expect(createPancakeswapPriceShockScenario('http://studio', 'http://rpc', pool, '4')).resolves.toEqual({
+      id: 'scenario-id',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).params[0]).toEqual([pool]);
+    expect(fetchMock.mock.calls[4][0]).toBe('http://studio/v1/scenarios');
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body).overrides[0]).toMatchObject({
+      templateId: 'pancakeswap-clmm-pool-state',
+      values: { sqrt_price_x64: '36893488147419103232', tick_current: 13863, liquidity: '1000' },
+      scenarioRelativeSlot: 1,
+      fetchBeforeUse: true,
+      account: { pubkey: pool },
+    });
+  });
+
+  it('posts a fee tier override against the AmmConfig template address', async () => {
+    const address = { pda: { programId: 'clmm', seeds: [] } };
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'pancakeswap-clmm-amm-config', address }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await expect(createPancakeswapClmmFeeTierScenario('http://studio', '14', '1000')).resolves.toEqual({
+      id: 'scenario-id',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).overrides[0]).toMatchObject({
+      templateId: 'pancakeswap-clmm-amm-config',
+      values: { config_index: '14', trade_fee_rate: 100000 },
+      account: address,
+    });
   });
 });
 

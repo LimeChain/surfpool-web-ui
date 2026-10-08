@@ -6,6 +6,7 @@ const templates = new Map<string, string>([
   ['pump-bonding-curve-custom', 'Pump'],
   ['pump-amm-canonical-pool', 'PumpSwap'],
   ['kamino-obligation-health', 'kamino'],
+  ['pancakeswap-clmm-pool-state', 'PancakeSwap'],
 ]);
 
 describe('resolveProtocol', () => {
@@ -28,6 +29,13 @@ describe('resolveProtocol', () => {
     expect(resolveProtocol('raydium-clmm-custom', new Map())).toEqual({
       protocolId: 'raydium',
       displayName: 'Raydium',
+    });
+  });
+
+  it('maps PancakeSwap CLMM templateIds to the pancakeswap protocol id', () => {
+    expect(resolveProtocol('pancakeswap-clmm-pool-state', templates)).toEqual({
+      protocolId: 'pancakeswap',
+      displayName: 'PancakeSwap',
     });
   });
 });
