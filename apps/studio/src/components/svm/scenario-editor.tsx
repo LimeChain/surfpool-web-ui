@@ -668,8 +668,8 @@ export default function ScenarioEditor({
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
-      // A template whose properties are all inputs or dynamic_refs (the Phoenix market templates) edits
-      // no field of the account, so its decoded data would only be sent back as override values.
+      // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
+      // its decoded data would only be sent back as override values.
       // An empty slice still pulls the account into the local VM for Play, without decoding it.
       const properties = action.template.properties ?? [];
       const inputsOnly =
@@ -835,8 +835,8 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A saved override keeps the plain address it was created for (such as a Phoenix
-                    // Trader). A derived (PDA) address is rebuilt from the template, so edited seed
+                    // A saved override keeps the plain address it was created for, such as an account
+                    // typed into a preset. A derived (PDA) address is rebuilt from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
                     account:
                       existingAction.actionId === action.id && existingAction.account?.pubkey
@@ -2516,7 +2516,7 @@ export default function ScenarioEditor({
                                               const currentValue = rawValue != null ? String(rawValue) : '';
                                               const isModified = modifiedFields.has(fieldPath);
 
-                                              // A live list (today only Phoenix markets) is always searchable and takes custom values;
+                                              // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
                                               const useCombobox = isLiveList || constantDef.options.length > 20;
@@ -2564,7 +2564,7 @@ export default function ScenarioEditor({
                                                       </option>
                                                       {options.map((option) => (
                                                         <option key={option.id} value={option.value}>
-                                                          {option.metadata?.symbol ?? option.label}
+                                                          {option.label}
                                                         </option>
                                                       ))}
                                                     </Select>

@@ -190,7 +190,7 @@ describe('Phoenix scenarios', () => {
         .mockResolvedValueOnce(templates(templateId))
         .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-market' }));
 
-      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
+      await expect(create('http://studio', ' SOL ', ' 6000 ', true)).resolves.toEqual({ id: 'phoenix-market' });
       expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
       const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
       expect(override).toMatchObject({
@@ -208,7 +208,7 @@ describe('Phoenix scenarios', () => {
       .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-liquidation-ready', address: null }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-trader' }));
 
-    await expect(createPhoenixLiquidationReadyScenario('http://studio', ' trader ', ' SOL ')).resolves.toEqual({
+    await expect(createPhoenixLiquidationReadyScenario('http://studio', ' trader ', ' SOL ', true)).resolves.toEqual({
       id: 'phoenix-trader',
     });
     const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
@@ -220,19 +220,20 @@ describe('Phoenix scenarios', () => {
     });
   });
 
-  it('posts the side and count of a liquidation cascade', async () => {
+  it('posts the side of a liquidation cascade and keeps earlier state when asked to', async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(templates('phoenix-liquidation-cascade'))
       .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-cascade' }));
 
-    await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short', ' 4 ')).resolves.toEqual({
+    await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short', false)).resolves.toEqual({
       id: 'phoenix-cascade',
     });
     const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
     expect(override).toMatchObject({
       templateId: 'phoenix-liquidation-cascade',
-      values: { symbol: 'SOL', side: 'short', count: '4' },
+      values: { symbol: 'SOL', side: 'short' },
+      fetchBeforeUse: false,
       account: { pubkey: 'perp-asset-map' },
     });
   });
@@ -243,7 +244,7 @@ describe('Phoenix scenarios', () => {
       .mockResolvedValueOnce(templates('phoenix-market-risk-factors'))
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000', true)).rejects.toThrow(
       'Scenario store unavailable'
     );
   });

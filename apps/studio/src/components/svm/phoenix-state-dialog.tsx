@@ -8,6 +8,7 @@ import {
   fetchDynamicRefOptions,
   type DynamicRefOption,
 } from '@/lib/scenarios-api';
+import { PublicKey } from '@solana/web3.js';
 import {
   Button,
   Combobox,
@@ -21,6 +22,7 @@ import {
   Input,
   Listbox,
   ListboxOption,
+  Switch,
 } from '@surfpool/ui';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { findOptionByTypedValue } from './token-selector-options';
@@ -63,6 +65,15 @@ const cascadeSides = Object.values(CascadeSide);
 const MAX_MARK_TICKS = 4_294_967_295;
 const MAX_RISK_FACTOR_BPS = 10_000;
 
+const isAddress = (value: string) => {
+  try {
+    new PublicKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const isWholeNumberInRange = (value: string, min: number, max: number) =>
   /^\d+$/.test(value.trim()) && Number(value) >= min && Number(value) <= max;
 
@@ -99,7 +110,7 @@ const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.LiquidationReady]:
     'Cancels the resting orders of the trader and moves the market until it is liquidatable, but not underwater.',
   [PhoenixStateMode.LiquidationCascade]:
-    'Moves the market to the price where the most holders are liquidatable. It can leave fewer traders than asked.',
+    'Moves the market to the price where the most holders are liquidatable and prepares every one of them.',
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
 };
 
@@ -160,7 +171,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [side, setSide] = useState<CascadeSide>(CascadeSide.Long);
-  const [count, setCount] = useState('3');
+  const [keepEarlierChanges, setKeepEarlierChanges] = useState(false);
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -189,13 +200,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
         : null;
   const hasTargetTicks = isWholeNumberInRange(rawAmount, 1, MAX_MARK_TICKS);
   const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS);
-  const hasCount = isWholeNumberInRange(count, 1, Number.MAX_SAFE_INTEGER);
+  const hasTraderAddress = isAddress(trader.trim());
+  const isTraderInvalid = !!trader.trim() && !hasTraderAddress;
   const canCreate =
     !isCreating &&
     hasSymbol &&
     ((mode === PhoenixStateMode.MarketMove && hasTargetTicks) ||
-      (mode === PhoenixStateMode.LiquidationReady && !!trader.trim()) ||
-      (mode === PhoenixStateMode.LiquidationCascade && hasCount) ||
+      (mode === PhoenixStateMode.LiquidationReady && hasTraderAddress) ||
+      mode === PhoenixStateMode.LiquidationCascade ||
       (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor));
 
   // HELPERS
@@ -250,11 +262,6 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
-  const handleCountChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setCount(event.target.value);
-    setError(null);
-  };
-
   const handleSymbolChange = (pickedSymbol: string | null) => {
     if (!pickedSymbol) return;
     const pickedUnits = availableUnits(
@@ -286,14 +293,15 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
 
     try {
+      const fetchBeforeUse = !keepEarlierChanges;
       const result =
         mode === PhoenixStateMode.MarketMove
-          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount)
+          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
           : mode === PhoenixStateMode.LiquidationReady
-            ? await createPhoenixLiquidationReadyScenario(studioUrl, trader, marketSymbol)
+            ? await createPhoenixLiquidationReadyScenario(studioUrl, trader, marketSymbol, fetchBeforeUse)
             : mode === PhoenixStateMode.LiquidationCascade
-              ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side, count)
-              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
+              ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side, fetchBeforeUse)
+              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -364,12 +372,19 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
           </div>
 
           {mode === PhoenixStateMode.LiquidationReady && (
-            <Input
-              aria-label="Phoenix Trader account"
-              placeholder="Trader account"
-              value={trader}
-              onChange={handleTraderChange}
-            />
+            <div>
+              <Input
+                aria-label="Phoenix Trader account"
+                placeholder="Trader account"
+                value={trader}
+                onChange={handleTraderChange}
+              />
+              {isTraderInvalid && (
+                <p role="status" className="mt-1.5 text-sm text-red-400">
+                  Not a valid Solana address.
+                </p>
+              )}
+            </div>
           )}
           <div>
             <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
@@ -396,25 +411,36 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
             )}
           </div>
           {mode === PhoenixStateMode.LiquidationCascade && (
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <span className="mb-1.5 block text-sm font-medium text-zinc-300">Positions to liquidate</span>
-                <Listbox
-                  aria-label="Positions to liquidate"
-                  value={side}
-                  onChange={handleSideChange}
-                  disabled={isCreating}
-                >
-                  {cascadeSides.map(renderCascadeSideOption)}
-                </Listbox>
-              </div>
-              <div className="w-36">
-                <span className="mb-1.5 block text-sm font-medium text-zinc-300">Traders</span>
-                <Input aria-label="Traders" placeholder="At least 1" value={count} onChange={handleCountChange} />
-              </div>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Positions to liquidate</span>
+              <Listbox
+                aria-label="Positions to liquidate"
+                value={side}
+                onChange={handleSideChange}
+                disabled={isCreating}
+              >
+                {cascadeSides.map(renderCascadeSideOption)}
+              </Listbox>
             </div>
           )}
           {amountField}
+          <div className="flex items-start justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium text-zinc-300">Keep earlier Phoenix changes</span>
+              <span className="mt-0.5 block text-sm text-zinc-400">
+                Build on Phoenix scenarios already played on this surfnet. Leave it off for the first one, so the
+                accounts are fetched from mainnet.
+              </span>
+            </span>
+            <Switch
+              aria-label="Keep earlier Phoenix changes"
+              checked={keepEarlierChanges}
+              onChange={setKeepEarlierChanges}
+              disabled={isCreating}
+              color="purple"
+              className="mt-0.5 shrink-0"
+            />
+          </div>
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogActions>

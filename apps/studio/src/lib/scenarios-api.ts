@@ -313,6 +313,7 @@ async function createPhoenixScenario(
   label: string,
   tags: string[],
   values: Record<string, string>,
+  fetchBeforeUse: boolean,
   account?: string
 ): Promise<PhoenixScenarioResult> {
   const template = await phoenixTemplate(studioUrl, templateId);
@@ -328,9 +329,7 @@ async function createPhoenixScenario(
         scenarioRelativeSlot: 0,
         label,
         enabled: true,
-        // Play skips an override whose account is not in the local VM, so fetch it from the
-        // upstream datasource first.
-        fetchBeforeUse: true,
+        fetchBeforeUse,
         account: account ? { pubkey: account } : template.address,
       },
     ],
@@ -358,7 +357,8 @@ async function createPhoenixScenario(
 export async function createPhoenixMarketMoveScenario(
   studioUrl: string,
   symbol: string,
-  targetTicks: string
+  targetTicks: string,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -367,14 +367,16 @@ export async function createPhoenixMarketMoveScenario(
     'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
     `Phoenix ${symbol.trim()} market move`,
     ['phoenix-eternal', 'market-move', 'risk'],
-    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+    { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
+    fetchBeforeUse
   );
 }
 
 export async function createPhoenixLiquidationReadyScenario(
   studioUrl: string,
   trader: string,
-  symbol: string
+  symbol: string,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -384,6 +386,7 @@ export async function createPhoenixLiquidationReadyScenario(
     `Phoenix ${symbol.trim()} liquidation-ready trader`,
     ['phoenix-eternal', 'liquidation', 'risk'],
     { symbol: symbol.trim() },
+    fetchBeforeUse,
     trader.trim()
   );
 }
@@ -392,23 +395,25 @@ export async function createPhoenixLiquidationCascadeScenario(
   studioUrl: string,
   symbol: string,
   side: 'long' | 'short',
-  count: string
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
     'phoenix-liquidation-cascade',
     `Phoenix ${symbol.trim()} Liquidation Cascade`,
-    'Leave several Phoenix Eternal traders liquidatable at one price, for a keeper to liquidate one after another.',
+    'Leave every Phoenix Eternal trader one price can make liquidatable ready for a keeper to liquidate one after another.',
     `Phoenix ${symbol.trim()} liquidation cascade`,
     ['phoenix-eternal', 'liquidation', 'cascade'],
-    { symbol: symbol.trim(), side, count: count.trim() }
+    { symbol: symbol.trim(), side },
+    fetchBeforeUse
   );
 }
 
 export async function createPhoenixMaintenanceMarginScenario(
   studioUrl: string,
   symbol: string,
-  riskFactor: string
+  riskFactor: string,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -417,7 +422,8 @@ export async function createPhoenixMaintenanceMarginScenario(
     'Set the maintenance margin risk factor for one Phoenix Eternal market.',
     `Phoenix ${symbol.trim()} maintenance margin factor`,
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
-    { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() }
+    { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() },
+    fetchBeforeUse
   );
 }
 
