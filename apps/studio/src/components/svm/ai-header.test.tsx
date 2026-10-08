@@ -208,4 +208,36 @@ describe('AIHeader', () => {
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
   });
+
+  it('refreshes after the Phoenix collateral tool creates a scenario', async () => {
+    vi.mocked(streamAIResponse).mockImplementation(async function* () {
+      yield {
+        type: 'tool_result' as const,
+        content: {
+          name: 'create_phoenix_collateral_scenario',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: null,
+                  url: 'http://127.0.0.1:18488/scenarios?id=phoenix-collateral&tab=editor',
+                }),
+              },
+            ],
+          },
+        },
+      };
+      yield { type: 'done' as const, content: null };
+    });
+    const onRefresh = vi.fn();
+    renderWithConfig(<AIHeader onRefresh={onRefresh} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Describe a scenario to simulate...'), {
+      target: { value: 'Create a Phoenix collateral scenario' },
+    });
+    fireEvent.click(screen.getByLabelText('Generate scenario'));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+  });
 });

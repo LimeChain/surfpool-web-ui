@@ -164,6 +164,7 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const activeSolFiAccountAddressRef = useRef('');
   const solfiAccountKind = getSolFiCustomAccountKind(selectedAction?.template?.protocol, selectedAction?.template?.id);
   const isAddressSelectionMissing = Boolean(solfiAccountKind && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
@@ -620,6 +621,7 @@ export default function ScenarioEditor({
     const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
     const actionSolFiAccountKind = getSolFiCustomAccountKind(action.template?.protocol, action.template?.id);
     const selectedPubkey = actionSolFiAccountKind ? savedPubkey : '';
+    activeSolFiAccountAddressRef.current = selectedPubkey;
     setSelectedAccountPubkey(selectedPubkey);
     setUsesCustomDirectAccountAddress(
       Boolean(
@@ -1873,16 +1875,23 @@ export default function ScenarioEditor({
                                     };
 
                                     const changeAccount = (pubkey: string, custom = false) => {
-                                      setSelectedAccountPubkey(pubkey);
+                                      const address = pubkey.trim();
+                                      if (
+                                        address === selectedAccountPubkey.trim() &&
+                                        custom === usesCustomDirectAccountAddress
+                                      ) {
+                                        return;
+                                      }
+                                      setSelectedAccountPubkey(address);
                                       setUsesCustomDirectAccountAddress(custom);
                                       setAccountData({});
                                       setModifiedFields(new Set());
                                     };
 
                                     const loadAccount = (pubkey: string) => {
-                                      if (pubkey.trim()) {
-                                        void handleActionSelect(selectedAction, { pubkey: pubkey.trim() });
-                                      }
+                                      const address = pubkey.trim();
+                                      if (!address || address === activeSolFiAccountAddressRef.current) return;
+                                      void handleActionSelect(selectedAction, { pubkey: address });
                                     };
 
                                     return (
@@ -1933,7 +1942,10 @@ export default function ScenarioEditor({
                                           <Input
                                             aria-label={`Custom SolFi ${solfiAccountKind} address`}
                                             value={selectedAccountPubkey}
-                                            onChange={(event) => changeAccount(event.target.value.trim(), true)}
+                                            onChange={(event) => {
+                                              setSelectedAccountPubkey(event.target.value);
+                                              setUsesCustomDirectAccountAddress(true);
+                                            }}
                                             onBlur={() => loadAccount(selectedAccountPubkey)}
                                             placeholder={`Enter a SolFi ${solfiAccountKind} address...`}
                                           />
