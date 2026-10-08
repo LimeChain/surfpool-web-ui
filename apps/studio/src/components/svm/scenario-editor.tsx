@@ -23,12 +23,17 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { resolveTokenSelectorOptions } from './token-selector-options';
+import {
+  getSolFiAccountOptions,
+  getSolFiCustomAccountKind,
+  resolveSolFiAccount,
+  resolveTokenSelectorOptions,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -106,6 +111,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'SolFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -143,6 +149,8 @@ export default function ScenarioEditor({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
+  const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
+  const [usesCustomDirectAccountAddress, setUsesCustomDirectAccountAddress] = useState(false);
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -156,6 +164,9 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const activeSolFiAccountAddressRef = useRef('');
+  const solfiAccountKind = getSolFiCustomAccountKind(selectedAction?.template?.protocol, selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(solfiAccountKind && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -604,9 +615,21 @@ export default function ScenarioEditor({
   };
 
   // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action) => {
+  const handleActionSelect = async (action: Action, savedAccount?: any) => {
     setSelectedAction(action);
     setAccountData({});
+    const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
+    const actionSolFiAccountKind = getSolFiCustomAccountKind(action.template?.protocol, action.template?.id);
+    const selectedPubkey = actionSolFiAccountKind ? savedPubkey : '';
+    activeSolFiAccountAddressRef.current = selectedPubkey;
+    setSelectedAccountPubkey(selectedPubkey);
+    setUsesCustomDirectAccountAddress(
+      Boolean(
+        actionSolFiAccountKind &&
+          savedPubkey &&
+          !getSolFiAccountOptions(actionSolFiAccountKind).some((option) => String(option.value) === savedPubkey)
+      )
+    );
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
@@ -615,6 +638,8 @@ export default function ScenarioEditor({
       console.warn('Action template missing IDL or address');
       return;
     }
+
+    if (actionSolFiAccountKind && !selectedPubkey) return;
 
     setLoadingAccountData(true);
 
@@ -751,7 +776,11 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: resolveSolFiAccount(
+                  action.id,
+                  action.template?.address,
+                  selectedAccountPubkey
+                ),
               },
             ],
           };
@@ -791,7 +820,11 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    account: resolveSolFiAccount(
+                      action.id,
+                      action.template?.address,
+                      selectedAccountPubkey
+                    ),
                   }
                 : existingAction
             ),
@@ -1261,7 +1294,7 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction);
+                                                    await handleActionSelect(foundAction, action.account);
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1828,6 +1861,98 @@ export default function ScenarioEditor({
                                     updates, and dynamic balances.
                                   </p>
                                 </div>
+                                {solfiAccountKind &&
+                                  (() => {
+                                    const accountOptions = getSolFiAccountOptions(solfiAccountKind);
+                                    const selectedOption = accountOptions.find(
+                                      (option) => String(option.value) === selectedAccountPubkey
+                                    );
+                                    const customOption = {
+                                      id: `custom-solfi-${solfiAccountKind}`,
+                                      label: `Custom ${solfiAccountKind} address`,
+                                      value: '__custom__',
+                                      description: `Enter a SolFi ${solfiAccountKind} address`,
+                                    };
+
+                                    const changeAccount = (pubkey: string, custom = false) => {
+                                      const address = pubkey.trim();
+                                      if (
+                                        address === selectedAccountPubkey.trim() &&
+                                        custom === usesCustomDirectAccountAddress
+                                      ) {
+                                        return;
+                                      }
+                                      setSelectedAccountPubkey(address);
+                                      setUsesCustomDirectAccountAddress(custom);
+                                      setAccountData({});
+                                      setModifiedFields(new Set());
+                                    };
+
+                                    const loadAccount = (pubkey: string) => {
+                                      const address = pubkey.trim();
+                                      if (!address || address === activeSolFiAccountAddressRef.current) return;
+                                      void handleActionSelect(selectedAction, { pubkey: address });
+                                    };
+
+                                    return (
+                                      <div className="mb-6 space-y-3 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                        <div>
+                                          <label className="block text-sm font-medium capitalize text-zinc-300">
+                                            {solfiAccountKind}
+                                          </label>
+                                          <p className="mt-1 text-xs text-zinc-500">
+                                            Choose a featured SolFi account or enter another address.
+                                          </p>
+                                        </div>
+                                        <Combobox
+                                          aria-label={`SolFi ${solfiAccountKind}`}
+                                          value={
+                                            usesCustomDirectAccountAddress ? customOption : selectedOption ?? null
+                                          }
+                                          onChange={(option: any) => {
+                                            if (!option) return;
+                                            const custom = option.value === '__custom__';
+                                            const pubkey = custom ? '' : String(option.value);
+                                            changeAccount(pubkey, custom);
+                                            if (!custom) loadAccount(pubkey);
+                                          }}
+                                          options={[customOption, ...accountOptions]}
+                                          displayValue={(option: any) => option?.label || ''}
+                                          filter={(option: any, query: string) =>
+                                            [option.label, option.description, option.value]
+                                              .filter(Boolean)
+                                              .join(' ')
+                                              .toLowerCase()
+                                              .includes(query.toLowerCase())
+                                          }
+                                          placeholder={`Search SolFi ${solfiAccountKind}s...`}
+                                        >
+                                          {(option: any) => (
+                                            <ComboboxOption key={option.id} value={option}>
+                                              <ComboboxLabel>
+                                                <span className="font-medium">{option.label}</span>
+                                                {option.description && (
+                                                  <span className="ml-2 text-zinc-400">{option.description}</span>
+                                                )}
+                                              </ComboboxLabel>
+                                            </ComboboxOption>
+                                          )}
+                                        </Combobox>
+                                        {usesCustomDirectAccountAddress && (
+                                          <Input
+                                            aria-label={`Custom SolFi ${solfiAccountKind} address`}
+                                            value={selectedAccountPubkey}
+                                            onChange={(event) => {
+                                              setSelectedAccountPubkey(event.target.value);
+                                              setUsesCustomDirectAccountAddress(true);
+                                            }}
+                                            onBlur={() => loadAccount(selectedAccountPubkey)}
+                                            placeholder={`Enter a SolFi ${solfiAccountKind} address...`}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
                                     <div className="flex flex-col items-center gap-3">
@@ -2302,7 +2427,7 @@ export default function ScenarioEditor({
                                       const renderConstantRefFields = () => {
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
-                                        const constantRefProps = rawProperties
+                                        const propertyConstantRefs = rawProperties
                                           .filter(
                                             (prop: any) =>
                                               typeof prop !== 'string' &&
@@ -2318,6 +2443,7 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
+                                        const constantRefProps = propertyConstantRefs;
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2327,11 +2453,13 @@ export default function ScenarioEditor({
                                           fieldPath,
                                           currentValue,
                                           isModified,
+                                          onValueChange,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
+                                          onValueChange: (value: string) => void;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2343,14 +2471,15 @@ export default function ScenarioEditor({
                                               value={selectedOption}
                                               onChange={(option: any) => {
                                                 if (option) {
-                                                  setValue(fieldPath, option.value);
+                                                  onValueChange(String(option.value));
                                                 }
                                               }}
                                               options={options}
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
-                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                                const symbol =
+                                                  option.metadata?.symbol || option.label || option.id?.toUpperCase();
                                                 return symbol;
                                               }}
                                               filter={(option: any, query: string) => {
@@ -2391,7 +2520,9 @@ export default function ScenarioEditor({
                                                     )}
                                                     <ComboboxLabel>
                                                       <span className="font-medium">
-                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                        {option.metadata?.symbol ||
+                                                          option.label ||
+                                                          option.id?.toUpperCase()}
                                                       </span>
                                                       {option.description && (
                                                         <span className="ml-2 text-zinc-400">{option.description}</span>
@@ -2416,7 +2547,7 @@ export default function ScenarioEditor({
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
                                               const isModified = modifiedFields.has(fieldPath);
-
+                                              const onValueChange = (value: string) => setValue(fieldPath, value);
                                               // Use searchable Combobox for constants with many options (e.g., verified tokens)
                                               const useCombobox = constantDef.options.length > 20;
 
@@ -2442,6 +2573,7 @@ export default function ScenarioEditor({
                                                       fieldPath={fieldPath}
                                                       currentValue={currentValue}
                                                       isModified={isModified}
+                                                      onValueChange={onValueChange}
                                                     />
                                                   ) : (
                                                     <Select
@@ -2457,7 +2589,7 @@ export default function ScenarioEditor({
                                                           : currentValue || ''
                                                       }
                                                       onChange={(e) => {
-                                                        setValue(fieldPath, e.target.value);
+                                                        onValueChange(e.target.value);
                                                       }}
                                                       className={
                                                         isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
@@ -2535,7 +2667,12 @@ export default function ScenarioEditor({
 
                                 {/* Add/Update Action Button - Right Aligned */}
                                 {!loadingAccountData && (
-                                  <div className="flex justify-end">
+                                  <div className="flex flex-col items-end gap-2">
+                                    {isAddressSelectionMissing && (
+                                      <p className="text-right text-sm text-amber-400">
+                                        Select a target account above before adding this override.
+                                      </p>
+                                    )}
                                     <button
                                       onClick={() => {
                                         if (selectedSlotId && selectedProtocol && selectedAction) {
@@ -2556,12 +2693,14 @@ export default function ScenarioEditor({
                                           setSelectedProduct(null);
                                           setSelectedAction(null);
                                           setAccountData({});
+                                          setSelectedAccountPubkey('');
+                                          setUsesCustomDirectAccountAddress(false);
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={!selectedSlotId || !selectedAction || isAddressSelectionMissing}
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
