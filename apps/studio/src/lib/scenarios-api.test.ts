@@ -4,6 +4,7 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createdScenarioIdFromToolResult,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -362,6 +363,12 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured Tessera account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC quote stale', new Set(['tessera']));
+
+    expect(result).toContain('market FLckHLGMJy5gEoXWwcE68Nprde1D4araK4TGLw4pQq2n');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -370,6 +377,32 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=tessera-five-usdc&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('tessera-five-usdc');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
   });
 });
 
