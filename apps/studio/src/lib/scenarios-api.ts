@@ -221,7 +221,7 @@ export async function createPumpSwapPriceShockScenario(
 async function callMcpToolJson<T>(
   studioUrl: string,
   toolName: string,
-  args: Record<string, string>
+  args: Record<string, string | number>
 ): Promise<T | undefined> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
@@ -256,46 +256,50 @@ export type PhoenixScenarioResult = {
   id: string;
 };
 
-async function phoenixTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
-  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
-  if (!response.ok) {
-    throw new Error(`Failed to load scenario templates: ${response.status}`);
-  }
-
-  const templates = (await response.json()) as ScenarioTemplate[];
-  const template = findScenarioTemplate(templates, templateId);
-  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
-
-  return template;
-}
-
+/** One option of a `dynamic_ref` property: a market's symbol, its orderbook and the extra fields its source adds. */
 export interface DynamicRefOption {
   value: string;
   address?: string;
   markTicks?: number;
   tickSize?: number;
   baseLotDecimals?: number;
+  backstopRiskFactorBps?: number;
 }
 
-interface DynamicRefPayload {
-  error?: string | null;
-  symbols?: string[];
-  markets?: ({ symbol: string; orderbook?: string } & Omit<DynamicRefOption, 'value' | 'address'>)[];
-}
+type DynamicRefSourceMarket = { symbol: string; orderbook: string } & Omit<DynamicRefOption, 'value' | 'address'>;
 
-/** Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. */
-export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<DynamicRefOption[]> {
+/** What the MCP tool named in a `dynamic_ref` source returns: its markets, or an error. */
+type DynamicRefSourceResult = { markets: DynamicRefSourceMarket[]; error?: null } | { error: string };
+
+// Without a port the MCP tools read 127.0.0.1:8899, which may not be the surfnet Studio runs on.
+const surfnetPortArg = (rpcUrl: string): { surfnetPort?: number } => {
   try {
-    const payload = await callMcpToolJson<DynamicRefPayload>(studioUrl, source, {});
-    if (!payload || payload.error) return [];
-    if (payload.markets) {
-      return payload.markets.map(({ symbol, orderbook, ...market }) => ({
-        value: symbol,
-        address: orderbook,
-        ...market,
-      }));
-    }
-    return (payload.symbols ?? []).map((value) => ({ value }));
+    const port = Number(new URL(rpcUrl).port);
+    return port > 0 ? { surfnetPort: port } : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. Every source
+ * tool returns `{ markets: [{ symbol, orderbook, ...extra }] }` or `{ error }`, as `list_phoenix_markets`
+ * does. Each market becomes an option valued by its symbol, with its orderbook as the address and the
+ * extra fields kept. An error, or a tool that cannot be reached, gives no options.
+ */
+export async function fetchDynamicRefOptions(
+  studioUrl: string,
+  rpcUrl: string,
+  source: string
+): Promise<DynamicRefOption[]> {
+  try {
+    const payload = await callMcpToolJson<DynamicRefSourceResult>(studioUrl, source, surfnetPortArg(rpcUrl));
+    if (!payload || typeof payload.error === 'string') return [];
+    return (payload.markets ?? []).map(({ symbol, orderbook, ...market }) => ({
+      value: symbol,
+      address: orderbook,
+      ...market,
+    }));
   } catch {
     return [];
   }
@@ -316,7 +320,15 @@ async function createPhoenixScenario(
   fetchBeforeUse: boolean,
   account?: string
 ): Promise<PhoenixScenarioResult> {
-  const template = await phoenixTemplate(studioUrl, templateId);
+  const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!templatesResponse.ok) {
+    throw new Error(`Failed to load scenario templates: ${templatesResponse.status}`);
+  }
+
+  const templates = (await templatesResponse.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, templateId);
+  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+
   const scenario = {
     id: crypto.randomUUID(),
     name,
@@ -375,20 +387,46 @@ export async function createPhoenixMarketMoveScenario(
 export async function createPhoenixLiquidationReadyScenario(
   studioUrl: string,
   trader: string,
-  symbol: string,
+  symbols: string[],
   fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
+  // A trader can hold dozens of positions, which no title or slot card fits.
+  const markets = symbols.length > 3 ? `${symbols.length}-position` : symbols.join(' + ');
   return createPhoenixScenario(
     studioUrl,
     'phoenix-liquidation-ready',
-    `Phoenix ${symbol.trim()} Liquidation-Ready Trader`,
-    'Leave one Phoenix Eternal trader ready for a market-order liquidation.',
-    `Phoenix ${symbol.trim()} liquidation-ready trader`,
+    `Phoenix ${markets} Liquidation-Ready Trader`,
+    'Leave the chosen positions of one Phoenix Eternal trader ready for a keeper to liquidate one after another.',
+    `Phoenix ${markets} liquidation-ready trader`,
     ['phoenix-eternal', 'liquidation', 'risk'],
-    { symbol: symbol.trim() },
+    { symbols: symbols.join(',') },
     fetchBeforeUse,
     trader.trim()
   );
+}
+
+export interface PhoenixTraderPosition {
+  symbol: string;
+  orderbook: string;
+  side: 'long' | 'short';
+  baseLots: string;
+  maintenanceMarginQuoteLots: string;
+}
+
+/** A trader's open Phoenix positions, as Phoenix sees them on the surfnet. */
+export async function fetchPhoenixTraderPositions(
+  studioUrl: string,
+  rpcUrl: string,
+  trader: string
+): Promise<PhoenixTraderPosition[]> {
+  const payload = await callMcpToolJson<{ error?: string | null; positions?: PhoenixTraderPosition[] }>(
+    studioUrl,
+    'list_phoenix_trader_positions',
+    { trader: trader.trim(), ...surfnetPortArg(rpcUrl) }
+  );
+  if (!payload) throw new Error('Surfpool MCP tool list_phoenix_trader_positions returned no result');
+  if (payload.error) throw new Error(payload.error);
+  return payload.positions ?? [];
 }
 
 export async function createPhoenixLiquidationCascadeScenario(

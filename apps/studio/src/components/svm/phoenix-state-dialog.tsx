@@ -6,11 +6,17 @@ import {
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
   fetchDynamicRefOptions,
+  fetchPhoenixTraderPositions,
   type DynamicRefOption,
+  type PhoenixTraderPosition,
 } from '@/lib/scenarios-api';
 import { PublicKey } from '@solana/web3.js';
 import {
+  Badge,
   Button,
+  Checkbox,
+  CheckboxField,
+  CheckboxGroup,
   Combobox,
   ComboboxDescription,
   ComboboxLabel,
@@ -20,10 +26,12 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
+  Label,
   Listbox,
   ListboxOption,
   Switch,
 } from '@surfpool/ui';
+import clsx from 'clsx';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { findOptionByTypedValue } from './token-selector-options';
 
@@ -38,7 +46,7 @@ type PhoenixStateMode = (typeof PhoenixStateMode)[keyof typeof PhoenixStateMode]
 
 const PhoenixStateModeLabel: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Market price move',
-  [PhoenixStateMode.LiquidationReady]: 'Liquidation-ready trader',
+  [PhoenixStateMode.LiquidationReady]: 'Liquidate trader positions',
   [PhoenixStateMode.LiquidationCascade]: 'Liquidation cascade',
   [PhoenixStateMode.MaintenanceMargin]: 'Maintenance margin factor',
 };
@@ -108,10 +116,18 @@ const amountLabel: Partial<Record<PhoenixStateMode, string>> = {
 const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Moves the oracle readings, maker liquidity and the order book to the new price.',
   [PhoenixStateMode.LiquidationReady]:
-    'Cancels the resting orders of the trader and moves the market until it is liquidatable, but not underwater.',
+    'Cancels the resting orders of the trader and moves the chosen markets until a keeper can liquidate each chosen position in turn.',
   [PhoenixStateMode.LiquidationCascade]:
     'Moves the market to the price where the most holders are liquidatable and prepares every one of them.',
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
+};
+
+const formatPositionSize = (position: PhoenixTraderPosition, market?: DynamicRefOption) => {
+  const lots = Math.abs(Number(position.baseLots));
+  const decimals = market?.baseLotDecimals;
+  return decimals === undefined
+    ? `${position.baseLots} base lots`
+    : `${(lots / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${position.symbol}`;
 };
 
 const formatUsd = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 6 })}`;
@@ -140,6 +156,7 @@ const availableUnits = (mode: PhoenixStateMode, market?: DynamicRefOption) =>
 interface PhoenixStateDialogProps {
   open: boolean;
   studioUrl: string;
+  rpcUrl: string;
   onClose: () => void;
   onCreated: (scenarioId: string) => void;
 }
@@ -164,29 +181,68 @@ const renderUnitOption = ({ unit, label }: UnitChoice) => (
 
 const displayMarketSymbol = (marketSymbol: string | null) => marketSymbol ?? undefined;
 
-export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated }: PhoenixStateDialogProps) {
+interface PositionOptionProps {
+  position: PhoenixTraderPosition;
+  size: string;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: (symbol: string, checked: boolean) => void;
+}
+
+function PositionOption({ position, size, checked, disabled, onToggle }: PositionOptionProps) {
+  // DERIVED STATE
+  const isLong = position.side === 'long';
+  const maintenanceUsd = Number(position.maintenanceMarginQuoteLots) / 1e6;
+  // Whole dollars, except below $1, where rounding would show $0.
+  const margin = formatUsd(maintenanceUsd >= 1 ? Math.round(maintenanceUsd) : maintenanceUsd);
+
+  // HANDLERS
+  const handleChange = (isChecked: boolean) => onToggle(position.symbol, isChecked);
+
+  return (
+    <CheckboxField
+      disabled={disabled}
+      className={clsx('items-center px-3 py-2 transition-colors', checked ? 'bg-purple-500/10' : 'hover:bg-white/5')}
+    >
+      <Checkbox checked={checked} onChange={handleChange} color="purple" />
+      <Label className="flex min-w-0 items-center gap-2">
+        <span className="font-semibold text-zinc-100">{position.symbol}</span>
+        <Badge color={isLong ? 'green' : 'red'}>{isLong ? 'Long' : 'Short'}</Badge>
+        <span className="ml-auto truncate text-xs text-zinc-400">
+          {size} · margin {margin}
+        </span>
+      </Label>
+    </CheckboxField>
+  );
+}
+
+export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: PhoenixStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.MarketMove);
   const [trader, setTrader] = useState('');
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [side, setSide] = useState<CascadeSide>(CascadeSide.Long);
-  const [keepEarlierChanges, setKeepEarlierChanges] = useState(false);
+  const [keepEarlierChanges, setKeepEarlierChanges] = useState(true);
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
+  const [positions, setPositions] = useState<PhoenixTraderPosition[] | null>(null);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+  const [positionsError, setPositionsError] = useState<string | null>(null);
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
 
   // DERIVED STATE
   const symbolOptions = marketOptions.map((option) => option.value);
-  const addressBySymbol = new Map(marketOptions.map((option) => [option.value, option.address]));
+  const marketBySymbol = new Map(marketOptions.map((option) => [option.value, option]));
   const hasSymbolCatalog = marketOptions.length > 0;
   const isCatalogUnavailable = !isLoadingSymbols && !hasSymbolCatalog;
   const marketSymbol = isLoadingSymbols ? '' : symbol.trim();
   const hasSymbol = !!marketSymbol;
   const isCustomSymbol = hasSymbol && !symbolOptions.includes(marketSymbol);
-  const market = marketOptions.find((option) => option.value === marketSymbol);
+  const market = marketBySymbol.get(marketSymbol);
   const units = availableUnits(mode, market);
   const activeChoice = units.find((choice) => choice.unit === unit) ?? units[0];
   const rawAmount = activeChoice ? (toRawAmount(mode, activeChoice.unit, amount, market) ?? '') : '';
@@ -199,22 +255,36 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
         ? `Sends ${rawAmount} ${unitChoices[mode].at(-1)?.label.toLowerCase()}`
         : null;
   const hasTargetTicks = isWholeNumberInRange(rawAmount, 1, MAX_MARK_TICKS);
-  const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS);
-  const hasTraderAddress = isAddress(trader.trim());
-  const isTraderInvalid = !!trader.trim() && !hasTraderAddress;
+  // Phoenix refuses a maintenance factor at or below the market's backstop factor.
+  const backstopBps = mode === PhoenixStateMode.MaintenanceMargin ? market?.backstopRiskFactorBps : undefined;
+  const isAtOrBelowBackstop = backstopBps !== undefined && !!rawAmount && Number(rawAmount) <= backstopBps;
+  const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS) && !isAtOrBelowBackstop;
+  const traderAddress = trader.trim();
+  const hasTraderAddress = isAddress(traderAddress);
+  const isTraderInvalid = !!traderAddress && !hasTraderAddress;
+  const isLiquidationReady = mode === PhoenixStateMode.LiquidationReady;
+  const hasPositionSelection = selectedSymbols.length > 0;
+  const sortedPositions = [...(positions ?? [])].sort(
+    (a, b) => Number(b.maintenanceMarginQuoteLots) - Number(a.maintenanceMarginQuoteLots)
+  );
+  const isEveryPositionSelected = !!sortedPositions.length && selectedSymbols.length === sortedPositions.length;
+  const selectionCount = `${selectedSymbols.length} of ${sortedPositions.length} selected`;
+  const positionsStatus = isLoadingPositions
+    ? 'Loading the positions of this trader…'
+    : (positionsError ?? (positions?.length === 0 ? 'This trader holds no open Phoenix positions.' : null));
   const canCreate =
     !isCreating &&
-    hasSymbol &&
-    ((mode === PhoenixStateMode.MarketMove && hasTargetTicks) ||
-      (mode === PhoenixStateMode.LiquidationReady && hasTraderAddress) ||
-      mode === PhoenixStateMode.LiquidationCascade ||
-      (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor));
+    ((isLiquidationReady && hasTraderAddress && hasPositionSelection) ||
+      (hasSymbol &&
+        ((mode === PhoenixStateMode.MarketMove && hasTargetTicks) ||
+          mode === PhoenixStateMode.LiquidationCascade ||
+          (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor))));
 
   // HELPERS
   const matchesMarket = (optionSymbol: string | null, query: string) => {
     if (!optionSymbol) return false;
     const search = query.trim().toLowerCase();
-    const address = addressBySymbol.get(optionSymbol)?.toLowerCase();
+    const address = marketBySymbol.get(optionSymbol)?.address?.toLowerCase();
     return optionSymbol.toLowerCase().includes(search) || !!address?.includes(search);
   };
 
@@ -226,10 +296,21 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
       ? null
       : query;
 
+  const renderPositionOption = (position: PhoenixTraderPosition) => (
+    <PositionOption
+      key={position.symbol}
+      position={position}
+      size={formatPositionSize(position, marketBySymbol.get(position.symbol))}
+      checked={selectedSymbols.includes(position.symbol)}
+      disabled={isCreating}
+      onToggle={handlePositionToggle}
+    />
+  );
+
   const renderMarketOption = (optionSymbol: string) => (
     <ComboboxOption key={optionSymbol} value={optionSymbol}>
       <ComboboxLabel>{optionSymbol}</ComboboxLabel>
-      <ComboboxDescription>{addressBySymbol.get(optionSymbol) ?? 'Custom symbol'}</ComboboxDescription>
+      <ComboboxDescription>{marketBySymbol.get(optionSymbol)?.address ?? 'Custom symbol'}</ComboboxDescription>
     </ComboboxOption>
   );
 
@@ -257,6 +338,18 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
     setError(null);
   };
 
+  const handlePositionToggle = (positionSymbol: string, isChecked: boolean) => {
+    setSelectedSymbols((current) =>
+      isChecked ? [...current, positionSymbol] : current.filter((selected) => selected !== positionSymbol)
+    );
+    setError(null);
+  };
+
+  const handleSelectAllToggle = () => {
+    setSelectedSymbols(isEveryPositionSelected ? [] : sortedPositions.map((position) => position.symbol));
+    setError(null);
+  };
+
   const handleSideChange = (selectedSide: CascadeSide) => {
     setSide(selectedSide);
     setError(null);
@@ -264,16 +357,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
 
   const handleSymbolChange = (pickedSymbol: string | null) => {
     if (!pickedSymbol) return;
-    const pickedUnits = availableUnits(
-      mode,
-      marketOptions.find((option) => option.value === pickedSymbol)
-    );
+    const pickedUnits = availableUnits(mode, marketBySymbol.get(pickedSymbol));
     const pickedUnit = (pickedUnits.find((choice) => choice.unit === unit) ?? pickedUnits[0])?.unit;
-    // The same amount means something else in another unit, so 10% must not become 10 ticks.
-    if (!!pickedUnit && pickedUnit !== activeChoice?.unit) {
-      setUnit(pickedUnit);
-      setAmount('');
-    }
+    const isUnitChange = !!pickedUnit && pickedUnit !== activeChoice?.unit;
+    const isOtherMarket = !!marketSymbol && pickedSymbol !== marketSymbol;
+    // The same amount means something else in another unit, so 10% must not become 10 ticks, and a USD or
+    // tick amount names another price on another market; only a % carries over.
+    if (isUnitChange) setUnit(pickedUnit);
+    if (isUnitChange || (isOtherMarket && pickedUnit !== 'percent')) setAmount('');
     setSymbol(pickedSymbol);
     setError(null);
   };
@@ -297,8 +388,13 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
       const result =
         mode === PhoenixStateMode.MarketMove
           ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
-          : mode === PhoenixStateMode.LiquidationReady
-            ? await createPhoenixLiquidationReadyScenario(studioUrl, trader, marketSymbol, fetchBeforeUse)
+          : isLiquidationReady
+            ? await createPhoenixLiquidationReadyScenario(
+                studioUrl,
+                trader,
+                [...selectedSymbols].sort(),
+                fetchBeforeUse
+              )
             : mode === PhoenixStateMode.LiquidationCascade
               ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side, fetchBeforeUse)
               : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse);
@@ -325,12 +421,40 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
       setIsLoadingSymbols(false);
     };
 
-    fetchDynamicRefOptions(studioUrl, 'list_phoenix_markets').then(handleSymbolsLoaded);
+    fetchDynamicRefOptions(studioUrl, rpcUrl, 'list_phoenix_markets').then(handleSymbolsLoaded);
 
     return () => {
       cancelled = true;
     };
-  }, [open, studioUrl]);
+  }, [open, studioUrl, rpcUrl]);
+
+  useEffect(() => {
+    setSelectedSymbols([]);
+    setPositions(null);
+    setPositionsError(null);
+    if (!open || !isLiquidationReady || !hasTraderAddress) return;
+    let cancelled = false;
+
+    setIsLoadingPositions(true);
+
+    const handlePositionsLoaded = (loaded: PhoenixTraderPosition[]) => {
+      if (cancelled) return;
+      setPositions(loaded);
+      setIsLoadingPositions(false);
+    };
+
+    const handlePositionsFailed = (failure: unknown) => {
+      if (cancelled) return;
+      setPositionsError(failure instanceof Error ? failure.message : 'Could not load the positions of this trader.');
+      setIsLoadingPositions(false);
+    };
+
+    fetchPhoenixTraderPositions(studioUrl, rpcUrl, traderAddress).then(handlePositionsLoaded, handlePositionsFailed);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isLiquidationReady, hasTraderAddress, traderAddress, studioUrl, rpcUrl]);
 
   const amountField = activeChoice ? (
     <div>
@@ -351,6 +475,11 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
         </div>
       </div>
       {!!hint && <p className="mt-1.5 text-sm text-zinc-400">{hint}</p>}
+      {isAtOrBelowBackstop && (
+        <p role="status" className="mt-1.5 text-sm text-red-400">
+          Must be above the backstop factor ({backstopBps} bps).
+        </p>
+      )}
     </div>
   ) : null;
 
@@ -373,11 +502,14 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
 
           {mode === PhoenixStateMode.LiquidationReady && (
             <div>
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Trader account</span>
               <Input
                 aria-label="Phoenix Trader account"
-                placeholder="Trader account"
+                placeholder="Address of the Phoenix Trader account"
                 value={trader}
                 onChange={handleTraderChange}
+                spellCheck={false}
+                autoComplete="off"
               />
               {isTraderInvalid && (
                 <p role="status" className="mt-1.5 text-sm text-red-400">
@@ -386,30 +518,61 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
               )}
             </div>
           )}
-          <div>
-            <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
-            {/* null, not undefined: Headless UI treats undefined as uncontrolled and warns once markets load. */}
-            <Combobox<string | null>
-              aria-label="Phoenix market"
-              placeholder={isLoadingSymbols ? 'Loading markets…' : 'Search or type a symbol or orderbook address'}
-              options={symbolOptions}
-              value={symbol || null}
-              immediate
-              displayValue={displayMarketSymbol}
-              filter={matchesMarket}
-              customOption={customMarketSymbol}
-              onChange={handleSymbolChange}
-              disabled={isCreating || isLoadingSymbols}
-            >
-              {renderMarketOption}
-            </Combobox>
-            {(isCatalogUnavailable || isCustomSymbol) && (
-              <p role="status" className="mt-1.5 text-sm text-zinc-400">
-                {isCatalogUnavailable && 'Markets could not be loaded, so type the exact symbol. '}A symbol Phoenix does
-                not list is skipped at Play.
-              </p>
-            )}
-          </div>
+          {isLiquidationReady && hasTraderAddress && (
+            <div>
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <span className="text-sm font-medium text-zinc-300">Positions to liquidate</span>
+                {!!sortedPositions.length && (
+                  <span className="flex items-baseline gap-3 text-xs text-zinc-500">
+                    {selectionCount}
+                    <button
+                      type="button"
+                      onClick={handleSelectAllToggle}
+                      disabled={isCreating}
+                      className="font-medium text-purple-400 hover:text-purple-300 disabled:opacity-50"
+                    >
+                      {isEveryPositionSelected ? 'Clear' : 'Select all'}
+                    </button>
+                  </span>
+                )}
+              </div>
+              {positionsStatus ? (
+                <p role="status" className="text-sm text-zinc-400">
+                  {positionsStatus}
+                </p>
+              ) : (
+                <CheckboxGroup className="max-h-72 space-y-0 divide-y divide-zinc-800 overflow-y-auto rounded-xl border border-zinc-700/60 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {sortedPositions.map(renderPositionOption)}
+                </CheckboxGroup>
+              )}
+            </div>
+          )}
+          {!isLiquidationReady && (
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
+              {/* null, not undefined: Headless UI treats undefined as uncontrolled and warns once markets load. */}
+              <Combobox<string | null>
+                aria-label="Phoenix market"
+                placeholder={isLoadingSymbols ? 'Loading markets…' : 'Search or type a symbol or orderbook address'}
+                options={symbolOptions}
+                value={symbol || null}
+                immediate
+                displayValue={displayMarketSymbol}
+                filter={matchesMarket}
+                customOption={customMarketSymbol}
+                onChange={handleSymbolChange}
+                disabled={isCreating || isLoadingSymbols}
+              >
+                {renderMarketOption}
+              </Combobox>
+              {(isCatalogUnavailable || isCustomSymbol) && (
+                <p role="status" className="mt-1.5 text-sm text-zinc-400">
+                  {isCatalogUnavailable && 'Markets could not be loaded, so type the exact symbol. '}A symbol Phoenix
+                  does not list is skipped at Play.
+                </p>
+              )}
+            </div>
+          )}
           {mode === PhoenixStateMode.LiquidationCascade && (
             <div>
               <span className="mb-1.5 block text-sm font-medium text-zinc-300">Positions to liquidate</span>
@@ -428,8 +591,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
             <span>
               <span className="block text-sm font-medium text-zinc-300">Keep earlier Phoenix changes</span>
               <span className="mt-0.5 block text-sm text-zinc-400">
-                Build on Phoenix scenarios already played on this surfnet. Leave it off for the first one, so the
-                accounts are fetched from mainnet.
+                Off, Play refetches this scenario&apos;s own account from upstream (the trader, or the market map),
+                dropping earlier changes to it; on, it keeps what is on this surfnet.
               </span>
             </span>
             <Switch

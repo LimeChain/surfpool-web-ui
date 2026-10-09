@@ -3,15 +3,16 @@ import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  buildUpdatePayload,
   createPhoenixLiquidationCascadeScenario,
   createPhoenixLiquidationReadyScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
-  buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
   fetchDynamicRefOptions,
+  fetchPhoenixTraderPositions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -25,7 +26,7 @@ import type { Scenario } from './scenarios-data';
 
 vi.mock('./ai-client', () => ({
   callMCPTool: vi.fn(),
-  fetchMCPTools: vi.fn(),
+  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
 }));
 
 const callMcpToolMock = vi.mocked(callMCPTool);
@@ -171,13 +172,13 @@ describe('createPumpSwapPriceShockScenario', () => {
   });
 });
 
-vi.mock('./ai-client', () => ({
-  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
-  callMCPTool: vi.fn(),
-}));
-
 describe('Phoenix scenarios', () => {
   const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+  const mockPost = (templateId: string, posted: Response) => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(templates(templateId)).mockResolvedValueOnce(posted);
+  };
+  const postedScenario = () => JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
 
   it.each([
     [createPhoenixMarketMoveScenario, 'phoenix-market-move', 'target_ticks'],
@@ -185,15 +186,11 @@ describe('Phoenix scenarios', () => {
   ] as const)(
     '%#: posts the template with its map address, string values and fetchBeforeUse',
     async (create, templateId, field) => {
-      vi.stubGlobal('fetch', fetchMock);
-      fetchMock
-        .mockResolvedValueOnce(templates(templateId))
-        .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-market' }));
+      mockPost(templateId, jsonResponse({ id: 'phoenix-market' }));
 
       await expect(create('http://studio', ' SOL ', ' 6000 ', true)).resolves.toEqual({ id: 'phoenix-market' });
       expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
-      const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
-      expect(override).toMatchObject({
+      expect(postedScenario().overrides[0]).toMatchObject({
         templateId,
         values: { symbol: 'SOL', [field]: '6000' },
         fetchBeforeUse: true,
@@ -202,35 +199,62 @@ describe('Phoenix scenarios', () => {
     }
   );
 
-  it('targets the given Trader account for a liquidation-ready trader', async () => {
-    vi.stubGlobal('fetch', fetchMock);
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-liquidation-ready', address: null }]))
-      .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-trader' }));
+  it.each([
+    [['SOL'], 'Phoenix SOL Liquidation-Ready Trader', 'Phoenix SOL liquidation-ready trader'],
+    [['ETH', 'SOL'], 'Phoenix ETH + SOL Liquidation-Ready Trader', 'Phoenix ETH + SOL liquidation-ready trader'],
+    [
+      ['BTC', 'ETH', 'SOL', 'XRP'],
+      'Phoenix 4-position Liquidation-Ready Trader',
+      'Phoenix 4-position liquidation-ready trader',
+    ],
+  ])('%#: posts the chosen markets of a trader in one override on its account', async (symbols, name, label) => {
+    mockPost('phoenix-liquidation-ready', jsonResponse({ id: 'phoenix-trader' }));
 
-    await expect(createPhoenixLiquidationReadyScenario('http://studio', ' trader ', ' SOL ', true)).resolves.toEqual({
-      id: 'phoenix-trader',
-    });
-    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
-    expect(override).toMatchObject({
+    await createPhoenixLiquidationReadyScenario('http://studio', ' trader ', symbols, false);
+    const body = postedScenario();
+    expect(body.name).toBe(name);
+    expect(body.overrides).toHaveLength(1);
+    expect(body.overrides[0]).toMatchObject({
       templateId: 'phoenix-liquidation-ready',
-      values: { symbol: 'SOL' },
-      fetchBeforeUse: true,
+      values: { symbols: symbols.join(',') },
+      label,
+      fetchBeforeUse: false,
       account: { pubkey: 'trader' },
     });
   });
 
+  it('reads the positions of a trader from the Phoenix MCP tool', async () => {
+    const positions = [
+      { symbol: 'SOL', orderbook: 'book', side: 'short', baseLots: '25000', maintenanceMarginQuoteLots: '1' },
+    ];
+    vi.mocked(callMCPTool).mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ trader: 'trader', positions }) }],
+    });
+    await expect(fetchPhoenixTraderPositions('http://studio', 'http://127.0.0.1:18899', ' trader ')).resolves.toEqual(
+      positions
+    );
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'list_phoenix_trader_positions',
+      { trader: 'trader', surfnetPort: 18899 },
+      'session'
+    );
+
+    vi.mocked(callMCPTool).mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'not a Phoenix trader' }) }],
+    });
+    await expect(fetchPhoenixTraderPositions('http://studio', 'http://rpc', 'trader')).rejects.toThrow(
+      'not a Phoenix trader'
+    );
+  });
+
   it('posts the side of a liquidation cascade and keeps earlier state when asked to', async () => {
-    vi.stubGlobal('fetch', fetchMock);
-    fetchMock
-      .mockResolvedValueOnce(templates('phoenix-liquidation-cascade'))
-      .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-cascade' }));
+    mockPost('phoenix-liquidation-cascade', jsonResponse({ id: 'phoenix-cascade' }));
 
     await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short', false)).resolves.toEqual({
       id: 'phoenix-cascade',
     });
-    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
-    expect(override).toMatchObject({
+    expect(postedScenario().overrides[0]).toMatchObject({
       templateId: 'phoenix-liquidation-cascade',
       values: { symbol: 'SOL', side: 'short' },
       fetchBeforeUse: false,
@@ -239,10 +263,7 @@ describe('Phoenix scenarios', () => {
   });
 
   it('surfaces failed requests', async () => {
-    vi.stubGlobal('fetch', fetchMock);
-    fetchMock
-      .mockResolvedValueOnce(templates('phoenix-market-risk-factors'))
-      .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
+    mockPost('phoenix-market-risk-factors', new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000', true)).rejects.toThrow(
       'Scenario store unavailable'
@@ -261,7 +282,14 @@ describe('fetchDynamicRefOptions', () => {
             count: 2,
             symbols: ['BTC', 'SOL'],
             markets: [
-              { symbol: 'BTC', orderbook: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+              {
+                symbol: 'BTC',
+                orderbook: 'btcBook',
+                markTicks: 83391,
+                tickSize: 100,
+                baseLotDecimals: 4,
+                backstopRiskFactorBps: 2000,
+              },
               { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755 },
             ],
           }),
@@ -269,22 +297,20 @@ describe('fetchDynamicRefOptions', () => {
       ],
     });
 
-    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
-      { value: 'BTC', address: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+    await expect(
+      fetchDynamicRefOptions('http://studio', 'http://127.0.0.1:8899', 'list_phoenix_markets')
+    ).resolves.toEqual([
+      {
+        value: 'BTC',
+        address: 'btcBook',
+        markTicks: 83391,
+        tickSize: 100,
+        baseLotDecimals: 4,
+        backstopRiskFactorBps: 2000,
+      },
       { value: 'SOL', address: 'solBook', markTicks: 11755 },
     ]);
-    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
-  });
-
-  it('falls back to bare symbols from a tool that lists no markets', async () => {
-    vi.mocked(callMCPTool).mockResolvedValue({
-      content: [{ type: 'text', text: JSON.stringify({ symbols: ['SOL', 'BTC'] }) }],
-    });
-
-    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
-      { value: 'SOL' },
-      { value: 'BTC' },
-    ]);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', { surfnetPort: 8899 }, 'session');
   });
 
   it('falls back to [] when the tool reports an error', async () => {
@@ -292,9 +318,8 @@ describe('fetchDynamicRefOptions', () => {
       content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
     });
 
-    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
+    await expect(fetchDynamicRefOptions('http://studio', 'http://rpc', 'list_phoenix_markets')).resolves.toEqual([]);
   });
-
 });
 
 describe('createScenarioPayload', () => {
