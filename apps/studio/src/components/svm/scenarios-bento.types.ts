@@ -89,4 +89,11 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '⚡',
     protocols: ['pumpswap'],
   },
+  {
+    label: 'Whirlpool Fee Spike',
+    prompt:
+      'Raise the swap fee of the deepest Whirlpool SOL/USDC pool to 1%, making every swap through it more expensive.',
+    icon: '🔥',
+    protocols: ['whirlpool'],
+  },
 ];
