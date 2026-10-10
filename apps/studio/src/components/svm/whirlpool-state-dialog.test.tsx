@@ -43,11 +43,14 @@ afterEach(() => {
 });
 
 describe('WhirlpoolStateDialog', () => {
-  it('creates a price shock scenario with the pool prefilled', async () => {
+  it('creates a price shock scenario from empty fields', async () => {
     createPriceShockMock.mockResolvedValue({ id: 'price-shock-scenario' });
     const onCreated = renderDialog();
 
-    expect(screen.getByLabelText('Whirlpool pool')).toHaveValue(POOL);
+    expect(screen.getByLabelText('Whirlpool pool')).toHaveValue('');
+    expect(screen.getByLabelText('Price factor')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL } });
     fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '0.5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
@@ -55,12 +58,11 @@ describe('WhirlpoolStateDialog', () => {
     expect(createPriceShockMock).toHaveBeenCalledWith('http://studio', 'http://rpc', POOL, '0.5');
   });
 
-  it('creates a fee rate scenario with an empty pool field on mode switch', async () => {
+  it('creates a fee rate scenario', async () => {
     createFeeRateMock.mockResolvedValue({ id: 'fee-rate-scenario' });
     const onCreated = renderDialog();
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'fee-rate' } });
-    expect(screen.getByLabelText('Whirlpool pool')).toHaveValue('');
     fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL } });
     fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
@@ -73,6 +75,8 @@ describe('WhirlpoolStateDialog', () => {
     createPriceShockMock.mockRejectedValue(new Error('tick array does not exist'));
     renderDialog();
 
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL } });
+    fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '0.5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     expect(await screen.findByText('tick array does not exist')).toBeInTheDocument();

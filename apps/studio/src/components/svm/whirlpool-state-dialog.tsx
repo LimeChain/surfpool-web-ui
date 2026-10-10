@@ -25,9 +25,6 @@ const WhirlpoolStateModeLabel: Record<WhirlpoolStateMode, string> = {
   [WhirlpoolStateMode.FeeRate]: 'Fee rate',
 };
 
-// The SOL/USDC pool, so the dialog opens with a valid address already filled.
-const DEFAULT_WHIRLPOOL_POOL = 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE';
-
 // fee_rate is capped at 60000 hundredths of a bp (6%), so plain bps stop at 600.
 const MAX_FEE_BPS = 600;
 
@@ -61,8 +58,8 @@ const renderStateModeOption = (stateMode: WhirlpoolStateMode) => (
 export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: WhirlpoolDialogProps) {
   // STATE
   const [mode, setMode] = useState<WhirlpoolStateMode>(WhirlpoolStateMode.PriceShock);
-  const [pool, setPool] = useState(DEFAULT_WHIRLPOOL_POOL);
-  const [priceFactor, setPriceFactor] = useState('0.5');
+  const [pool, setPool] = useState('');
+  const [priceFactor, setPriceFactor] = useState('');
   const [feeBps, setFeeBps] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -91,7 +88,6 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
 
   const handleModeChange = (selectedMode: WhirlpoolStateMode) => {
     setMode(selectedMode);
-    setPool(selectedMode === WhirlpoolStateMode.PriceShock ? DEFAULT_WHIRLPOOL_POOL : '');
     setError(null);
   };
 
@@ -131,7 +127,7 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
           <Field
             id="whirlpool-pool"
             label="Whirlpool pool"
-            placeholder="Pool address"
+            placeholder="Address of the Whirlpool pool"
             value={pool}
             onChange={handlePoolChange}
             disabled={isCreating}
