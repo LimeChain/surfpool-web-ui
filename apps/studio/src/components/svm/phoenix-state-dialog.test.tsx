@@ -53,11 +53,6 @@ vi.mock('@surfpool/ui', async () => ({
   },
   ListboxOption: ({ children, ...props }: any) => <option {...props}>{children}</option>,
   Input: (props: any) => <input {...props} />,
-  Switch: ({ checked, onChange, color, ...props }: any) => {
-    const handleChange = (event: any) => onChange(event.target.checked);
-
-    return <input type="checkbox" checked={checked} onChange={handleChange} {...props} />;
-  },
 }));
 
 const createMarketMoveMock = vi.mocked(createPhoenixMarketMoveScenario);
@@ -132,7 +127,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['SOL'], false);
+      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['SOL']);
       expect(onCreated).toHaveBeenCalledWith('liquidation-ready');
     });
   });
@@ -160,7 +155,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['BTC', 'DOGE', 'ETH', 'SOL', 'XRP'], false);
+      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['BTC', 'DOGE', 'ETH', 'SOL', 'XRP']);
     });
   });
 
@@ -203,23 +198,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', 'short', false);
-    });
-  });
-
-  it('refetches upstream accounts at Play only when Keep earlier Phoenix changes is turned off', async () => {
-    createMarketMoveMock.mockResolvedValue({ id: 'refetched' });
-    renderDialog();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
-    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'raw' } });
-    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '9000' } });
-    expect(screen.getByLabelText('Keep earlier Phoenix changes')).toBeChecked();
-    fireEvent.click(screen.getByLabelText('Keep earlier Phoenix changes'));
-    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-
-    await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'SOL', '9000', true);
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', 'short');
     });
   });
 
@@ -261,7 +240,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350', false);
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
     });
   });
 
@@ -289,7 +268,7 @@ describe('PhoenixStateDialog', () => {
     expect(screen.getByLabelText('Phoenix market')).toHaveValue('XYZ');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000', false);
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
     });
   });
 
@@ -310,7 +289,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000', false);
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000');
       expect(onCreated).toHaveBeenCalledWith('maintenance');
     });
   });
@@ -335,7 +314,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ETH' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345', false);
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
     });
   });
 
@@ -392,7 +371,7 @@ describe('PhoenixStateDialog', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '2001', false));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '2001'));
   });
 
   it('keeps an amount typed while markets load in the ticks it was typed in', async () => {
@@ -408,7 +387,7 @@ describe('PhoenixStateDialog', () => {
 
     await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345', false));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
   });
 
   it('converts percent and USD inputs to the raw values the backend takes', async () => {
@@ -428,17 +407,17 @@ describe('PhoenixStateDialog', () => {
     };
     submit('Target price', '-10');
     expect(screen.getByText('$85,957 → $77,361 (-10%), 77361 ticks')).toBeInTheDocument();
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361', false));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'usd' } });
     submit('Target price', '85000.4');
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000', false));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000'));
     fireEvent.click(screen.getByRole('button', { name: 'kBONK' }));
     submit('Target price', '0.000015');
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500', false));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500'));
 
     fireEvent.click(screen.getByRole('button', { name: 'BTC' }));
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     submit('Maintenance risk factor', '62.5');
-    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250', false));
+    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250'));
   });
 });

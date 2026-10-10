@@ -29,7 +29,6 @@ import {
   Label,
   Listbox,
   ListboxOption,
-  Switch,
 } from '@surfpool/ui';
 import clsx from 'clsx';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -223,7 +222,6 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [side, setSide] = useState<CascadeSide>(CascadeSide.Long);
-  const [keepEarlierChanges, setKeepEarlierChanges] = useState(true);
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -384,20 +382,14 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
     setError(null);
 
     try {
-      const fetchBeforeUse = !keepEarlierChanges;
       const result =
         mode === PhoenixStateMode.MarketMove
-          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
+          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount)
           : isLiquidationReady
-            ? await createPhoenixLiquidationReadyScenario(
-                studioUrl,
-                trader,
-                [...selectedSymbols].sort(),
-                fetchBeforeUse
-              )
+            ? await createPhoenixLiquidationReadyScenario(studioUrl, trader, [...selectedSymbols].sort())
             : mode === PhoenixStateMode.LiquidationCascade
-              ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side, fetchBeforeUse)
-              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse);
+              ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side)
+              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -587,23 +579,6 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
             </div>
           )}
           {amountField}
-          <div className="flex items-start justify-between gap-4">
-            <span>
-              <span className="block text-sm font-medium text-zinc-300">Keep earlier Phoenix changes</span>
-              <span className="mt-0.5 block text-sm text-zinc-400">
-                Off, Play refetches this scenario&apos;s own account from upstream (the trader, or the market map),
-                dropping earlier changes to it; on, it keeps what is on this surfnet.
-              </span>
-            </span>
-            <Switch
-              aria-label="Keep earlier Phoenix changes"
-              checked={keepEarlierChanges}
-              onChange={setKeepEarlierChanges}
-              disabled={isCreating}
-              color="purple"
-              className="mt-0.5 shrink-0"
-            />
-          </div>
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogActions>

@@ -184,16 +184,16 @@ describe('Phoenix scenarios', () => {
     [createPhoenixMarketMoveScenario, 'phoenix-market-move', 'target_ticks'],
     [createPhoenixMaintenanceMarginScenario, 'phoenix-market-risk-factors', 'maintenanceRiskFactor'],
   ] as const)(
-    '%#: posts the template with its map address, string values and fetchBeforeUse',
+    '%#: posts the template with its map address and string values, keeping the local copy',
     async (create, templateId, field) => {
       mockPost(templateId, jsonResponse({ id: 'phoenix-market' }));
 
-      await expect(create('http://studio', ' SOL ', ' 6000 ', true)).resolves.toEqual({ id: 'phoenix-market' });
+      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
       expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
       expect(postedScenario().overrides[0]).toMatchObject({
         templateId,
         values: { symbol: 'SOL', [field]: '6000' },
-        fetchBeforeUse: true,
+        fetchBeforeUse: false,
         account: { pubkey: 'perp-asset-map' },
       });
     }
@@ -210,7 +210,7 @@ describe('Phoenix scenarios', () => {
   ])('%#: posts the chosen markets of a trader in one override on its account', async (symbols, name, label) => {
     mockPost('phoenix-liquidation-ready', jsonResponse({ id: 'phoenix-trader' }));
 
-    await createPhoenixLiquidationReadyScenario('http://studio', ' trader ', symbols, false);
+    await createPhoenixLiquidationReadyScenario('http://studio', ' trader ', symbols);
     const body = postedScenario();
     expect(body.name).toBe(name);
     expect(body.overrides).toHaveLength(1);
@@ -248,10 +248,10 @@ describe('Phoenix scenarios', () => {
     );
   });
 
-  it('posts the side of a liquidation cascade and keeps earlier state when asked to', async () => {
+  it('posts the side of a liquidation cascade', async () => {
     mockPost('phoenix-liquidation-cascade', jsonResponse({ id: 'phoenix-cascade' }));
 
-    await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short', false)).resolves.toEqual({
+    await expect(createPhoenixLiquidationCascadeScenario('http://studio', 'SOL', 'short')).resolves.toEqual({
       id: 'phoenix-cascade',
     });
     expect(postedScenario().overrides[0]).toMatchObject({
@@ -265,7 +265,7 @@ describe('Phoenix scenarios', () => {
   it('surfaces failed requests', async () => {
     mockPost('phoenix-market-risk-factors', new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000', true)).rejects.toThrow(
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
       'Scenario store unavailable'
     );
   });
