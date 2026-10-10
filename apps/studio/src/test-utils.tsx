@@ -1,8 +1,8 @@
-import React from 'react';
-import { render, type RenderOptions } from '@testing-library/react';
 import { ConfigContext } from '@/contexts/config-context';
-import { vi } from 'vitest';
 import type { TransactionInfo } from '@/lib/solana-transaction-stream';
+import { render, screen, within, type RenderOptions } from '@testing-library/react';
+import React from 'react';
+import { vi } from 'vitest';
 
 // Default config matching useAppConfig fallbacks
 const DEFAULT_CONFIG = {
@@ -24,12 +24,7 @@ interface RenderWithConfigOptions extends Omit<RenderOptions, 'wrapper'> {
 
 export function renderWithConfig(
   ui: React.ReactElement,
-  {
-    config = DEFAULT_CONFIG,
-    loading = false,
-    error = null,
-    ...renderOptions
-  }: RenderWithConfigOptions = {}
+  { config = DEFAULT_CONFIG, loading = false, error = null, ...renderOptions }: RenderWithConfigOptions = {}
 ) {
   const value = {
     config: config as any,
@@ -39,11 +34,7 @@ export function renderWithConfig(
   };
 
   function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <ConfigContext.Provider value={value}>
-        {children}
-      </ConfigContext.Provider>
-    );
+    return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
   }
 
   return {
@@ -92,3 +83,58 @@ export function makeTx(overrides: Partial<TransactionInfo> = {}): TransactionInf
     ...overrides,
   };
 }
+
+function MockComboboxOption({ option, onSelect, children }: any) {
+  const handleClick = () => onSelect(option);
+
+  return (
+    <button type="button" onClick={handleClick}>
+      {children}
+    </button>
+  );
+}
+
+export function MockCombobox({
+  'aria-label': ariaLabel,
+  options,
+  value,
+  displayValue,
+  filter,
+  customOption,
+  onChange,
+  disabled,
+  placeholder,
+  children,
+}: any) {
+  const [query, setQuery] = React.useState<string | null>(null);
+  const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value);
+  const matches = query ? options.filter((option: any) => filter(option, query)) : options;
+  const typedOption = customOption && query?.trim() ? customOption(query.trim()) : null;
+  const shown = typedOption === null ? matches : [...matches, typedOption];
+  const renderOption = (option: any) => (
+    <li key={option?.id ?? option}>
+      <MockComboboxOption option={option} onSelect={onChange}>
+        {displayValue(option)}
+      </MockComboboxOption>
+      {children(option)}
+    </li>
+  );
+
+  return (
+    <div>
+      <input
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        value={query ?? displayValue(value) ?? ''}
+        onChange={handleQueryChange}
+        disabled={disabled}
+      />
+      <ul aria-label={`${ariaLabel} results`}>{shown.map(renderOption)}</ul>
+    </div>
+  );
+}
+
+export const comboboxResults = (label: string) =>
+  within(screen.getByLabelText(`${label} results`))
+    .queryAllByRole('button')
+    .map((option) => option.textContent);
