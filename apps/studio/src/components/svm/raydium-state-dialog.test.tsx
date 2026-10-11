@@ -2,6 +2,7 @@ import {
   createRaydiumAmmPoolStatusScenario,
   createRaydiumClmmFeeTierScenario,
   createRaydiumClmmPriceShockScenario,
+  createRaydiumCpmmPriceShockScenario,
   fetchRaydiumFeeTierOptions,
 } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -10,11 +11,13 @@ import RaydiumStateDialog from './raydium-state-dialog';
 
 const POOL = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
 const AMM_POOL = '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2';
+const CPMM_POOL = 'Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp';
 
 vi.mock('@/lib/scenarios-api', () => ({
   createRaydiumAmmPoolStatusScenario: vi.fn(),
   createRaydiumClmmFeeTierScenario: vi.fn(),
   createRaydiumClmmPriceShockScenario: vi.fn(),
+  createRaydiumCpmmPriceShockScenario: vi.fn(),
   fetchRaydiumFeeTierOptions: vi.fn(),
 }));
 
@@ -64,11 +67,31 @@ async function submit(id: string, createMock: unknown, ...args: string[]) {
 }
 
 describe('RaydiumStateDialog', () => {
-  it('creates a CLMM price shock with the pool prefilled', async () => {
+  it('creates a CLMM price shock from empty fields', async () => {
     vi.mocked(createRaydiumClmmPriceShockScenario).mockResolvedValue({ id: 'shock' });
     renderDialog();
+    expect(screen.getByLabelText('Raydium CLMM pool')).toHaveValue('');
+    expect(screen.getByLabelText('Price factor')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    change('Raydium CLMM pool', POOL);
     change('Price factor', '4');
     await submit('shock', vi.mocked(createRaydiumClmmPriceShockScenario), 'http://studio', 'http://rpc', POOL, '4');
+  });
+
+  it('creates a CPMM price shock', async () => {
+    vi.mocked(createRaydiumCpmmPriceShockScenario).mockResolvedValue({ id: 'cpmm' });
+    renderDialog();
+    change('State goal', 'cpmm-price-shock');
+    change('Raydium CPMM pool', CPMM_POOL);
+    change('Price factor', '0.9');
+    await submit(
+      'cpmm',
+      vi.mocked(createRaydiumCpmmPriceShockScenario),
+      'http://studio',
+      'http://rpc',
+      CPMM_POOL,
+      '0.9'
+    );
   });
 
   it('creates an AMM v4 pool status scenario', async () => {
@@ -92,6 +115,8 @@ describe('RaydiumStateDialog', () => {
   it('shows the backend error', async () => {
     vi.mocked(createRaydiumClmmPriceShockScenario).mockRejectedValue(new Error('tick array X does not exist'));
     renderDialog();
+    change('Raydium CLMM pool', POOL);
+    change('Price factor', '4');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     expect(await screen.findByText('tick array X does not exist')).toBeInTheDocument();
   });

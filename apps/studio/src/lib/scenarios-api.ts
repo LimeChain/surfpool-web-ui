@@ -3,6 +3,7 @@ import { getBase64Encoder, isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
+import { buildCpmmPriceShockScenario, cpmmVaultAmountsAfterShock, cpmmVaults } from './raydium-cpmm-price-shock';
 import {
   buildPriceShockScenario,
   checkTickArray,
@@ -352,6 +353,30 @@ export async function createRaydiumClmmPriceShockScenario(
   checkTickArray(plan, pathArrays[pathArrays.length - 1], pathAccounts[pathAccounts.length - 1]);
 
   return postRaydiumScenario(studioUrl, buildPriceShockScenario(plan, liquidityAfterShock(plan, pathAccounts)));
+}
+
+/** A CPMM pool prices off its two vaults, so the shock writes both token balances, not the pool. */
+export async function createRaydiumCpmmPriceShockScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<RaydiumScenarioResult> {
+  const normalizedPool = pool.trim();
+  const factor = Number(priceFactor.trim());
+  if (!priceFactor.trim() || Number.isNaN(factor)) {
+    throw new Error(`Invalid price factor "${priceFactor}": expected a decimal number such as 0.5`);
+  }
+  validatePriceFactor(factor);
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+
+  await raydiumTemplate(studioUrl, 'spl-token-account-balance');
+  const [poolAccount] = await fetchRaydiumAccounts(rpcUrl, [normalizedPool]);
+  if (!poolAccount) throw new Error(`Raydium CPMM pool ${normalizedPool} was not found`);
+  const vaults = cpmmVaults(normalizedPool, poolAccount);
+  const amounts = cpmmVaultAmountsAfterShock(poolAccount, await fetchRaydiumAccounts(rpcUrl, vaults), vaults, factor);
+
+  return postRaydiumScenario(studioUrl, buildCpmmPriceShockScenario(normalizedPool, factor, vaults, amounts));
 }
 
 /** AMM v4 pools are keypair accounts (no PDA to derive), so the pool address is the override's pubkey. */

@@ -4,6 +4,7 @@ import {
   createRaydiumAmmPoolStatusScenario,
   createRaydiumClmmFeeTierScenario,
   createRaydiumClmmPriceShockScenario,
+  createRaydiumCpmmPriceShockScenario,
   fetchRaydiumFeeTierOptions,
 } from '@/lib/scenarios-api';
 import {
@@ -20,14 +21,18 @@ import { type ChangeEvent, type ComponentProps, type FormEvent, useEffect, useId
 
 const STATE_MODES = [
   { value: 'clmm-price-shock', label: 'CLMM price shock' },
+  { value: 'cpmm-price-shock', label: 'CPMM price shock' },
   { value: 'amm-pool-status', label: 'AMM v4 pool status' },
   { value: 'clmm-fee-tier', label: 'CLMM fee tier' },
 ] as const;
 
 type RaydiumStateMode = (typeof STATE_MODES)[number]['value'];
 
-// A well-known CLMM pool, so the price-shock mode opens with a valid address already filled.
-const DEFAULT_CLMM_POOL = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
+const POOL_KINDS: Partial<Record<RaydiumStateMode, string>> = {
+  'clmm-price-shock': 'CLMM',
+  'cpmm-price-shock': 'CPMM',
+  'amm-pool-status': 'AMM v4',
+};
 
 // AmmStatus values from raydium-io/raydium-amm's state.rs; swaps run only at 1, 6 and 7.
 const AMM_POOL_STATUS_OPTIONS = [
@@ -74,8 +79,8 @@ function Field({ label, ...inputProps }: { label: string } & ComponentProps<type
 export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: RaydiumStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<RaydiumStateMode>('clmm-price-shock');
-  const [pool, setPool] = useState(DEFAULT_CLMM_POOL);
-  const [priceFactor, setPriceFactor] = useState('0.5');
+  const [pool, setPool] = useState('');
+  const [priceFactor, setPriceFactor] = useState('');
   const [status, setStatus] = useState('2');
   const [feeTierOptions, setFeeTierOptions] = useState<ListOption[]>([]);
   const [isLoadingFeeTiers, setIsLoadingFeeTiers] = useState(true);
@@ -85,8 +90,9 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const [isCreating, setIsCreating] = useState(false);
 
   // DERIVED STATE
-  const isPriceShock = mode === 'clmm-price-shock';
+  const isPriceShock = mode === 'clmm-price-shock' || mode === 'cpmm-price-shock';
   const isFeeTier = mode === 'clmm-fee-tier';
+  const poolKind = POOL_KINDS[mode];
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
   const hasFeeTierCatalog = feeTierOptions.length > 0;
@@ -107,7 +113,7 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
 
   const handleModeChange = (selectedMode: RaydiumStateMode) => {
     setMode(selectedMode);
-    setPool(selectedMode === 'clmm-price-shock' ? DEFAULT_CLMM_POOL : '');
+    setPool('');
     setError(null);
   };
 
@@ -130,11 +136,14 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
     setError(null);
 
     try {
-      const result = isPriceShock
-        ? await createRaydiumClmmPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
-        : mode === 'amm-pool-status'
-          ? await createRaydiumAmmPoolStatusScenario(studioUrl, pool, status)
-          : await createRaydiumClmmFeeTierScenario(studioUrl, configIndex, feeBps);
+      const result =
+        mode === 'clmm-price-shock'
+          ? await createRaydiumClmmPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
+          : mode === 'cpmm-price-shock'
+            ? await createRaydiumCpmmPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
+            : mode === 'amm-pool-status'
+              ? await createRaydiumAmmPoolStatusScenario(studioUrl, pool, status)
+              : await createRaydiumClmmFeeTierScenario(studioUrl, configIndex, feeBps);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Raydium state scenario');
@@ -181,11 +190,11 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
             </Listbox>
           </div>
 
-          {!isFeeTier && (
+          {!!poolKind && (
             <Field
-              label={isPriceShock ? 'CLMM pool' : 'AMM v4 pool'}
-              aria-label={isPriceShock ? 'Raydium CLMM pool' : 'Raydium AMM v4 pool'}
-              placeholder="Pool address"
+              label={`${poolKind} pool`}
+              aria-label={`Raydium ${poolKind} pool`}
+              placeholder={`Address of the Raydium ${poolKind} pool`}
               value={pool}
               onChange={handlePoolChange}
               disabled={isCreating}

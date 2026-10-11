@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getAddressDecoder } from '@solana/kit';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
@@ -8,6 +9,7 @@ import {
   createPumpSwapPriceShockScenario,
   createRaydiumAmmPoolStatusScenario,
   createRaydiumClmmPriceShockScenario,
+  createRaydiumCpmmPriceShockScenario,
   createScenarioPayload,
   flattenOverrideValues,
   parseScenariosJson,
@@ -204,6 +206,40 @@ describe('Raydium scenarios', () => {
       scenarioRelativeSlot: 1,
       account: { pubkey: pool },
     });
+  });
+
+  it('reads the CPMM pool and both vaults, then posts both vault balances', async () => {
+    const cpmmPool = 'Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp';
+    const vaults = [1, 2].map((byte) => getAddressDecoder().decode(new Uint8Array(32).fill(byte)));
+    const poolData = new Uint8Array(637);
+    poolData.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    poolData.set(new Uint8Array(32).fill(1), 72);
+    poolData.set(new Uint8Array(32).fill(2), 104);
+    const vault = (amount: number) => {
+      const data = new Uint8Array(165);
+      new DataView(data.buffer).setBigUint64(64, BigInt(amount), true);
+      return data;
+    };
+    const owned = (owner: string, ...data: Uint8Array[]) =>
+      jsonResponse({
+        result: { value: data.map((bytes) => ({ owner, data: [Buffer.from(bytes).toString('base64'), 'base64'] })) },
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'spl-token-account-balance', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(owned('CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C', poolData))
+      .mockResolvedValueOnce(owned('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', vault(1_000_000), vault(4_000_000)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'cpmm' }));
+
+    await expect(createRaydiumCpmmPriceShockScenario('http://studio', 'http://rpc', cpmmPool, '4')).resolves.toEqual({
+      id: 'cpmm',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual(vaults);
+    const posted = JSON.parse(fetchMock.mock.calls[3][1].body).overrides;
+    expect(posted.map((override: any) => [override.account.pubkey, override.values.amount])).toEqual([
+      [vaults[0], 500_000],
+      [vaults[1], 8_000_000],
+    ]);
   });
 
   it('posts an AMM v4 pool status override on the given pool', async () => {
