@@ -97,7 +97,9 @@ export function assertBinArray(plan: MeteoraPriceShockPlan, binArrayAccount: Met
       throw new Error(`${missing} The pool already sits on the edge of its current bin array [${start}, ${end}].`);
     }
     const safeFactor = ((1 + binStep / 10000) ** (bound - oldActiveId)).toFixed(6);
-    throw new Error(`${missing} The ${adjective} factor that stays on the pool's current bin array [${start}, ${end}] is ${safeFactor}.`);
+    throw new Error(
+      `${missing} The ${adjective} factor that stays on the pool's current bin array [${start}, ${end}] is ${safeFactor}.`
+    );
   }
   const { owner, data } = binArrayAccount;
   if (owner !== METEORA_DLMM_PROGRAM_ID) {
@@ -113,7 +115,9 @@ export function assertBinArray(plan: MeteoraPriceShockPlan, binArrayAccount: Met
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const binOffset = BINS_OFFSET + (newActiveId - index * BINS_PER_ARRAY) * BIN_LEN;
   const [amount, token, side] =
-    priceFactor > 1 ? [view.getBigUint64(binOffset, true), 'X', 'buy'] : [view.getBigUint64(binOffset + 8, true), 'Y', 'sell'];
+    priceFactor > 1
+      ? [view.getBigUint64(binOffset, true), 'X', 'buy']
+      : [view.getBigUint64(binOffset + 8, true), 'Y', 'sell'];
   if (amount === BigInt(0)) {
     throw new Error(`bin ${newActiveId} holds no token ${token}, so a ${side} could not fill at the shocked price.`);
   }

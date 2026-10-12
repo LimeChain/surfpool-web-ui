@@ -5,8 +5,8 @@ import {
   BIN_ARRAY_DISCRIMINATOR,
   BIN_ARRAY_LEN,
   BIN_STEP_OFFSET,
-  LB_PAIR_DISCRIMINATOR,
   buildMeteoraPriceShockScenario,
+  LB_PAIR_DISCRIMINATOR,
   LB_PAIR_LEN,
   METEORA_DLMM_PROGRAM_ID,
   planMeteoraPriceShock,
@@ -74,7 +74,9 @@ describe('meteora price shock', () => {
       const pool = poolAccount();
       new DataView(pool.data.buffer).setUint16(BIN_STEP_OFFSET, binStep, true);
       const message = await planMeteoraPriceShock(SOL_USDC, pool, 1.00001).catch((error: Error) => error.message);
-      const [, atLeast, atMost] = String(message).match(/at least (\d\.\d+) or at most (\d\.\d+)\./)!.map(Number);
+      const [, atLeast, atMost] = String(message)
+        .match(/at least (\d\.\d+) or at most (\d\.\d+)\./)!
+        .map(Number);
       expect((await planMeteoraPriceShock(SOL_USDC, pool, atLeast)).newActiveId).toBe(-2221);
       expect((await planMeteoraPriceShock(SOL_USDC, pool, atMost)).newActiveId).toBe(-2223);
     }
@@ -97,7 +99,9 @@ describe('meteora price shock', () => {
     const onEdge = poolAccount();
     new DataView(onEdge.data.buffer).setInt32(ACTIVE_ID_OFFSET, -2171, true);
     const pastEdge = await planMeteoraPriceShock(SOL_USDC, onEdge, 1.1);
-    expect(() => assertBinArray(pastEdge, null)).toThrow('already sits on the edge of its current bin array [-2240, -2171]');
+    expect(() => assertBinArray(pastEdge, null)).toThrow(
+      'already sits on the edge of its current bin array [-2240, -2171]'
+    );
   });
 
   it('rejects a destination bin that holds none of the token the shocked side takes', async () => {
