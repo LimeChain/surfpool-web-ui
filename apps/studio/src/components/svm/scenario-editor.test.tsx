@@ -568,3 +568,57 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
 });
+
+it('saves only the BisonFi fields the user edited, not every value decoded from the pool', async () => {
+  const template = {
+    ...bisonFiTemplate,
+    properties: [
+      { path: 'base_reserve', offset: 0, encoding: 'u64' },
+      { path: 'quote_reserve', offset: 8, encoding: 'u64' },
+    ],
+  };
+  const reserves = btoa(atob(rawU64(BigInt(7))) + atob(rawU64(BigInt(9))));
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () =>
+      url.endsWith('/templates') ? [template] : { result: { value: { data: [reserves, 'base64'] } } },
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="bisonfi-edited-only-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'bisonfi',
+              actionId: template.id,
+              protocol: 'BisonFi',
+              action: template.name,
+              account: { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' },
+              overrides: { base_reserve: '3' },
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  fireEvent.click(await screen.findByTitle(`BisonFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+  await screen.findByPlaceholderText('Enter base_reserve...');
+
+  // Switching markets loads both reserves from the pool; only base_reserve is then edited.
+  fireEvent.click(screen.getByRole('button', { name: 'deSECZ / USDC' }));
+  const quote = await screen.findByPlaceholderText('Enter quote_reserve...');
+  await waitFor(() => expect(quote).toHaveValue(9));
+  fireEvent.change(screen.getByPlaceholderText('Enter base_reserve...'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+
+  await waitFor(() => {
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    expect(JSON.parse(patch![1].body).overrides[0].values).toEqual({ base_reserve: 5 });
+  });
+});

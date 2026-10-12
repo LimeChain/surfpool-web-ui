@@ -29,7 +29,7 @@ import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
-import { decodeRawLayoutAccountData, getFieldsFromRawLayout } from './raw-layout-fields';
+import { decodeRawLayoutAccountData, editedRawLayoutOverrides, getFieldsFromRawLayout } from './raw-layout-fields';
 import {
   BISONFI_MARKET_OPTIONS,
   customValueOption,
@@ -868,7 +868,7 @@ export default function ScenarioEditor({
                 actionId: action.id,
                 protocol: protocol.title,
                 action: action.title,
-                overrides: accountData,
+                overrides: editedRawLayoutOverrides(action.template, accountData, modifiedFields),
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
                 account: resolveBisonFiAccount(action.id, action.template?.address, selectedAccountPubkey),
@@ -908,7 +908,7 @@ export default function ScenarioEditor({
                     actionId: action.id,
                     protocol: protocol.title,
                     action: action.title,
-                    overrides: accountData,
+                    overrides: editedRawLayoutOverrides(action.template, accountData, modifiedFields),
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
                     // A saved override keeps the plain address it was created for (such as a Phoenix

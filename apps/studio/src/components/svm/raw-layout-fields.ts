@@ -93,3 +93,27 @@ export function decodeRawLayoutAccountData(
 
   return decoded;
 }
+
+const isContainer = (value: unknown) =>
+  value !== null &&
+  typeof value === 'object' &&
+  (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype);
+
+export function editedRawLayoutOverrides(
+  template: RawLayoutTemplate | null | undefined,
+  values: Record<string, unknown>,
+  modifiedFields: Iterable<string>
+): Record<string, unknown> {
+  if (!template?.rawLayout) return values;
+
+  const edited: Record<string, unknown> = {};
+  for (const path of modifiedFields) {
+    let current: unknown = values;
+    for (const segment of path.split('.')) {
+      current =
+        current !== null && typeof current === 'object' ? (current as Record<string, unknown>)[segment] : undefined;
+    }
+    if (current !== undefined && !isContainer(current)) edited[path] = current;
+  }
+  return edited;
+}

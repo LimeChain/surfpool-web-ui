@@ -49,8 +49,7 @@ const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
   bisonfi: getBisonFiAiContext,
 };
 
-export const getProtocolAiContext = (protocolId: string): string | undefined =>
-  PROTOCOL_AI_CONTEXT[protocolId]?.();
+export const getProtocolAiContext = (protocolId: string): string | undefined => PROTOCOL_AI_CONTEXT[protocolId]?.();
 
 export const isBisonFiTemplate = (templateId: unknown) =>
   typeof templateId === 'string' && templateId.startsWith('bisonfi-');

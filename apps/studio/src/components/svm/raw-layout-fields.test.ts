@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeRawLayoutAccountData, getFieldsFromRawLayout } from './raw-layout-fields';
+import { decodeRawLayoutAccountData, editedRawLayoutOverrides, getFieldsFromRawLayout } from './raw-layout-fields';
 
 describe('getFieldsFromRawLayout', () => {
   it('returns no fields for an IDL-only template', () => {
@@ -83,5 +83,27 @@ describe('decodeRawLayoutAccountData', () => {
         bytes
       )
     ).toEqual({});
+  });
+});
+
+describe('editedRawLayoutOverrides', () => {
+  const decoded = {
+    base_reserve: '7',
+    quote_reserve: '9',
+    working_levels: { 0: { tick_offset: 2 }, 4: { tick_offset: 8 } },
+  };
+
+  it('keeps only the edited paths of a raw-layout template', () => {
+    expect(
+      editedRawLayoutOverrides({ rawLayout: true }, decoded, [
+        'base_reserve',
+        'working_levels',
+        'working_levels.4.tick_offset',
+      ])
+    ).toEqual({ base_reserve: '7', 'working_levels.4.tick_offset': 8 });
+  });
+
+  it('saves the values of an IDL template unchanged', () => {
+    expect(editedRawLayoutOverrides({ properties: [] }, decoded, ['base_reserve'])).toBe(decoded);
   });
 });
