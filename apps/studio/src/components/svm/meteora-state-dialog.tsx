@@ -1,6 +1,10 @@
 'use client';
 
-import { createMeteoraPairHaltScenario, createMeteoraPriceShockScenario } from '@/lib/scenarios-api';
+import {
+  createMeteoraDammV2PriceShockScenario,
+  createMeteoraPairHaltScenario,
+  createMeteoraPriceShockScenario,
+} from '@/lib/scenarios-api';
 import {
   Button,
   Dialog,
@@ -16,19 +20,18 @@ import { type ChangeEvent, type FormEvent, useState } from 'react';
 const MeteoraStateMode = {
   PriceShock: 'price-shock',
   PairHalt: 'pair-halt',
+  DammV2PriceShock: 'damm-v2-price-shock',
 } as const;
 
 type MeteoraStateMode = (typeof MeteoraStateMode)[keyof typeof MeteoraStateMode];
 
 const MeteoraStateModeLabel: Record<MeteoraStateMode, string> = {
-  [MeteoraStateMode.PriceShock]: 'Price shock',
-  [MeteoraStateMode.PairHalt]: 'Pair halt',
+  [MeteoraStateMode.PriceShock]: 'DLMM price shock',
+  [MeteoraStateMode.PairHalt]: 'DLMM pair halt',
+  [MeteoraStateMode.DammV2PriceShock]: 'DAMM v2 price shock',
 };
 
 const meteoraStateModes = Object.values(MeteoraStateMode);
-
-// The SOL/USDC pair, so the dialog opens with a valid address already filled.
-const DEFAULT_DLMM_POOL = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
 
 interface MeteoraStateDialogProps {
   open: boolean;
@@ -47,15 +50,18 @@ const renderStateModeOption = (stateMode: MeteoraStateMode) => (
 export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: MeteoraStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<MeteoraStateMode>(MeteoraStateMode.PriceShock);
-  const [pool, setPool] = useState(DEFAULT_DLMM_POOL);
-  const [priceFactor, setPriceFactor] = useState('0.5');
+  const [pool, setPool] = useState('');
+  const [priceFactor, setPriceFactor] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // DERIVED STATE
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
-  const canCreate = !isCreating && !!pool.trim() && (mode === MeteoraStateMode.PriceShock ? hasValidPriceFactor : true);
+  const isDammV2 = mode === MeteoraStateMode.DammV2PriceShock;
+  const isPriceShock = mode !== MeteoraStateMode.PairHalt;
+  const poolKind = isDammV2 ? 'DAMM v2 pool' : 'DLMM pair';
+  const canCreate = !isCreating && !!pool.trim() && (isPriceShock ? hasValidPriceFactor : true);
 
   // HANDLERS
   const handleClose = () => {
@@ -66,7 +72,7 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
 
   const handleModeChange = (selectedMode: MeteoraStateMode) => {
     setMode(selectedMode);
-    setPool(selectedMode === MeteoraStateMode.PriceShock ? DEFAULT_DLMM_POOL : '');
+    setPool('');
     setError(null);
   };
 
@@ -88,7 +94,9 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
       const result =
         mode === MeteoraStateMode.PriceShock
           ? await createMeteoraPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
-          : await createMeteoraPairHaltScenario(studioUrl, pool);
+          : isDammV2
+            ? await createMeteoraDammV2PriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
+            : await createMeteoraPairHaltScenario(studioUrl, pool);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Meteora state scenario');
@@ -102,8 +110,8 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
       <form onSubmit={handleSubmit}>
         <DialogTitle>Create Meteora state scenario</DialogTitle>
         <DialogDescription>
-          Prepare Meteora DLMM pair state for bots to trade, arbitrage, or route around. Surfpool does not execute their
-          transactions.
+          Prepare Meteora DLMM pair or DAMM v2 pool state for bots to trade, arbitrage, or route around. Surfpool does
+          not execute their transactions.
         </DialogDescription>
         <div className="mt-5 space-y-4">
           <div>
@@ -115,19 +123,19 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
 
           <div>
             <label htmlFor="meteora-pool" className="mb-1.5 block text-sm font-medium text-zinc-300">
-              DLMM pair
+              {poolKind}
             </label>
             <Input
               id="meteora-pool"
-              aria-label="Meteora DLMM pair"
-              placeholder="LbPair address"
+              aria-label={`Meteora ${poolKind}`}
+              placeholder={`Address of the Meteora ${poolKind}`}
               value={pool}
               onChange={handlePoolChange}
               disabled={isCreating}
             />
           </div>
 
-          {mode === MeteoraStateMode.PriceShock && (
+          {isPriceShock && (
             <div>
               <label htmlFor="meteora-price-factor" className="mb-1.5 block text-sm font-medium text-zinc-300">
                 Price factor
@@ -140,9 +148,11 @@ export default function MeteoraStateDialog({ open, studioUrl, rpcUrl, onClose, o
                 onChange={handlePriceFactorChange}
                 disabled={isCreating}
               />
-              <p className="mt-1.5 text-sm text-zinc-400">
-                Only one side sees the shock: buys of the base token after a rise, sells after a drop.
-              </p>
+              {!isDammV2 && (
+                <p className="mt-1.5 text-sm text-zinc-400">
+                  Only one side sees the shock: buys of the base token after a rise, sells after a drop.
+                </p>
+              )}
             </div>
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}

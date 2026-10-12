@@ -3,6 +3,11 @@ import { getBase64Encoder } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  buildDammV2PriceShockScenario,
+  METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID,
+  planDammV2PriceShock,
+} from './meteora-damm-v2-price-shock';
+import {
   assertBinArray,
   buildMeteoraPriceShockScenario,
   METEORA_POOL_STATE_TEMPLATE_ID,
@@ -467,6 +472,25 @@ export async function createMeteoraPriceShockScenario(
 
   const template = await meteoraTemplate(studioUrl, METEORA_POOL_STATE_TEMPLATE_ID);
   return postMeteoraScenario(studioUrl, buildMeteoraPriceShockScenario(plan, template.id));
+}
+
+/** A DAMM v2 shock writes the price and both tracked reserves, which the program pays from. */
+export async function createMeteoraDammV2PriceShockScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<{ id: string }> {
+  const normalizedPool = pool.trim();
+  const factor = Number(priceFactor.trim());
+  validatePriceFactor(factor);
+
+  const poolAccount = await fetchRpcAccount(rpcUrl, normalizedPool);
+  if (!poolAccount) throw new Error(`Meteora DAMM v2 pool ${normalizedPool} was not found`);
+  const plan = planDammV2PriceShock(normalizedPool, poolAccount, factor);
+
+  await meteoraTemplate(studioUrl, METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID);
+  return postMeteoraScenario(studioUrl, buildDammV2PriceShockScenario(plan));
 }
 
 // DLMM pools are keypair accounts with no PDA to derive, so the given address is the override's pubkey.

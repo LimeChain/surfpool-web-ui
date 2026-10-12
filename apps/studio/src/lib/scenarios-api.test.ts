@@ -16,6 +16,7 @@ import {
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
+  createMeteoraDammV2PriceShockScenario,
   createMeteoraPairHaltScenario,
   createMeteoraPriceShockScenario,
   createPumpGraduationScenario,
@@ -362,6 +363,44 @@ describe('Meteora scenarios', () => {
         },
       ],
       tags: ['meteora', 'dlmm', 'price-shock'],
+    });
+  });
+
+  it('reads a DAMM v2 pool, then posts its price and both tracked reserves', async () => {
+    const dammPool = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
+    const data = new Uint8Array(1112);
+    data.set([241, 154, 109, 4, 17, 177, 109, 188]);
+    const view = new DataView(data.buffer);
+    const setU128 = (offset: number, value: string) => {
+      view.setBigUint64(offset, BigInt(value) & ((BigInt(1) << BigInt(64)) - BigInt(1)), true);
+      view.setBigUint64(offset + 8, BigInt(value) >> BigInt(64), true);
+    };
+    setU128(360, '127179428291588464169616526569305');
+    setU128(424, '4880549731789001291');
+    setU128(440, '12236185739241331242');
+    setU128(456, '6258945984289128889');
+    const value = {
+      owner: 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
+      data: [Buffer.from(data).toString('base64'), 'base64'],
+    };
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } }))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'meteora-damm-v2-pool-state', address: { pubkey: '' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'damm-scenario' }));
+
+    await expect(createMeteoraDammV2PriceShockScenario('http://studio', 'http://rpc', dammPool, '1.1')).resolves.toEqual({
+      id: 'damm-scenario',
+    });
+    expect(postedBody(2).overrides[0]).toMatchObject({
+      templateId: 'meteora-damm-v2-pool-state',
+      values: {
+        sqrt_price: '6564437928541476710',
+        token_a_amount: 8980286113728,
+        token_b_amount: 629347738785,
+      },
+      scenarioRelativeSlot: 1,
+      account: { pubkey: dammPool },
     });
   });
 
