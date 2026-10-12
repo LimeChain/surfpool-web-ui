@@ -95,6 +95,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
+    expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -146,6 +147,16 @@ describe('AIHeader', () => {
     expect(prompt).toContain('spend no more than 25 USDC');
     expect(prompt).toContain('continue selling SOL at its normal 0.1% spread');
     expect(prompt).toContain('To achieve this');
+  });
+
+  it('loads a Phoenix price shock prompt for a market the user pastes', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Phoenix Price Shock'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('<PASTE_MARKET_SYMBOL_OR_ADDRESS>');
+    expect(prompt).toContain('10%');
   });
 
   it('renders the model selector button', () => {
