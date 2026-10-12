@@ -25,9 +25,6 @@ const MODE_OPTIONS = [
 
 type PancakeswapStateMode = (typeof MODE_OPTIONS)[number]['value'];
 
-// The SOL-paired CLMM pool, so the price-shock mode opens with a valid address already filled.
-const DEFAULT_CLMM_POOL = 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ';
-
 const LABEL_CLASS = 'mb-1.5 block text-sm font-medium text-zinc-300';
 
 interface PancakeswapStateDialogProps {
@@ -72,8 +69,8 @@ export default function PancakeswapStateDialog({
 }: PancakeswapStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<PancakeswapStateMode>('price-shock');
-  const [pool, setPool] = useState(DEFAULT_CLMM_POOL);
-  const [priceFactor, setPriceFactor] = useState('0.5');
+  const [pool, setPool] = useState('');
+  const [priceFactor, setPriceFactor] = useState('');
   const [feeTierOptions, setFeeTierOptions] = useState<PancakeswapFeeTierOption[] | null>(null);
   const [configIndex, setConfigIndex] = useState('');
   const [feeBps, setFeeBps] = useState('');
@@ -175,7 +172,7 @@ export default function PancakeswapStateDialog({
                 id="pancakeswap-clmm-pool"
                 label="CLMM pool"
                 aria-label="PancakeSwap CLMM pool"
-                placeholder="Pool address"
+                placeholder="Address of the PancakeSwap CLMM pool"
                 value={pool}
                 onChange={handlePoolChange}
                 disabled={isCreating}

@@ -50,10 +50,16 @@ afterEach(() => {
 });
 
 describe('PancakeswapStateDialog', () => {
-  it('creates a CLMM price shock scenario with the pool prefilled', async () => {
+  it('creates a CLMM price shock scenario from empty fields', async () => {
     vi.mocked(createPancakeswapPriceShockScenario).mockResolvedValue({ id: 'price-shock-scenario' });
     renderDialog();
 
+    expect(screen.getByLabelText('PancakeSwap CLMM pool')).toHaveValue('');
+    expect(screen.getByLabelText('Price factor')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
     fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
@@ -84,6 +90,10 @@ describe('PancakeswapStateDialog', () => {
     vi.mocked(createPancakeswapPriceShockScenario).mockRejectedValue(new Error('tick array does not exist'));
     renderDialog();
 
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
+    fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     expect(await screen.findByText('tick array does not exist')).toBeInTheDocument();
