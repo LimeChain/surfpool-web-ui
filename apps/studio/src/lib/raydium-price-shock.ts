@@ -111,8 +111,14 @@ export function planPriceShock(pool: string, { owner, data }: RaydiumClmmAccount
  * price rises and subtracts it when it falls; writing only the price would keep the old range's
  * liquidity. `pathAccounts` follows `plan.pathStartIndexes`; a missing array holds no initialized ticks.
  */
-export function liquidityAfterShock(plan: RaydiumClmmPriceShockPlan, pathAccounts: (RaydiumClmmAccount | null)[]): bigint {
-  const [low, high] = [Math.min(plan.oldTickCurrent, plan.newTickCurrent), Math.max(plan.oldTickCurrent, plan.newTickCurrent)];
+export function liquidityAfterShock(
+  plan: RaydiumClmmPriceShockPlan,
+  pathAccounts: (RaydiumClmmAccount | null)[]
+): bigint {
+  const [low, high] = [
+    Math.min(plan.oldTickCurrent, plan.newTickCurrent),
+    Math.max(plan.oldTickCurrent, plan.newTickCurrent),
+  ];
   let crossed = BigInt(0);
   plan.pathStartIndexes.forEach((startIndex, index) => {
     const account = pathAccounts[index];
@@ -127,9 +133,12 @@ export function liquidityAfterShock(plan: RaydiumClmmPriceShockPlan, pathAccount
       crossed += (view.getBigInt64(offset + 12, true) << BigInt(64)) | view.getBigUint64(offset + 4, true);
     }
   });
-  const liquidity = plan.newTickCurrent > plan.oldTickCurrent ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
+  const liquidity =
+    plan.newTickCurrent > plan.oldTickCurrent ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
   if (liquidity < BigInt(0)) {
-    throw new Error(`the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`);
+    throw new Error(
+      `the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`
+    );
   }
   return liquidity;
 }
@@ -143,7 +152,9 @@ export function checkTickArray(plan: RaydiumClmmPriceShockPlan, tickArray: strin
     const edgeTick = isRaise ? currentEnd : currentStart;
     const missing = `tick array ${tickArray} (start index ${plan.tickArrayStartIndex}) does not exist, so a swap could not resume from tick ${plan.newTickCurrent}.`;
     if (edgeTick === plan.oldTickCurrent) {
-      throw new Error(`${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`);
+      throw new Error(
+        `${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`
+      );
     }
     // Rounded toward the array's interior, so the suggestion itself lands inside it.
     const exact = Math.pow(TICK_BASE, edgeTick - plan.oldTickCurrent) * 1e6;
