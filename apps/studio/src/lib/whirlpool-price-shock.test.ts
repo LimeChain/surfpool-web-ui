@@ -93,7 +93,9 @@ describe('Whirlpool price shock', () => {
     expect(followUp.tickArrayStartIndex).toBe(0);
 
     const halved = await planWhirlpoolPriceShock(POOL, poolAccount, 0.5);
-    expect(() => assertTickArrayExists(halved, null)).toThrow('already sits on the edge of its current tick array [0, 87]');
+    expect(() => assertTickArrayExists(halved, null)).toThrow(
+      'already sits on the edge of its current tick array [0, 87]'
+    );
   });
 
   it('carries the liquidity of every initialized tick the move crosses', async () => {

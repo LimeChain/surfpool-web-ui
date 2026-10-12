@@ -464,7 +464,9 @@ async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promis
     };
     if (payload.error) throw new Error(`Failed to read accounts from Surfnet: ${payload.error.message ?? 'RPC error'}`);
     for (const value of payload.result?.value ?? []) {
-      accounts.push(value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null);
+      accounts.push(
+        value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null
+      );
     }
   }
   return accounts;

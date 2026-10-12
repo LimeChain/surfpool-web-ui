@@ -134,9 +134,12 @@ export function liquidityAfterShock(plan: WhirlpoolPriceShockPlan, pathAccounts:
       crossed += view.getBigUint64(offset + 1, true) | (view.getBigInt64(offset + 9, true) << BigInt(64));
     }
   });
-  const liquidity = plan.newTickCurrentIndex > plan.oldTickCurrentIndex ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
+  const liquidity =
+    plan.newTickCurrentIndex > plan.oldTickCurrentIndex ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
   if (liquidity < BigInt(0)) {
-    throw new Error(`the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`);
+    throw new Error(
+      `the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`
+    );
   }
   return liquidity;
 }
@@ -150,7 +153,9 @@ export function assertTickArrayExists(plan: WhirlpoolPriceShockPlan, tickArray: 
     const edgeTick = isRaise ? currentEnd : currentStart;
     const missing = `tick array ${plan.tickArray} (start index ${plan.tickArrayStartIndex}) does not exist, so a swap could not resume from tick ${plan.newTickCurrentIndex}.`;
     if (edgeTick === plan.oldTickCurrentIndex) {
-      throw new Error(`${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`);
+      throw new Error(
+        `${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`
+      );
     }
     // Rounded toward the array's interior, so the suggestion itself lands inside it.
     const exact = TICK_BASE ** (edgeTick - plan.oldTickCurrentIndex) * 1e6;
@@ -167,6 +172,8 @@ function assertTickArrayAccount(address: string, tickArray: WhirlpoolAccount): v
     throw new Error(`tick array ${address} is owned by ${tickArray.owner}, not the Whirlpool program`);
   }
   if (tickArray.data.length !== TICK_ARRAY_LEN) {
-    throw new Error(`tick array ${address} is ${tickArray.data.length} bytes, not the ${TICK_ARRAY_LEN} bytes of a TickArray`);
+    throw new Error(
+      `tick array ${address} is ${tickArray.data.length} bytes, not the ${TICK_ARRAY_LEN} bytes of a TickArray`
+    );
   }
 }
