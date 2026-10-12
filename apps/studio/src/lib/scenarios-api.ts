@@ -463,7 +463,9 @@ async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise
     };
     if (result.error) throw new Error(`Failed to read accounts from the surfnet: ${result.error.message}`);
     for (const value of result.result?.value ?? []) {
-      found.push(value ? { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) } : null);
+      found.push(
+        value ? { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) } : null
+      );
     }
   }
   return found;

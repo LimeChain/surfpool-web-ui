@@ -90,7 +90,9 @@ describe('PancakeSwap CLMM price shock', () => {
     // Up to tick 30: crosses ticks 5 and 20 (added), not 45 which is past the destination.
     const up = await planPancakeswapPriceShock(POOL, poolAccount(0), 1.0001 ** 30.5);
     expect(up.newTickCurrent).toBe(30);
-    expect(liquidityAfterShock(up, [tickArray(0, { 5: BigInt(200), 20: BigInt(-300), 45: BigInt(7) })])).toBe(BigInt(900));
+    expect(liquidityAfterShock(up, [tickArray(0, { 5: BigInt(200), 20: BigInt(-300), 45: BigInt(7) })])).toBe(
+      BigInt(900)
+    );
 
     // Down to tick -70: crosses -3 and -60 (subtracted), not -70 itself.
     const down = await planPancakeswapPriceShock(POOL, poolAccount(0), 1.0001 ** -69.5);

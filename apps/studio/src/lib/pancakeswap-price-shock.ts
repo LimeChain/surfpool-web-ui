@@ -120,7 +120,10 @@ type PancakeswapPriceShockPlan = Awaited<ReturnType<typeof planPancakeswapPriceS
  * liquidity. `pathAccounts` follows `plan.pathTickArrays`; a missing array holds no initialized ticks.
  */
 export function liquidityAfterShock(plan: PancakeswapPriceShockPlan, pathAccounts: (PoolAccount | null)[]): bigint {
-  const [low, high] = [Math.min(plan.oldTickCurrent, plan.newTickCurrent), Math.max(plan.oldTickCurrent, plan.newTickCurrent)];
+  const [low, high] = [
+    Math.min(plan.oldTickCurrent, plan.newTickCurrent),
+    Math.max(plan.oldTickCurrent, plan.newTickCurrent),
+  ];
   let crossed = BigInt(0);
   plan.pathTickArrays.forEach(({ address: tickArray }, index) => {
     const account = pathAccounts[index];
@@ -135,14 +138,20 @@ export function liquidityAfterShock(plan: PancakeswapPriceShockPlan, pathAccount
       crossed += view.getBigUint64(offset + 4, true) | (view.getBigInt64(offset + 12, true) << BigInt(64));
     }
   });
-  const liquidity = plan.newTickCurrent > plan.oldTickCurrent ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
+  const liquidity =
+    plan.newTickCurrent > plan.oldTickCurrent ? plan.oldLiquidity + crossed : plan.oldLiquidity - crossed;
   if (liquidity < BigInt(0)) {
-    throw new Error(`the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`);
+    throw new Error(
+      `the crossed ticks leave a negative active liquidity (${liquidity}); the pool's tick arrays are inconsistent`
+    );
   }
   return liquidity;
 }
 
-export function buildPancakeswapPriceShockScenario(plan: PancakeswapPriceShockPlan, pathAccounts: (PoolAccount | null)[]) {
+export function buildPancakeswapPriceShockScenario(
+  plan: PancakeswapPriceShockPlan,
+  pathAccounts: (PoolAccount | null)[]
+) {
   const tickArray = pathAccounts[pathAccounts.length - 1];
   if (!tickArray) {
     const { oldTickCurrent, tickSpacing, priceFactor } = plan;
