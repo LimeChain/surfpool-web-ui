@@ -10,6 +10,7 @@ describe('ScenarioPresets', () => {
       <ScenarioPresets
         onPumpGraduationSelect={onPumpGraduationSelect}
         onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={vi.fn()}
         onMeteoraStateSelect={vi.fn()}
       />
     );
@@ -25,12 +26,29 @@ describe('ScenarioPresets', () => {
       <ScenarioPresets
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={onPumpSwapPriceShockSelect}
+        onPhoenixStateSelect={vi.fn()}
         onMeteoraStateSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /PumpSwap price shock/i }));
 
     expect(onPumpSwapPriceShockSelect).toHaveBeenCalledOnce();
+  });
+
+  it('opens the Phoenix state preset', () => {
+    const onPhoenixStateSelect = vi.fn();
+
+    render(
+      <ScenarioPresets
+        onPumpGraduationSelect={vi.fn()}
+        onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={onPhoenixStateSelect}
+        onMeteoraStateSelect={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Phoenix state/i }));
+
+    expect(onPhoenixStateSelect).toHaveBeenCalledOnce();
   });
 
   it('opens the Meteora state preset', () => {
@@ -40,6 +58,7 @@ describe('ScenarioPresets', () => {
       <ScenarioPresets
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={vi.fn()}
         onMeteoraStateSelect={onMeteoraStateSelect}
       />
     );

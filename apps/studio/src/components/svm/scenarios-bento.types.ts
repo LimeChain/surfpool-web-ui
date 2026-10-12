@@ -90,6 +90,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['pumpswap'],
   },
   {
+    label: 'Phoenix Price Shock',
+    prompt:
+      'Create an editable Phoenix price shock that drops the mark price of market <PASTE_MARKET_SYMBOL_OR_ADDRESS> by 10% from its current mark. Prepare state only; do not submit trades or liquidations.',
+    icon: '📉',
+    protocols: ['phoenix-eternal'],
+  },
+  {
     label: 'Meteora Pair Halt',
     prompt:
       'Disable the Meteora DLMM SOL/USDC pair BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y so it rejects new swaps.',
