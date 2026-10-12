@@ -90,6 +90,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['pumpswap'],
   },
   {
+    label: 'Phoenix Price Shock',
+    prompt:
+      'Create an editable Phoenix price shock that drops the mark price of market <PASTE_MARKET_SYMBOL_OR_ADDRESS> by 10% from its current mark. Prepare state only; do not submit trades or liquidations.',
+    icon: '📉',
+    protocols: ['phoenix-eternal'],
+  },
+  {
     label: 'Whirlpool Fee Spike',
     prompt:
       'Raise the swap fee of the deepest Whirlpool SOL/USDC pool to 1%, making every swap through it more expensive.',
