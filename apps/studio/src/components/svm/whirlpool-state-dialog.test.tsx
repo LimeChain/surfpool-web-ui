@@ -68,7 +68,35 @@ describe('WhirlpoolStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fee-rate-scenario'));
-    expect(createFeeRateMock).toHaveBeenCalledWith('http://studio', POOL, '25');
+    expect(createFeeRateMock).toHaveBeenCalledWith('http://studio', 'http://rpc', POOL, '25');
+  });
+
+  it('accepts a fee up to and including the 600 bps program maximum', () => {
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'fee-rate' } });
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL } });
+    expect(screen.getByLabelText('New fee in basis points')).toHaveAttribute(
+      'placeholder',
+      '25 = 0.25%, up to 600 (6%)'
+    );
+    fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '600' } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '601' } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+  });
+
+  it('shows why a fee rate was refused for an account that is not a Whirlpool pool', async () => {
+    createFeeRateMock.mockRejectedValue(new Error(`${POOL} is owned by Foreign, not the Whirlpool program`));
+    const onCreated = renderDialog();
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'fee-rate' } });
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL } });
+    fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    expect(await screen.findByText(`${POOL} is owned by Foreign, not the Whirlpool program`)).toBeInTheDocument();
+    expect(onCreated).not.toHaveBeenCalled();
   });
 
   it('shows the error the scenario request failed with', async () => {

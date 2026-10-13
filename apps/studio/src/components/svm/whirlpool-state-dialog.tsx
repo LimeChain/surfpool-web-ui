@@ -67,7 +67,7 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
   // DERIVED STATE
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
-  const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) < MAX_FEE_BPS;
+  const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) <= MAX_FEE_BPS;
   const isPriceShock = mode === WhirlpoolStateMode.PriceShock;
   const canCreate = !isCreating && !!pool.trim() && (isPriceShock ? hasValidPriceFactor : hasValidFeeBps);
 
@@ -100,7 +100,7 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
     try {
       const result = isPriceShock
         ? await createWhirlpoolPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
-        : await createWhirlpoolFeeRateScenario(studioUrl, pool, feeBps);
+        : await createWhirlpoolFeeRateScenario(studioUrl, rpcUrl, pool, feeBps);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Whirlpool state scenario');
@@ -146,7 +146,7 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
               id="whirlpool-fee-bps"
               label="New fee (bps)"
               ariaLabel="New fee in basis points"
-              placeholder="25 = 0.25%, must be under 600"
+              placeholder="25 = 0.25%, up to 600 (6%)"
               value={feeBps}
               onChange={handleFeeBpsChange}
               disabled={isCreating}

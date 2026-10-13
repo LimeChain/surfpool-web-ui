@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertTickArrayExists,
+  DYNAMIC_TICK_ARRAY_DISCRIMINATOR,
+  DYNAMIC_TICK_BITMAP_OFFSET,
+  DYNAMIC_TICKS_OFFSET,
   LIQUIDITY_OFFSET,
   liquidityAfterShock,
   planWhirlpoolPriceShock,
   POOL_STATE_LEN,
   SQRT_PRICE_OFFSET,
+  TICK_ARRAY_DISCRIMINATOR,
   TICK_ARRAY_LEN,
   TICK_CURRENT_INDEX_OFFSET,
   TICK_LEN,
@@ -25,15 +29,43 @@ new DataView(data.buffer).setBigUint64(SQRT_PRICE_OFFSET + 8, BigInt(1), true);
 new DataView(data.buffer).setBigUint64(LIQUIDITY_OFFSET, BigInt(1000), true);
 const poolAccount = { owner: WHIRLPOOL_PROGRAM_ID, data };
 
+function writeLiquidityNet(view: DataView, offset: number, liquidityNet: bigint) {
+  view.setBigInt64(offset, BigInt.asIntN(64, liquidityNet), true);
+  view.setBigInt64(offset + 8, liquidityNet < BigInt(0) ? BigInt(-1) : BigInt(0), true);
+}
+
 function tickArray(ticks: Record<number, bigint>) {
   const bytes = new Uint8Array(TICK_ARRAY_LEN);
   const view = new DataView(bytes.buffer);
+  bytes.set(TICK_ARRAY_DISCRIMINATOR);
   for (const [slot, liquidityNet] of Object.entries(ticks)) {
     const offset = TICKS_OFFSET + Number(slot) * TICK_LEN;
     bytes[offset] = 1;
-    view.setBigInt64(offset + 1, BigInt.asIntN(64, liquidityNet), true);
-    view.setBigInt64(offset + 9, liquidityNet < BigInt(0) ? BigInt(-1) : BigInt(0), true);
+    writeLiquidityNet(view, offset + 1, liquidityNet);
   }
+  return { owner: WHIRLPOOL_PROGRAM_ID, data: bytes };
+}
+
+// An uninitialized tick is one tag byte; an initialized one is the tag plus 112 bytes of tick data.
+function dynamicTickArray(ticks: Record<number, bigint>) {
+  const bytes = new Uint8Array(DYNAMIC_TICKS_OFFSET + 88 + Object.keys(ticks).length * (TICK_LEN - 1));
+  const view = new DataView(bytes.buffer);
+  bytes.set(DYNAMIC_TICK_ARRAY_DISCRIMINATOR);
+  let bitmap = BigInt(0);
+  let offset = DYNAMIC_TICKS_OFFSET;
+  for (let slot = 0; slot < 88; slot++) {
+    const liquidityNet = ticks[slot];
+    if (liquidityNet === undefined) {
+      offset += 1;
+      continue;
+    }
+    bitmap |= BigInt(1) << BigInt(slot);
+    bytes[offset] = 1;
+    writeLiquidityNet(view, offset + 1, liquidityNet);
+    offset += TICK_LEN;
+  }
+  view.setBigUint64(DYNAMIC_TICK_BITMAP_OFFSET, BigInt.asUintN(64, bitmap), true);
+  view.setBigUint64(DYNAMIC_TICK_BITMAP_OFFSET + 8, bitmap >> BigInt(64), true);
   return { owner: WHIRLPOOL_PROGRAM_ID, data: bytes };
 }
 
@@ -113,6 +145,38 @@ describe('Whirlpool price shock', () => {
 
     // A missing array on the path holds no initialized ticks.
     expect(liquidityAfterShock(down, [null, lower, null])).toBe(BigInt(650));
+  });
+
+  it('reads dynamic tick arrays, alone or mixed with fixed ones, like fixed ones', async () => {
+    const up = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** 50.5);
+    expect(liquidityAfterShock(up, [dynamicTickArray({ 5: BigInt(200), 40: BigInt(-300), 60: BigInt(7) })])).toBe(
+      BigInt(900)
+    );
+
+    // Slot 85 sits in the bitmap's upper 64 bits.
+    const down = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** -99.5);
+    const lower = dynamicTickArray({ 85: BigInt(-50), 0: BigInt(400) });
+    expect(liquidityAfterShock(down, [tickArray({}), lower, dynamicTickArray({ 76: BigInt(1) })])).toBe(BigInt(650));
+    expect(() => assertTickArrayExists(down, dynamicTickArray({}))).not.toThrow();
+  });
+
+  it('rejects a dynamic tick array whose tags disagree with its bitmap', async () => {
+    const up = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** 50.5);
+    const array = dynamicTickArray({ 5: BigInt(200) });
+    array.data[DYNAMIC_TICKS_OFFSET + 5] = 0;
+
+    expect(() => liquidityAfterShock(up, [array])).toThrow(
+      `dynamic tick array ${up.tickArray} has a tick tag at byte ${DYNAMIC_TICKS_OFFSET + 5} that disagrees with its bitmap`
+    );
+  });
+
+  it('rejects a tick array of an unknown layout', async () => {
+    const up = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** 50.5);
+    const unknown = { owner: WHIRLPOOL_PROGRAM_ID, data: new Uint8Array(TICK_ARRAY_LEN) };
+    const message = `tick array ${up.tickArray} (${TICK_ARRAY_LEN} bytes) is neither a ${TICK_ARRAY_LEN}-byte TickArray nor a DynamicTickArray`;
+
+    expect(() => liquidityAfterShock(up, [unknown])).toThrow(message);
+    expect(() => assertTickArrayExists(up, unknown)).toThrow(message);
   });
 
   it('rejects a crossing that would leave negative liquidity', async () => {

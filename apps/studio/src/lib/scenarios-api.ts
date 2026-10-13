@@ -6,6 +6,7 @@ import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 import {
   assertTickArrayExists,
+  assertWhirlpoolAccount,
   liquidityAfterShock,
   planWhirlpoolPriceShock,
   type WhirlpoolAccount,
@@ -447,6 +448,7 @@ async function postWhirlpoolScenario(
 async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promise<(WhirlpoolAccount | null)[]> {
   const accounts: (WhirlpoolAccount | null)[] = [];
   for (let start = 0; start < pubkeys.length; start += 100) {
+    const batch = pubkeys.slice(start, start + 100);
     const response = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -454,7 +456,7 @@ async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promis
         jsonrpc: '2.0',
         id: 1,
         method: 'getMultipleAccounts',
-        params: [pubkeys.slice(start, start + 100), { encoding: 'base64', commitment: 'confirmed' }],
+        params: [batch, { encoding: 'base64', commitment: 'confirmed' }],
       }),
     });
     if (!response.ok) throw new Error(`Failed to read accounts from Surfnet: ${response.status}`);
@@ -463,7 +465,14 @@ async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promis
       error?: { message?: string };
     };
     if (payload.error) throw new Error(`Failed to read accounts from Surfnet: ${payload.error.message ?? 'RPC error'}`);
-    for (const value of payload.result?.value ?? []) {
+    const values = payload.result?.value;
+    // Callers match accounts to addresses by position, so a short or long answer would misalign every one.
+    if (!Array.isArray(values) || values.length !== batch.length) {
+      throw new Error(
+        `Failed to read accounts from Surfnet: expected ${batch.length} accounts, got ${Array.isArray(values) ? values.length : 'none'}`
+      );
+    }
+    for (const value of values) {
       accounts.push(
         value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null
       );
@@ -496,7 +505,7 @@ export async function createWhirlpoolPriceShockScenario(
 
   return postWhirlpoolScenario(
     studioUrl,
-    'Whirlpool Price Shock',
+    `Whirlpool Price Shock (${normalizedPool.slice(0, 6)}…)`,
     `Move Whirlpool pool ${normalizedPool} to ${factor}x its price, onto tick ${plan.newTickCurrentIndex} of the tick array starting at ${plan.tickArrayStartIndex}.`,
     ['whirlpool', 'orca', 'price-shock'],
     {
@@ -516,11 +525,18 @@ export async function createWhirlpoolPriceShockScenario(
 // fee_rate is hundredths of a basis point, so the bps the dialog collects is multiplied by 100.
 export async function createWhirlpoolFeeRateScenario(
   studioUrl: string,
+  rpcUrl: string,
   pool: string,
   feeBps: string
 ): Promise<WhirlpoolScenarioResult> {
-  const template = await whirlpoolPoolTemplate(studioUrl);
   const normalizedPool = pool.trim();
+  const [template, [poolAccount]] = await Promise.all([
+    whirlpoolPoolTemplate(studioUrl),
+    fetchWhirlpoolAccounts(rpcUrl, [normalizedPool]),
+  ]);
+  if (!poolAccount) throw new Error(`Whirlpool pool ${normalizedPool} was not found`);
+  assertWhirlpoolAccount(normalizedPool, poolAccount);
+
   return postWhirlpoolScenario(
     studioUrl,
     `Whirlpool Fee Rate (${normalizedPool.slice(0, 6)}…)`,
