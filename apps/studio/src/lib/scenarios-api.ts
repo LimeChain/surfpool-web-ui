@@ -1,9 +1,13 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
-import { isAddress } from '@solana/kit';
+import { getAddressDecoder, isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  AMM_CONFIG_LEN,
+  AMM_CONFIG_OFFSET,
   buildPancakeswapPriceShockScenario,
+  checkAccount,
+  checkPoolState,
   pancakeswapScenario,
   planPancakeswapPriceShock,
   type PoolAccount,
@@ -406,22 +410,8 @@ export async function createPhoenixMaintenanceMarginScenario(
 }
 
 export type PancakeswapScenarioResult = { id: string };
-export type PancakeswapFeeTierOption = { value: string; label: string };
-type PancakeswapConfigTemplate = ScenarioTemplate & {
-  constants?: Record<string, { options?: PancakeswapFeeTierOption[] }>;
-};
 
 const PANCAKESWAP_CONFIG_TEMPLATE_ID = 'pancakeswap-clmm-amm-config';
-
-async function fetchPancakeswapConfigTemplate(studioUrl: string): Promise<PancakeswapConfigTemplate> {
-  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
-  if (!response.ok) throw new Error(`Failed to load scenario templates: ${response.status}`);
-
-  const templates = (await response.json()) as PancakeswapConfigTemplate[];
-  const template = findScenarioTemplate(templates, PANCAKESWAP_CONFIG_TEMPLATE_ID);
-  if (!template) throw new Error(`PancakeSwap template ${PANCAKESWAP_CONFIG_TEMPLATE_ID} is unavailable`);
-  return template;
-}
 
 async function postPancakeswapScenario(studioUrl: string, scenario: object): Promise<PancakeswapScenarioResult> {
   const body = stringify(scenario);
@@ -445,6 +435,7 @@ async function postPancakeswapScenario(studioUrl: string, scenario: object): Pro
 async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise<(PoolAccount | null)[]> {
   const found: (PoolAccount | null)[] = [];
   for (let start = 0; start < accounts.length; start += 100) {
+    const batch = accounts.slice(start, start + 100);
     const response = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -452,7 +443,7 @@ async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise
         jsonrpc: '2.0',
         id: 1,
         method: 'getMultipleAccounts',
-        params: [accounts.slice(start, start + 100), { encoding: 'base64', commitment: 'confirmed' }],
+        params: [batch, { encoding: 'base64', commitment: 'confirmed' }],
       }),
     });
     if (!response.ok) throw new Error(`Failed to read accounts from the surfnet: ${response.status}`);
@@ -462,7 +453,14 @@ async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise
       result?: { value: ({ owner: string; data: [string, string] } | null)[] };
     };
     if (result.error) throw new Error(`Failed to read accounts from the surfnet: ${result.error.message}`);
-    for (const value of result.result?.value ?? []) {
+    const values = result.result?.value ?? [];
+    // Callers match each account to its request by position, so a short reply would shift them all.
+    if (values.length !== batch.length) {
+      throw new Error(
+        `Failed to read accounts from the surfnet: asked for ${batch.length} accounts, got ${values.length}`
+      );
+    }
+    for (const value of values) {
       found.push(
         value ? { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) } : null
       );
@@ -494,32 +492,34 @@ export async function createPancakeswapPriceShockScenario(
   return postPancakeswapScenario(studioUrl, buildPancakeswapPriceShockScenario(plan, pathAccounts));
 }
 
-// Read off the template's constant catalog so the picker never drifts from the backend's fee tier list.
-export async function fetchPancakeswapFeeTierOptions(studioUrl: string): Promise<PancakeswapFeeTierOption[]> {
-  try {
-    const template = await fetchPancakeswapConfigTemplate(studioUrl);
-    return template.constants?.amm_config_index?.options ?? [];
-  } catch {
-    return [];
-  }
-}
-
 export async function createPancakeswapClmmFeeTierScenario(
   studioUrl: string,
-  configIndex: string,
+  rpcUrl: string,
+  pool: string,
   feeBps: string
 ): Promise<PancakeswapScenarioResult> {
-  const template = await fetchPancakeswapConfigTemplate(studioUrl);
+  const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const bps = feeBps.trim();
+
+  const [poolAccount] = await fetchSurfnetAccounts(rpcUrl, [normalizedPool]);
+  if (!poolAccount) throw new Error(`PancakeSwap pool ${normalizedPool} was not found`);
+  checkPoolState(normalizedPool, poolAccount);
+  const config = getAddressDecoder().decode(poolAccount.data.subarray(AMM_CONFIG_OFFSET, AMM_CONFIG_OFFSET + 32));
+
+  const [configAccount] = await fetchSurfnetAccounts(rpcUrl, [config]);
+  if (!configAccount) throw new Error(`AmmConfig ${config} of pool ${normalizedPool} was not found`);
+  checkAccount(config, configAccount, AMM_CONFIG_LEN, 'AmmConfig');
+
   const scenario = pancakeswapScenario(
-    `PancakeSwap CLMM Fee Tier ${feeBps.trim()} bps`,
-    "Change a PancakeSwap CLMM fee tier's trade fee rate.",
+    `PancakeSwap CLMM Fee Tier ${bps} bps (${normalizedPool.slice(0, 6)}…)`,
+    `Change the trade fee of the fee tier PancakeSwap CLMM pool ${normalizedPool} points to. Every pool on that tier is affected.`,
     {
-      templateId: template.id,
-      values: { config_index: configIndex.trim(), trade_fee_rate: Number(feeBps.trim()) * 100 },
+      templateId: PANCAKESWAP_CONFIG_TEMPLATE_ID,
+      values: { trade_fee_rate: Number(bps) * 100 },
       scenarioRelativeSlot: 0,
       label: 'PancakeSwap CLMM fee tier',
-      // The AmmConfig is a PDA over the config index; the template address carries its derivation seeds.
-      account: template.address,
+      account: { pubkey: config },
     },
     ['pancakeswap', 'fee-tier']
   );

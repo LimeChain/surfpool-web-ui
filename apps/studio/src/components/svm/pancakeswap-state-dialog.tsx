@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  createPancakeswapClmmFeeTierScenario,
-  createPancakeswapPriceShockScenario,
-  fetchPancakeswapFeeTierOptions,
-  type PancakeswapFeeTierOption,
-} from '@/lib/scenarios-api';
+import { createPancakeswapClmmFeeTierScenario, createPancakeswapPriceShockScenario } from '@/lib/scenarios-api';
 import {
   Button,
   Dialog,
@@ -16,7 +11,7 @@ import {
   Listbox,
   ListboxOption,
 } from '@surfpool/ui';
-import { type ChangeEvent, type ComponentProps, type FormEvent, useEffect, useState } from 'react';
+import { type ChangeEvent, type ComponentProps, type FormEvent, useState } from 'react';
 
 const MODE_OPTIONS = [
   { value: 'price-shock', label: 'CLMM price shock' },
@@ -71,8 +66,6 @@ export default function PancakeswapStateDialog({
   const [mode, setMode] = useState<PancakeswapStateMode>('price-shock');
   const [pool, setPool] = useState('');
   const [priceFactor, setPriceFactor] = useState('');
-  const [feeTierOptions, setFeeTierOptions] = useState<PancakeswapFeeTierOption[] | null>(null);
-  const [configIndex, setConfigIndex] = useState('');
   const [feeBps, setFeeBps] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -80,14 +73,11 @@ export default function PancakeswapStateDialog({
   // DERIVED STATE
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
-  const isLoadingFeeTiers = feeTierOptions === null;
-  const hasFeeTierCatalog = !!feeTierOptions?.length;
-  const hasConfigIndex = !!feeTierOptions?.some((option) => option.value === configIndex);
   const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) < 10000;
   const canCreate =
     !isCreating &&
-    ((mode === 'price-shock' && !!pool.trim() && hasValidPriceFactor) ||
-      (mode === 'fee-tier' && hasConfigIndex && hasValidFeeBps));
+    !!pool.trim() &&
+    ((mode === 'price-shock' && hasValidPriceFactor) || (mode === 'fee-tier' && hasValidFeeBps));
 
   // HELPERS
   const resettingError =
@@ -101,7 +91,6 @@ export default function PancakeswapStateDialog({
   const handleModeChange = resettingError(setMode);
   const handlePoolChange = resettingError(setPool);
   const handlePriceFactorChange = resettingError(setPriceFactor);
-  const handleConfigIndexChange = resettingError(setConfigIndex);
   const handleFeeBpsChange = resettingError(setFeeBps);
 
   const handleClose = () => {
@@ -121,7 +110,7 @@ export default function PancakeswapStateDialog({
       const result =
         mode === 'price-shock'
           ? await createPancakeswapPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
-          : await createPancakeswapClmmFeeTierScenario(studioUrl, configIndex, feeBps);
+          : await createPancakeswapClmmFeeTierScenario(studioUrl, rpcUrl, pool, feeBps);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create PancakeSwap state scenario');
@@ -129,26 +118,6 @@ export default function PancakeswapStateDialog({
       setIsCreating(false);
     }
   };
-
-  // EFFECTS
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-
-    setFeeTierOptions(null);
-
-    fetchPancakeswapFeeTierOptions(studioUrl).then((options) => {
-      if (cancelled) return;
-      setFeeTierOptions(options);
-      setConfigIndex((current) =>
-        options.some((option) => option.value === current) ? current : (options[0]?.value ?? '')
-      );
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, studioUrl]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
@@ -166,56 +135,35 @@ export default function PancakeswapStateDialog({
             </Listbox>
           </div>
 
+          <Field
+            id="pancakeswap-clmm-pool"
+            label="CLMM pool"
+            aria-label="PancakeSwap CLMM pool"
+            placeholder="Address of the PancakeSwap CLMM pool"
+            value={pool}
+            onChange={handlePoolChange}
+            disabled={isCreating}
+          />
           {mode === 'price-shock' ? (
-            <>
-              <Field
-                id="pancakeswap-clmm-pool"
-                label="CLMM pool"
-                aria-label="PancakeSwap CLMM pool"
-                placeholder="Address of the PancakeSwap CLMM pool"
-                value={pool}
-                onChange={handlePoolChange}
-                disabled={isCreating}
-              />
-              <Field
-                id="pancakeswap-price-factor"
-                label="Price factor"
-                aria-label="Price factor"
-                placeholder="0.5 halves the price, 4 quadruples it"
-                value={priceFactor}
-                onChange={handlePriceFactorChange}
-                disabled={isCreating}
-              />
-            </>
+            <Field
+              id="pancakeswap-price-factor"
+              label="Price factor"
+              aria-label="Price factor"
+              placeholder="0.5 halves the price, 4 quadruples it"
+              value={priceFactor}
+              onChange={handlePriceFactorChange}
+              disabled={isCreating}
+            />
           ) : (
-            <>
-              <div>
-                <span className={LABEL_CLASS}>Fee tier</span>
-                <Listbox
-                  aria-label="Fee tier"
-                  value={configIndex}
-                  onChange={handleConfigIndexChange}
-                  disabled={isCreating || isLoadingFeeTiers || !hasFeeTierCatalog}
-                  placeholder={isLoadingFeeTiers ? 'Loading fee tiers…' : 'No fee tiers available'}
-                >
-                  {feeTierOptions?.map(renderOption)}
-                </Listbox>
-                {!isLoadingFeeTiers && !hasFeeTierCatalog && (
-                  <p role="status" className="mt-1.5 text-sm text-zinc-400">
-                    No fee tiers available. Check the Studio connection and reopen this dialog.
-                  </p>
-                )}
-              </div>
-              <Field
-                id="pancakeswap-fee-bps"
-                label="New fee (bps)"
-                aria-label="New fee in basis points"
-                placeholder="25 = 0.25%"
-                value={feeBps}
-                onChange={handleFeeBpsChange}
-                disabled={isCreating}
-              />
-            </>
+            <Field
+              id="pancakeswap-fee-bps"
+              label="New fee (bps)"
+              aria-label="New fee in basis points"
+              placeholder="25 = 0.25%"
+              value={feeBps}
+              onChange={handleFeeBpsChange}
+              disabled={isCreating}
+            />
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>

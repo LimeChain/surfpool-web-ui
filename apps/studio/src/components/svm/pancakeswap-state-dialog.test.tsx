@@ -1,8 +1,4 @@
-import {
-  createPancakeswapClmmFeeTierScenario,
-  createPancakeswapPriceShockScenario,
-  fetchPancakeswapFeeTierOptions,
-} from '@/lib/scenarios-api';
+import { createPancakeswapClmmFeeTierScenario, createPancakeswapPriceShockScenario } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PancakeswapStateDialog from './pancakeswap-state-dialog';
@@ -10,7 +6,6 @@ import PancakeswapStateDialog from './pancakeswap-state-dialog';
 vi.mock('@/lib/scenarios-api', () => ({
   createPancakeswapClmmFeeTierScenario: vi.fn(),
   createPancakeswapPriceShockScenario: vi.fn(),
-  fetchPancakeswapFeeTierOptions: vi.fn(async () => [{ value: '14', label: 'Fee tier 0.2% - Index 14' }]),
 }));
 
 vi.mock('@surfpool/ui', () => ({
@@ -72,18 +67,26 @@ describe('PancakeswapStateDialog', () => {
     );
   });
 
-  it('creates a CLMM fee tier scenario from the live catalog', async () => {
+  it("creates a CLMM fee tier scenario from a pool's address", async () => {
     vi.mocked(createPancakeswapClmmFeeTierScenario).mockResolvedValue({ id: 'fee-tier-scenario' });
     renderDialog();
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'fee-tier' } });
-    await screen.findByRole('option', { name: 'Fee tier 0.2% - Index 14' });
+    expect(screen.getByLabelText('PancakeSwap CLMM pool')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
     fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fee-tier-scenario'));
-    expect(createPancakeswapClmmFeeTierScenario).toHaveBeenCalledWith('http://studio', '14', '1000');
-    expect(fetchPancakeswapFeeTierOptions).toHaveBeenCalledWith('http://studio');
+    expect(createPancakeswapClmmFeeTierScenario).toHaveBeenCalledWith(
+      'http://studio',
+      'http://rpc',
+      'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ',
+      '1000'
+    );
   });
 
   it('surfaces creation errors', async () => {

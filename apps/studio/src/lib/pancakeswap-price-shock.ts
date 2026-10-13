@@ -5,10 +5,12 @@ export const PANCAKESWAP_CLMM_PROGRAM_ID = 'HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2
 // PoolState is a packed C struct; these offsets include the 8-byte discriminator (from v1/idl.json).
 export const POOL_STATE_LEN = 1544;
 export const POOL_STATE_DISCRIMINATOR = [247, 237, 227, 245, 215, 195, 222, 70];
+export const AMM_CONFIG_OFFSET = 9;
 export const TICK_SPACING_OFFSET = 235;
 export const LIQUIDITY_OFFSET = 237;
 export const SQRT_PRICE_X64_OFFSET = 253;
 export const TICK_CURRENT_OFFSET = 269;
+export const AMM_CONFIG_LEN = 117;
 export const TICK_ARRAY_LEN = 10240;
 // TickArrayState: discriminator 8, pool_id 32, start_tick_index 4, then 60 ticks of 168 bytes
 // (tick 4, liquidity_net 16, liquidity_gross 16, fee and reward growths, padding).
@@ -31,12 +33,19 @@ export function validatePriceFactor(priceFactor: number): void {
   if (priceFactor === 1) throw new Error('price factor of 1 would leave the pool unchanged');
 }
 
-function checkAccount(name: string, account: PoolAccount, length: number, kind: string): void {
+export function checkAccount(name: string, account: PoolAccount, length: number, kind: string): void {
   if (account.owner !== PANCAKESWAP_CLMM_PROGRAM_ID) {
     throw new Error(`${name} is owned by ${account.owner}, not the CLMM program ${PANCAKESWAP_CLMM_PROGRAM_ID}`);
   }
   if (account.data.length !== length) {
     throw new Error(`${name} is ${account.data.length} bytes, not the ${length} bytes of a ${kind}`);
+  }
+}
+
+export function checkPoolState(pool: string, account: PoolAccount): void {
+  checkAccount(pool, account, POOL_STATE_LEN, 'PoolState');
+  if (POOL_STATE_DISCRIMINATOR.some((byte, index) => account.data[index] !== byte)) {
+    throw new Error('account does not carry the PoolState discriminator declared by the bundled IDL');
   }
 }
 
@@ -55,10 +64,7 @@ export async function tickArrayAddress(pool: string, startTickIndex: number): Pr
 
 export async function planPancakeswapPriceShock(pool: string, account: PoolAccount, priceFactor: number) {
   validatePriceFactor(priceFactor);
-  checkAccount(pool, account, POOL_STATE_LEN, 'PoolState');
-  if (POOL_STATE_DISCRIMINATOR.some((byte, index) => account.data[index] !== byte)) {
-    throw new Error('account does not carry the PoolState discriminator declared by the bundled IDL');
-  }
+  checkPoolState(pool, account);
 
   const view = new DataView(account.data.buffer, account.data.byteOffset, account.data.byteLength);
   const tickSpacing = view.getUint16(TICK_SPACING_OFFSET, true);
