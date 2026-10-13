@@ -96,4 +96,11 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'PancakeSwap Swap Freeze',
+    prompt:
+      'Disable swaps on the deepest PancakeSwap SOL/USDC pool, leaving deposits, withdrawals and fee collection open.',
+    icon: '⛔',
+    protocols: ['pancakeswap'],
+  },
 ];

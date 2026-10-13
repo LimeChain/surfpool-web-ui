@@ -1,0 +1,104 @@
+import { createPancakeswapClmmFeeTierScenario, createPancakeswapPriceShockScenario } from '@/lib/scenarios-api';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import PancakeswapStateDialog from './pancakeswap-state-dialog';
+
+vi.mock('@/lib/scenarios-api', () => ({
+  createPancakeswapClmmFeeTierScenario: vi.fn(),
+  createPancakeswapPriceShockScenario: vi.fn(),
+}));
+
+vi.mock('@surfpool/ui', () => ({
+  Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+  Dialog: ({ children, open }: any) => (open ? <div>{children}</div> : null),
+  DialogActions: ({ children }: any) => <div>{children}</div>,
+  DialogDescription: ({ children }: any) => <p>{children}</p>,
+  DialogTitle: ({ children }: any) => <h2>{children}</h2>,
+  Listbox: ({ children, onChange, ...props }: any) => {
+    const handleChange = (event: any) => onChange(event.target.value);
+    return (
+      <select {...props} onChange={handleChange}>
+        {children}
+      </select>
+    );
+  },
+  ListboxOption: ({ children, ...props }: any) => <option {...props}>{children}</option>,
+  Input: (props: any) => <input {...props} />,
+}));
+
+const onCreated = vi.fn();
+
+function renderDialog() {
+  render(
+    <PancakeswapStateDialog
+      open
+      studioUrl="http://studio"
+      rpcUrl="http://rpc"
+      onClose={vi.fn()}
+      onCreated={onCreated}
+    />
+  );
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('PancakeswapStateDialog', () => {
+  it('creates a CLMM price shock scenario from empty fields', async () => {
+    vi.mocked(createPancakeswapPriceShockScenario).mockResolvedValue({ id: 'price-shock-scenario' });
+    renderDialog();
+
+    expect(screen.getByLabelText('PancakeSwap CLMM pool')).toHaveValue('');
+    expect(screen.getByLabelText('Price factor')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
+    fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('price-shock-scenario'));
+    expect(createPancakeswapPriceShockScenario).toHaveBeenCalledWith(
+      'http://studio',
+      'http://rpc',
+      'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ',
+      '4'
+    );
+  });
+
+  it("creates a CLMM fee tier scenario from a pool's address", async () => {
+    vi.mocked(createPancakeswapClmmFeeTierScenario).mockResolvedValue({ id: 'fee-tier-scenario' });
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'fee-tier' } });
+    expect(screen.getByLabelText('PancakeSwap CLMM pool')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
+    fireEvent.change(screen.getByLabelText('New fee in basis points'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fee-tier-scenario'));
+    expect(createPancakeswapClmmFeeTierScenario).toHaveBeenCalledWith(
+      'http://studio',
+      'http://rpc',
+      'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ',
+      '1000'
+    );
+  });
+
+  it('surfaces creation errors', async () => {
+    vi.mocked(createPancakeswapPriceShockScenario).mockRejectedValue(new Error('tick array does not exist'));
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('PancakeSwap CLMM pool'), {
+      target: { value: 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ' },
+    });
+    fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    expect(await screen.findByText('tick array does not exist')).toBeInTheDocument();
+  });
+});

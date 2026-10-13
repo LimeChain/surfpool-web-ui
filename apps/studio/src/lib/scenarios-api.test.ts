@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { address, getAddressEncoder } from '@solana/kit';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
+import {
+  AMM_CONFIG_LEN,
+  AMM_CONFIG_OFFSET,
+  PANCAKESWAP_CLMM_PROGRAM_ID,
+  POOL_STATE_DISCRIMINATOR,
+  POOL_STATE_LEN,
+  SQRT_PRICE_X64_OFFSET,
+  TICK_SPACING_OFFSET,
+} from './pancakeswap-price-shock';
 import {
   buildAiPrompt,
   createPhoenixCollateralScenario,
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
+  createPancakeswapClmmFeeTierScenario,
+  createPancakeswapPriceShockScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -296,6 +308,117 @@ describe('fetchDynamicRefOptions', () => {
     await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
   });
 
+});
+
+describe('PancakeSwap scenarios', () => {
+  const owner = PANCAKESWAP_CLMM_PROGRAM_ID;
+  const base64 = (data: Uint8Array) => [btoa(String.fromCharCode(...data)), 'base64'];
+
+  it('reads the pool and its tick array, then posts a pool state override', async () => {
+    const pool = 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ';
+    const data = new Uint8Array(POOL_STATE_LEN);
+    data.set(POOL_STATE_DISCRIMINATOR);
+    new DataView(data.buffer).setUint16(TICK_SPACING_OFFSET, 1, true);
+    new DataView(data.buffer).setBigUint64(SQRT_PRICE_X64_OFFSET + 8, BigInt(1), true);
+    new DataView(data.buffer).setBigUint64(237, BigInt(1000), true);
+    // Tick 0 to tick 13863 at spacing 1 covers the arrays starting at 0, 60, ... 13860.
+    const path = Array.from({ length: 232 }, () => ({ owner, data: base64(new Uint8Array(10240)) }));
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(data) }] } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(0, 100) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(100, 200) } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: path.slice(200) } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await expect(createPancakeswapPriceShockScenario('http://studio', 'http://rpc', pool, '4')).resolves.toEqual({
+      id: 'scenario-id',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).params[0]).toEqual([pool]);
+    expect(fetchMock.mock.calls[4][0]).toBe('http://studio/v1/scenarios');
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body).overrides[0]).toMatchObject({
+      templateId: 'pancakeswap-clmm-pool-state',
+      values: { sqrt_price_x64: '36893488147419103232', tick_current: 13863, liquidity: '1000' },
+      scenarioRelativeSlot: 1,
+      fetchBeforeUse: true,
+      account: { pubkey: pool },
+    });
+  });
+
+  it('refuses a reply with fewer accounts than it asked for', async () => {
+    const pool = 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ';
+    const data = new Uint8Array(POOL_STATE_LEN);
+    data.set(POOL_STATE_DISCRIMINATOR);
+    new DataView(data.buffer).setUint16(TICK_SPACING_OFFSET, 1, true);
+    new DataView(data.buffer).setBigUint64(SQRT_PRICE_X64_OFFSET + 8, BigInt(1), true);
+    // Tick 0 to tick 99 at spacing 1 covers the arrays starting at 0 and 60.
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(data) }] } }))
+      .mockResolvedValueOnce(jsonResponse({ result: { value: [null] } }));
+
+    await expect(createPancakeswapPriceShockScenario('http://studio', 'http://rpc', pool, '1.01')).rejects.toThrow(
+      'Failed to read accounts from the surfnet: asked for 2 accounts, got 1'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  describe('fee tier', () => {
+    const pool = 'DJNtGuBGEQiUCWE8F981M2C3ZghZt2XLD8f2sQdZ6rsZ';
+    const config = 'HZzqEWHEvSiqYt6PxxLs7zXETmqGuryqfmvggjAkqisp';
+    const poolData = new Uint8Array(POOL_STATE_LEN);
+    poolData.set(POOL_STATE_DISCRIMINATOR);
+    poolData.set(getAddressEncoder().encode(address(config)), AMM_CONFIG_OFFSET);
+
+    it('posts a fee override against the AmmConfig the pool points to', async () => {
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(poolData) }] } }))
+        .mockResolvedValueOnce(
+          jsonResponse({ result: { value: [{ owner, data: base64(new Uint8Array(AMM_CONFIG_LEN)) }] } })
+        )
+        .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+      await expect(createPancakeswapClmmFeeTierScenario('http://studio', 'http://rpc', pool, '1000')).resolves.toEqual({
+        id: 'scenario-id',
+      });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).params[0]).toEqual([config]);
+      expect(fetchMock.mock.calls[2][0]).toBe('http://studio/v1/scenarios');
+      const scenario = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(scenario.name).toBe('PancakeSwap CLMM Fee Tier 1000 bps (DJNtGu…)');
+      expect(scenario.overrides[0]).toMatchObject({
+        templateId: 'pancakeswap-clmm-amm-config',
+        values: { trade_fee_rate: 100000 },
+        fetchBeforeUse: true,
+        account: { pubkey: config },
+      });
+    });
+
+    it('refuses a pool the CLMM program does not own', async () => {
+      const otherProgram = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ result: { value: [{ owner: otherProgram, data: base64(poolData) }] } })
+      );
+
+      await expect(createPancakeswapClmmFeeTierScenario('http://studio', 'http://rpc', pool, '1000')).rejects.toThrow(
+        `${pool} is owned by ${otherProgram}`
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an AmmConfig of the wrong size', async () => {
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(poolData) }] } }))
+        .mockResolvedValueOnce(jsonResponse({ result: { value: [{ owner, data: base64(new Uint8Array(100)) }] } }));
+
+      await expect(createPancakeswapClmmFeeTierScenario('http://studio', 'http://rpc', pool, '1000')).rejects.toThrow(
+        `${config} is 100 bytes, not the ${AMM_CONFIG_LEN} bytes of a AmmConfig`
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 describe('createScenarioPayload', () => {

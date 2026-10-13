@@ -1,6 +1,18 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { getAddressDecoder, isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
+import {
+  AMM_CONFIG_LEN,
+  AMM_CONFIG_OFFSET,
+  buildPancakeswapPriceShockScenario,
+  checkAccount,
+  checkPoolState,
+  pancakeswapScenario,
+  planPancakeswapPriceShock,
+  type PoolAccount,
+  validatePriceFactor,
+} from './pancakeswap-price-shock';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 
@@ -395,6 +407,123 @@ export async function createPhoenixMaintenanceMarginScenario(
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
     { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
   );
+}
+
+export type PancakeswapScenarioResult = { id: string };
+
+const PANCAKESWAP_CONFIG_TEMPLATE_ID = 'pancakeswap-clmm-amm-config';
+
+async function postPancakeswapScenario(studioUrl: string, scenario: object): Promise<PancakeswapScenarioResult> {
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize PancakeSwap scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create PancakeSwap scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+  return { id: result.id };
+}
+
+async function fetchSurfnetAccounts(rpcUrl: string, accounts: string[]): Promise<(PoolAccount | null)[]> {
+  const found: (PoolAccount | null)[] = [];
+  for (let start = 0; start < accounts.length; start += 100) {
+    const batch = accounts.slice(start, start + 100);
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getMultipleAccounts',
+        params: [batch, { encoding: 'base64', commitment: 'confirmed' }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Failed to read accounts from the surfnet: ${response.status}`);
+
+    const result = (await response.json()) as {
+      error?: { message?: string };
+      result?: { value: ({ owner: string; data: [string, string] } | null)[] };
+    };
+    if (result.error) throw new Error(`Failed to read accounts from the surfnet: ${result.error.message}`);
+    const values = result.result?.value ?? [];
+    // Callers match each account to its request by position, so a short reply would shift them all.
+    if (values.length !== batch.length) {
+      throw new Error(
+        `Failed to read accounts from the surfnet: asked for ${batch.length} accounts, got ${values.length}`
+      );
+    }
+    for (const value of values) {
+      found.push(
+        value ? { owner: value.owner, data: Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) } : null
+      );
+    }
+  }
+  return found;
+}
+
+// A swap could not resume from a tick whose covering tick array does not exist, so that shock is refused.
+export async function createPancakeswapPriceShockScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  priceFactor: string
+): Promise<PancakeswapScenarioResult> {
+  const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const factor = Number(priceFactor.trim());
+  validatePriceFactor(factor);
+
+  const [poolAccount] = await fetchSurfnetAccounts(rpcUrl, [normalizedPool]);
+  if (!poolAccount) throw new Error(`PancakeSwap pool ${normalizedPool} was not found`);
+
+  const plan = await planPancakeswapPriceShock(normalizedPool, poolAccount, factor);
+  const pathAccounts = await fetchSurfnetAccounts(
+    rpcUrl,
+    plan.pathTickArrays.map((tickArray) => tickArray.address)
+  );
+  return postPancakeswapScenario(studioUrl, buildPancakeswapPriceShockScenario(plan, pathAccounts));
+}
+
+export async function createPancakeswapClmmFeeTierScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  feeBps: string
+): Promise<PancakeswapScenarioResult> {
+  const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const bps = feeBps.trim();
+
+  const [poolAccount] = await fetchSurfnetAccounts(rpcUrl, [normalizedPool]);
+  if (!poolAccount) throw new Error(`PancakeSwap pool ${normalizedPool} was not found`);
+  checkPoolState(normalizedPool, poolAccount);
+  const config = getAddressDecoder().decode(poolAccount.data.subarray(AMM_CONFIG_OFFSET, AMM_CONFIG_OFFSET + 32));
+
+  const [configAccount] = await fetchSurfnetAccounts(rpcUrl, [config]);
+  if (!configAccount) throw new Error(`AmmConfig ${config} of pool ${normalizedPool} was not found`);
+  checkAccount(config, configAccount, AMM_CONFIG_LEN, 'AmmConfig');
+
+  const scenario = pancakeswapScenario(
+    `PancakeSwap CLMM Fee Tier ${bps} bps (${normalizedPool.slice(0, 6)}…)`,
+    `Change the trade fee of the fee tier PancakeSwap CLMM pool ${normalizedPool} points to. Every pool on that tier is affected.`,
+    {
+      templateId: PANCAKESWAP_CONFIG_TEMPLATE_ID,
+      values: { trade_fee_rate: Number(bps) * 100 },
+      scenarioRelativeSlot: 0,
+      label: 'PancakeSwap CLMM fee tier',
+      account: { pubkey: config },
+    },
+    ['pancakeswap', 'fee-tier']
+  );
+  return postPancakeswapScenario(studioUrl, scenario);
 }
 
 /**
