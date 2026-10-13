@@ -34,7 +34,7 @@ function poolAccount() {
 }
 
 describe('meteora price shock', () => {
-  it('uses the LbPair and BinArray layouts from the DLMM IDL', () => {
+  it('pins the LbPair and BinArray sizes, offsets and discriminators', () => {
     expect([LB_PAIR_LEN, ACTIVE_ID_OFFSET, BIN_STEP_OFFSET, BIN_ARRAY_LEN]).toEqual([904, 76, 80, 10136]);
     expect(LB_PAIR_DISCRIMINATOR).toEqual([0x21, 0x0b, 0x31, 0x62, 0xb5, 0x65, 0xb1, 0x0d]);
     expect(BIN_ARRAY_DISCRIMINATOR).toEqual([0x5c, 0x8e, 0x5c, 0xdc, 0x05, 0x94, 0x46, 0xb5]);
@@ -80,6 +80,15 @@ describe('meteora price shock', () => {
       expect((await planMeteoraPriceShock(SOL_USDC, pool, atLeast)).newActiveId).toBe(-2221);
       expect((await planMeteoraPriceShock(SOL_USDC, pool, atMost)).newActiveId).toBe(-2223);
     }
+  });
+
+  it('names the pool and moves the variable fee reference with the active bin', async () => {
+    const scenario = buildMeteoraPriceShockScenario(
+      await planMeteoraPriceShock(SOL_USDC, poolAccount(), 1.1),
+      'template'
+    );
+    expect(scenario.name).toBe('Meteora DLMM Price Shock (BGm1ta…)');
+    expect(scenario.overrides[0].values).toEqual({ active_id: -2127, 'v_parameters.index_reference': -2127 });
   });
 
   it('says which side of the market sees the shock', async () => {

@@ -94,15 +94,15 @@ export function planDammV2PriceShock(pool: string, { owner, data }: ProgramAccou
   };
 }
 
-export function buildDammV2PriceShockScenario(plan: ReturnType<typeof planDammV2PriceShock>) {
+export function buildDammV2PriceShockScenario(plan: ReturnType<typeof planDammV2PriceShock>, templateId: string) {
   return {
     id: crypto.randomUUID(),
-    name: 'Meteora DAMM v2 Price Shock',
+    name: `Meteora DAMM v2 Price Shock (${plan.pool.slice(0, 6)}…)`,
     description: `Move Meteora DAMM v2 pool ${plan.pool} to ${plan.priceFactor}x its price.`,
     overrides: [
       {
         id: crypto.randomUUID(),
-        templateId: METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID,
+        templateId,
         values: {
           sqrt_price: plan.sqrtPrice.toString(),
           token_a_amount: new LosslessNumber(plan.tokenA.toString()),

@@ -86,7 +86,7 @@ export default function ScenarioPresets({
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-zinc-100">Meteora state</span>
             <span className="mt-1 block text-sm leading-5 text-zinc-500">
-              Shock a DLMM pair&apos;s price or halt it so it rejects swaps.
+              Shock a DLMM pair or DAMM v2 pool&apos;s price, or halt a DLMM pair.
             </span>
           </span>
           <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-emerald-400" />

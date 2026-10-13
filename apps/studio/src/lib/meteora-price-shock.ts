@@ -126,15 +126,16 @@ export function assertBinArray(plan: MeteoraPriceShockPlan, binArrayAccount: Met
 export function buildMeteoraPriceShockScenario(plan: MeteoraPriceShockPlan, templateId: string) {
   return {
     id: crypto.randomUUID(),
-    name: 'Meteora DLMM Price Shock',
-    // Only active_id moves, so the skipped bins keep the token they held: after a rise buys fill at
+    name: `Meteora DLMM Price Shock (${plan.pool.slice(0, 6)}…)`,
+    // No liquidity moves, so the skipped bins keep the token they held: after a rise buys fill at
     // the new price while sells fall back to the old one, and the reverse after a drop.
     description: `Move Meteora DLMM pool ${plan.pool} to ${plan.priceFactor}x its price, onto bin ${plan.newActiveId} of the bin array at index ${plan.binArrayIndex}. ${plan.priceFactor > 1 ? 'Buys' : 'Sells'} of the base token see the new price; ${plan.priceFactor > 1 ? 'sells' : 'buys'} still fill at the old one.`,
     overrides: [
       {
         id: crypto.randomUUID(),
         templateId,
-        values: { active_id: plan.newActiveId },
+        // Left on the old bin, index_reference makes the next swaps pay the whole move as volatility.
+        values: { active_id: plan.newActiveId, 'v_parameters.index_reference': plan.newActiveId },
         scenarioRelativeSlot: 1,
         label: `DLMM price x${plan.priceFactor}`,
         enabled: true,

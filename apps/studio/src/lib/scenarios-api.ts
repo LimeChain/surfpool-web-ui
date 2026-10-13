@@ -1,5 +1,5 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
-import { getBase64Encoder } from '@solana/kit';
+import { getBase64Encoder, isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
@@ -489,14 +489,15 @@ export async function createMeteoraDammV2PriceShockScenario(
   if (!poolAccount) throw new Error(`Meteora DAMM v2 pool ${normalizedPool} was not found`);
   const plan = planDammV2PriceShock(normalizedPool, poolAccount, factor);
 
-  await meteoraTemplate(studioUrl, METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID);
-  return postMeteoraScenario(studioUrl, buildDammV2PriceShockScenario(plan));
+  const template = await meteoraTemplate(studioUrl, METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID);
+  return postMeteoraScenario(studioUrl, buildDammV2PriceShockScenario(plan, template.id));
 }
 
 // DLMM pools are keypair accounts with no PDA to derive, so the given address is the override's pubkey.
 export async function createMeteoraPairHaltScenario(studioUrl: string, pool: string): Promise<{ id: string }> {
-  const template = await meteoraTemplate(studioUrl, METEORA_POOL_STATE_TEMPLATE_ID);
   const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const template = await meteoraTemplate(studioUrl, METEORA_POOL_STATE_TEMPLATE_ID);
   return postMeteoraScenario(studioUrl, {
     id: crypto.randomUUID(),
     name: `Meteora Pair Halt (${normalizedPool.slice(0, 6)}…)`,

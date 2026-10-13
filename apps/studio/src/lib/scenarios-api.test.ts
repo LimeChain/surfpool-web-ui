@@ -330,7 +330,7 @@ describe('Meteora scenarios', () => {
     return jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } });
   }
 
-  it('reads the pool and its destination bin array, then posts one active_id override', async () => {
+  it('reads the pool and its destination bin array, then moves active_id and its fee reference', async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(rpcAccount(LB_PAIR_LEN, LB_PAIR_DISCRIMINATOR))
@@ -350,11 +350,11 @@ describe('Meteora scenarios', () => {
       'http://studio/v1/scenarios',
     ]);
     expect(postedBody(3)).toMatchObject({
-      name: 'Meteora DLMM Price Shock',
+      name: 'Meteora DLMM Price Shock (BGm1ta…)',
       overrides: [
         {
           templateId: 'meteora-dlmm-pool-state',
-          values: { active_id: -2127 },
+          values: { active_id: -2127, 'v_parameters.index_reference': -2127 },
           scenarioRelativeSlot: 1,
           label: 'DLMM price x1.1',
           enabled: true,
@@ -389,9 +389,12 @@ describe('Meteora scenarios', () => {
       .mockResolvedValueOnce(jsonResponse([{ id: 'meteora-damm-v2-pool-state', address: { pubkey: '' } }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'damm-scenario' }));
 
-    await expect(createMeteoraDammV2PriceShockScenario('http://studio', 'http://rpc', dammPool, '1.1')).resolves.toEqual({
+    await expect(
+      createMeteoraDammV2PriceShockScenario('http://studio', 'http://rpc', dammPool, '1.1')
+    ).resolves.toEqual({
       id: 'damm-scenario',
     });
+    expect(postedBody(2).name).toBe('Meteora DAMM v2 Price Shock (8Pm2kZ…)');
     expect(postedBody(2).overrides[0]).toMatchObject({
       templateId: 'meteora-damm-v2-pool-state',
       values: {
@@ -416,6 +419,15 @@ describe('Meteora scenarios', () => {
       overrides: [{ values: { status: 1 }, scenarioRelativeSlot: 0, fetchBeforeUse: true, account: { pubkey: pool } }],
       tags: ['meteora', 'pair-halt'],
     });
+  });
+
+  it('rejects an invalid pair address before any request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createMeteoraPairHaltScenario('http://studio', 'not-a-pool')).rejects.toThrow(
+      'Invalid pool address: not-a-pool'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

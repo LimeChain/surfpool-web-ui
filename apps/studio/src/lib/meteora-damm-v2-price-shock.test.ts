@@ -68,8 +68,15 @@ describe('meteora damm v2 price shock', () => {
     );
   });
 
+  it('names the pool and overrides it through the given template', () => {
+    const scenario = buildDammV2PriceShockScenario(planDammV2PriceShock(POOL, CONCENTRATED, 1.1), 'template');
+    expect(scenario.name).toBe('Meteora DAMM v2 Price Shock (8Pm2kZ…)');
+    expect(scenario.overrides[0]).toMatchObject({ templateId: 'template', account: { pubkey: POOL } });
+  });
+
   it('posts the price as a string and the reserves as exact JSON numbers', () => {
-    const values = buildDammV2PriceShockScenario(planDammV2PriceShock(POOL, CONCENTRATED, 1.1)).overrides[0].values;
+    const plan = planDammV2PriceShock(POOL, CONCENTRATED, 1.1);
+    const values = buildDammV2PriceShockScenario(plan, 'template').overrides[0].values;
     expect(stringify(values)).toBe(
       '{"sqrt_price":"6564437928541476710","token_a_amount":8980286113728,"token_b_amount":629347738785,' +
         '"pool_fees.dynamic_fee.sqrt_price_reference":"6564437928541476710"}'
