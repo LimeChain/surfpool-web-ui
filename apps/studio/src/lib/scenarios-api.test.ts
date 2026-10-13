@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getAddressDecoder } from '@solana/kit';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
@@ -9,6 +10,10 @@ import {
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
+  createRaydiumAmmPoolStatusScenario,
+  createRaydiumClmmFeeTierScenario,
+  createRaydiumClmmPriceShockScenario,
+  createRaydiumCpmmPriceShockScenario,
   createScenarioPayload,
   fetchDynamicRefOptions,
   flattenOverrideValues,
@@ -296,6 +301,172 @@ describe('fetchDynamicRefOptions', () => {
     await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
   });
 
+});
+
+describe('Raydium scenarios', () => {
+  const pool = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
+  const clmm = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
+  const accounts = (...data: Uint8Array[]) =>
+    jsonResponse({
+      result: { value: data.map((bytes) => ({ owner: clmm, data: [Buffer.from(bytes).toString('base64'), 'base64'] })) },
+    });
+  const postedOverride = (call: number) =>
+    JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string).overrides[0];
+  const feeTierConfig = getAddressDecoder().decode(new Uint8Array(32).fill(8));
+  const feeTierPool = () => {
+    const data = new Uint8Array(1544);
+    data.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    data.set(new Uint8Array(32).fill(8), 9);
+    return data;
+  };
+
+  it('reads the pool and every tick array on the path, then posts price, tick and liquidity', async () => {
+    const poolData = new Uint8Array(1544);
+    poolData.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    const view = new DataView(poolData.buffer);
+    view.setUint16(235, 1, true);
+    view.setBigUint64(253, BigInt('6404133718641369980'), true);
+    view.setInt32(269, -21160, true);
+    view.setBigUint64(237, BigInt(1000), true);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts(poolData))
+      .mockResolvedValueOnce(accounts(new Uint8Array(10240)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'shock' }));
+
+    await expect(createRaydiumClmmPriceShockScenario('http://studio', 'http://rpc', pool, '1.001')).resolves.toEqual({
+      id: 'shock',
+    });
+    // Ticks -21160 and -21150 share the array starting at -21180, so the path is that one array.
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual(['GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK']);
+    expect(postedOverride(3)).toMatchObject({
+      templateId: 'raydium-clmm-pool-state',
+      values: { sqrt_price_x64: '6407334985383984128', tick_current: -21150, liquidity: '1000' },
+      scenarioRelativeSlot: 1,
+      account: { pubkey: pool },
+    });
+  });
+
+  it('reads the CPMM pool and both vaults, then posts both vault balances', async () => {
+    const cpmmPool = 'Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp';
+    const vaults = [1, 2].map((byte) => getAddressDecoder().decode(new Uint8Array(32).fill(byte)));
+    const poolData = new Uint8Array(637);
+    poolData.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    poolData.set(new Uint8Array(32).fill(1), 72);
+    poolData.set(new Uint8Array(32).fill(2), 104);
+    const vault = (amount: number) => {
+      const data = new Uint8Array(165);
+      new DataView(data.buffer).setBigUint64(64, BigInt(amount), true);
+      return data;
+    };
+    const owned = (owner: string, ...data: Uint8Array[]) =>
+      jsonResponse({
+        result: { value: data.map((bytes) => ({ owner, data: [Buffer.from(bytes).toString('base64'), 'base64'] })) },
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'spl-token-account-balance', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(owned('CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C', poolData))
+      .mockResolvedValueOnce(owned('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', vault(1_000_000), vault(4_000_000)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'cpmm' }));
+
+    await expect(createRaydiumCpmmPriceShockScenario('http://studio', 'http://rpc', cpmmPool, '4')).resolves.toEqual({
+      id: 'cpmm',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual(vaults);
+    const posted = JSON.parse(fetchMock.mock.calls[3][1].body).overrides;
+    expect(posted.map((override: any) => [override.account.pubkey, override.values.amount])).toEqual([
+      [vaults[0], 500_000],
+      [vaults[1], 8_000_000],
+    ]);
+  });
+
+  it('posts an AMM v4 pool status override on the given pool', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-amm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'status' }));
+
+    await expect(createRaydiumAmmPoolStatusScenario('http://studio', pool, '2')).resolves.toEqual({ id: 'status' });
+    expect(postedOverride(1)).toMatchObject({
+      templateId: 'raydium-amm-pool-state',
+      values: { status: 2 },
+      account: { pubkey: pool },
+    });
+  });
+
+  it('rejects an invalid AMM v4 pool address before reading templates', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createRaydiumAmmPoolStatusScenario('http://studio', 'not-a-pool', '2')).rejects.toThrow(
+      'Invalid pool address: not-a-pool'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a getMultipleAccounts reply that is shorter than the request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts());
+
+    await expect(createRaydiumClmmPriceShockScenario('http://studio', 'http://rpc', pool, '1.001')).rejects.toThrow(
+      'The surfnet returned 0 accounts for 1 requested'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the pool's AmmConfig and posts the new trade fee on that account", async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts(feeTierPool()))
+      .mockResolvedValueOnce(accounts(new Uint8Array(117)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'fee' }));
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).resolves.toEqual({
+      id: 'fee',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual([feeTierConfig]);
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body).name).toBe('Raydium CLMM Fee Tier 10 bps (3ucNos…)');
+    expect(postedOverride(3)).toMatchObject({
+      templateId: 'raydium-clmm-amm-config',
+      values: { trade_fee_rate: 1000 },
+      account: { pubkey: feeTierConfig },
+      fetchBeforeUse: true,
+    });
+  });
+
+  it('rejects a fee tier pool owned by another program', async () => {
+    const tokenProgram = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          result: { value: [{ owner: tokenProgram, data: [Buffer.from(feeTierPool()).toString('base64'), 'base64'] }] },
+        })
+      );
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).rejects.toThrow(
+      `${pool} is owned by ${tokenProgram}, not the CLMM program`
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an AmmConfig of the wrong size', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts(feeTierPool()))
+      .mockResolvedValueOnce(accounts(new Uint8Array(1544)));
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).rejects.toThrow(
+      `${feeTierConfig} is 1544 bytes, not an AmmConfig`
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('createScenarioPayload', () => {

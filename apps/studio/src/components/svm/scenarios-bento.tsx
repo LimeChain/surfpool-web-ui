@@ -31,6 +31,7 @@ import GenericBento from './generic-bento';
 import PhoenixStateDialog from './phoenix-state-dialog';
 import PumpGraduationDialog from './pump-graduation-dialog';
 import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
+import RaydiumStateDialog from './raydium-state-dialog';
 import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
 import ScenarioPresets from './scenario-presets';
@@ -53,7 +54,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { rpcUrl, studioUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export default function ScenariosBento({
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
   const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
+  const [raydiumStateDialogOpen, setRaydiumStateDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -203,6 +205,20 @@ export default function ScenariosBento({
 
   const handlePhoenixStateCreated = (scenarioId: string) => {
     setPhoenixStateDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenRaydiumStateDialog = () => {
+    setRaydiumStateDialogOpen(true);
+  };
+
+  const handleCloseRaydiumStateDialog = () => {
+    setRaydiumStateDialogOpen(false);
+  };
+
+  const handleRaydiumStateCreated = (scenarioId: string) => {
+    setRaydiumStateDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -350,6 +366,7 @@ export default function ScenariosBento({
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
             onPhoenixStateSelect={handleOpenPhoenixStateDialog}
+            onRaydiumStateSelect={handleOpenRaydiumStateDialog}
           />
         </>
       )}
@@ -459,6 +476,13 @@ export default function ScenariosBento({
         studioUrl={studioUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
+      />
+      <RaydiumStateDialog
+        open={raydiumStateDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleCloseRaydiumStateDialog}
+        onCreated={handleRaydiumStateCreated}
       />
     </div>
   );

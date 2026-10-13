@@ -96,4 +96,24 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Raydium Pool Freeze',
+    prompt:
+      'Freeze the deepest Raydium AMM v4 SOL/USDC pool so it only allows withdrawals, blocking new swaps and deposits.',
+    icon: '🧊',
+    protocols: ['raydium'],
+  },
+  {
+    label: 'Raydium CLMM Swap Freeze',
+    prompt:
+      'Disable swaps on the deepest Raydium CLMM SOL/USDC pool, leaving deposits, withdrawals and fee collection open.',
+    icon: '⛔',
+    protocols: ['raydium'],
+  },
+  {
+    label: 'Raydium CPMM Swap Halt',
+    prompt: 'Halt swaps on the deepest Raydium CPMM SOL/USDC pool, leaving deposits and withdrawals open.',
+    icon: '🛑',
+    protocols: ['raydium'],
+  },
 ];
