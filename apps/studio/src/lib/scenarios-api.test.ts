@@ -16,6 +16,7 @@ import {
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
+  createMeteoraDammV2FeeScenario,
   createMeteoraDammV2PriceShockScenario,
   createMeteoraPairHaltScenario,
   createMeteoraPriceShockScenario,
@@ -405,6 +406,45 @@ describe('Meteora scenarios', () => {
       scenarioRelativeSlot: 1,
       account: { pubkey: dammPool },
     });
+  });
+
+  it('reads a DAMM v2 pool, then posts a flat base fee', async () => {
+    const dammPool = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
+    const data = new Uint8Array(1112);
+    data.set([241, 154, 109, 4, 17, 177, 109, 188]);
+    const value = {
+      owner: 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
+      data: [Buffer.from(data).toString('base64'), 'base64'],
+    };
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } }))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'meteora-damm-v2-pool-fees', address: { pubkey: '' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'fee-scenario' }));
+
+    await expect(
+      createMeteoraDammV2FeeScenario('http://studio', 'http://rpc', ` ${dammPool} `, ' 500 ')
+    ).resolves.toEqual({ id: 'fee-scenario' });
+    expect(postedBody(0).params[0]).toBe(dammPool);
+    expect(postedBody(2).overrides[0]).toMatchObject({
+      templateId: 'meteora-damm-v2-pool-fees',
+      values: {
+        'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': 50000000,
+        'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
+      },
+      scenarioRelativeSlot: 0,
+      fetchBeforeUse: true,
+      account: { pubkey: dammPool },
+    });
+  });
+
+  it('rejects a DAMM v2 fee outside 1 to 5000 basis points before any request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createMeteoraDammV2FeeScenario('http://studio', 'http://rpc', '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie', '6000')
+    ).rejects.toThrow('whole number of basis points');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('posts a status override for a pair halt', async () => {

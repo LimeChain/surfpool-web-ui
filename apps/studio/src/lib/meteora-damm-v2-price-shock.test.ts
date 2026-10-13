@@ -1,8 +1,10 @@
 import { stringify } from 'lossless-json';
 import { describe, expect, it } from 'vitest';
 import {
+  buildDammV2FeeScenario,
   buildDammV2PriceShockScenario,
   METEORA_DAMM_V2_PROGRAM_ID,
+  planDammV2Fee,
   planDammV2PriceShock,
 } from './meteora-damm-v2-price-shock';
 
@@ -81,5 +83,37 @@ describe('meteora damm v2 price shock', () => {
       '{"sqrt_price":"6564437928541476710","token_a_amount":8980286113728,"token_b_amount":629347738785,' +
         '"pool_fees.dynamic_fee.sqrt_price_reference":"6564437928541476710"}'
     );
+  });
+});
+
+describe('meteora damm v2 fee', () => {
+  it('holds the base fee flat at the given basis points', () => {
+    const plan = planDammV2Fee(POOL, CONCENTRATED, 500);
+    expect(plan.cliffFeeNumerator).toBe(50_000_000);
+
+    const scenario = buildDammV2FeeScenario(plan, 'meteora-damm-v2-pool-fees');
+    expect(scenario.name).toBe('Meteora DAMM v2 Fee (8Pm2kZ…)');
+    expect(scenario.overrides[0]).toMatchObject({
+      templateId: 'meteora-damm-v2-pool-fees',
+      values: {
+        'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': 50_000_000,
+        'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
+      },
+      scenarioRelativeSlot: 0,
+      fetchBeforeUse: true,
+      account: { pubkey: POOL },
+    });
+  });
+
+  it('refuses a pool on the deprecated rate limiter', () => {
+    const rateLimited = poolAccount({});
+    rateLimited.data[16] = 2;
+    expect(() => planDammV2Fee(POOL, rateLimited, 500)).toThrow('deprecated rate limiter');
+  });
+
+  it('refuses fees outside 1 to 5000 whole basis points', () => {
+    for (const bps of [0, 5001, 2.5, Number.NaN]) {
+      expect(() => planDammV2Fee(POOL, CONCENTRATED, bps)).toThrow('whole number of basis points');
+    }
   });
 });

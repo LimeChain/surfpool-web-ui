@@ -3,9 +3,13 @@ import { getBase64Encoder, isAddress } from '@solana/kit';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  buildDammV2FeeScenario,
   buildDammV2PriceShockScenario,
+  METEORA_DAMM_V2_POOL_FEES_TEMPLATE_ID,
   METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID,
+  planDammV2Fee,
   planDammV2PriceShock,
+  validateDammV2FeeBps,
 } from './meteora-damm-v2-price-shock';
 import {
   assertBinArray,
@@ -491,6 +495,26 @@ export async function createMeteoraDammV2PriceShockScenario(
 
   const template = await meteoraTemplate(studioUrl, METEORA_DAMM_V2_POOL_STATE_TEMPLATE_ID);
   return postMeteoraScenario(studioUrl, buildDammV2PriceShockScenario(plan, template.id));
+}
+
+/** Holds a DAMM v2 pool at a flat base fee, refusing a pool on the deprecated rate limiter. */
+export async function createMeteoraDammV2FeeScenario(
+  studioUrl: string,
+  rpcUrl: string,
+  pool: string,
+  feeBps: string
+): Promise<{ id: string }> {
+  const normalizedPool = pool.trim();
+  if (!isAddress(normalizedPool)) throw new Error(`Invalid pool address: ${normalizedPool}`);
+  const bps = Number(feeBps.trim());
+  validateDammV2FeeBps(bps);
+
+  const poolAccount = await fetchRpcAccount(rpcUrl, normalizedPool);
+  if (!poolAccount) throw new Error(`Meteora DAMM v2 pool ${normalizedPool} was not found`);
+  const plan = planDammV2Fee(normalizedPool, poolAccount, bps);
+
+  const template = await meteoraTemplate(studioUrl, METEORA_DAMM_V2_POOL_FEES_TEMPLATE_ID);
+  return postMeteoraScenario(studioUrl, buildDammV2FeeScenario(plan, template.id));
 }
 
 // DLMM pools are keypair accounts with no PDA to derive, so the given address is the override's pubkey.

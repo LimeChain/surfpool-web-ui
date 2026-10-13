@@ -1,4 +1,5 @@
 import {
+  createMeteoraDammV2FeeScenario,
   createMeteoraDammV2PriceShockScenario,
   createMeteoraPairHaltScenario,
   createMeteoraPriceShockScenario,
@@ -8,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import MeteoraStateDialog from './meteora-state-dialog';
 
 vi.mock('@/lib/scenarios-api', () => ({
+  createMeteoraDammV2FeeScenario: vi.fn(),
   createMeteoraDammV2PriceShockScenario: vi.fn(),
   createMeteoraPairHaltScenario: vi.fn(),
   createMeteoraPriceShockScenario: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock('@surfpool/ui', () => ({
 const createPriceShockMock = vi.mocked(createMeteoraPriceShockScenario);
 const createPairHaltMock = vi.mocked(createMeteoraPairHaltScenario);
 const createDammV2Mock = vi.mocked(createMeteoraDammV2PriceShockScenario);
+const createDammV2FeeMock = vi.mocked(createMeteoraDammV2FeeScenario);
 const onCreated = vi.fn();
 const POOL = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
 const DAMM_POOL = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
@@ -63,6 +66,20 @@ describe('MeteoraStateDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('price-shock-scenario'));
     expect(createPriceShockMock).toHaveBeenCalledWith('http://studio', 'http://rpc', POOL, '4');
+  });
+
+  it('creates a DAMM v2 fee scenario', async () => {
+    createDammV2FeeMock.mockResolvedValue({ id: 'damm-v2-fee-scenario' });
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'damm-v2-fee' } });
+    fireEvent.change(screen.getByLabelText('Meteora DAMM v2 pool'), { target: { value: DAMM_POOL } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Base fee (bps)'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('damm-v2-fee-scenario'));
+    expect(createDammV2FeeMock).toHaveBeenCalledWith('http://studio', 'http://rpc', DAMM_POOL, '500');
   });
 
   it('creates a DAMM v2 price shock scenario', async () => {
