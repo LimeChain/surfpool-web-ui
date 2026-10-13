@@ -86,7 +86,7 @@ export default function ScenarioPresets({
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-zinc-100">Raydium state</span>
             <span className="mt-1 block text-sm leading-5 text-zinc-500">
-              Shock a CLMM pool&apos;s price, freeze an AMM v4 pool, or change a CLMM fee tier.
+              Shock a CLMM or CPMM pool&apos;s price, freeze an AMM v4 pool, or change a CLMM fee tier.
             </span>
           </span>
           <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan-400" />

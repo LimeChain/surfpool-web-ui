@@ -1,4 +1,4 @@
-import { address, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit';
+import { address, getAddressDecoder, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit';
 
 export const RAYDIUM_CLMM_PROGRAM_ID = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
 export const RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID = 'raydium-clmm-pool-state';
@@ -6,10 +6,13 @@ export const RAYDIUM_CLMM_POOL_STATE_TEMPLATE_ID = 'raydium-clmm-pool-state';
 // PoolState is a packed C layout; offsets include the 8-byte discriminator (bundled amm_v3 IDL).
 const POOL_STATE_DISCRIMINATOR = [247, 237, 227, 245, 215, 195, 222, 70];
 const POOL_STATE_LEN = 1544;
+const AMM_CONFIG_OFFSET = 9;
 const TICK_SPACING_OFFSET = 235;
 const LIQUIDITY_OFFSET = 237;
 const SQRT_PRICE_X64_OFFSET = 253;
 const TICK_CURRENT_OFFSET = 269;
+
+const AMM_CONFIG_LEN = 117;
 
 const TICK_ARRAY_SIZE = 60;
 const TICK_ARRAY_LEN = 10240;
@@ -68,12 +71,31 @@ export async function tickArrayAddress(pool: string, startIndex: number): Promis
   return tickArray;
 }
 
-export function planPriceShock(pool: string, { owner, data }: RaydiumClmmAccount, priceFactor: number) {
-  validatePriceFactor(priceFactor);
+function assertPoolState(pool: string, { owner, data }: RaydiumClmmAccount) {
   if (owner !== RAYDIUM_CLMM_PROGRAM_ID) throw new Error(`${pool} is owned by ${owner}, not the CLMM program`);
   if (data.length !== POOL_STATE_LEN) throw new Error(`${pool} is ${data.length} bytes, not a PoolState`);
   if (POOL_STATE_DISCRIMINATOR.some((byte, i) => data[i] !== byte)) throw new Error(`${pool} is not a PoolState`);
+}
 
+/** The fee tier (AmmConfig) a CLMM pool points to, after checking the account is a PoolState. */
+export function clmmAmmConfig(pool: string, account: RaydiumClmmAccount): string {
+  assertPoolState(pool, account);
+  return getAddressDecoder().decode(account.data.subarray(AMM_CONFIG_OFFSET, AMM_CONFIG_OFFSET + 32));
+}
+
+export function checkAmmConfig(config: string, account: RaydiumClmmAccount | null): void {
+  if (!account) throw new Error(`AmmConfig ${config} was not found`);
+  if (account.owner !== RAYDIUM_CLMM_PROGRAM_ID)
+    throw new Error(`${config} is owned by ${account.owner}, not the CLMM program`);
+  if (account.data.length !== AMM_CONFIG_LEN)
+    throw new Error(`${config} is ${account.data.length} bytes, not an AmmConfig`);
+}
+
+export function planPriceShock(pool: string, account: RaydiumClmmAccount, priceFactor: number) {
+  validatePriceFactor(priceFactor);
+  assertPoolState(pool, account);
+
+  const { data } = account;
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const tickSpacing = view.getUint16(TICK_SPACING_OFFSET, true);
   if (tickSpacing === 0) throw new Error('pool declares a tick spacing of zero');

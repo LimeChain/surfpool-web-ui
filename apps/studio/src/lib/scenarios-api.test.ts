@@ -11,6 +11,7 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createRaydiumAmmPoolStatusScenario,
+  createRaydiumClmmFeeTierScenario,
   createRaydiumClmmPriceShockScenario,
   createRaydiumCpmmPriceShockScenario,
   createScenarioPayload,
@@ -311,6 +312,13 @@ describe('Raydium scenarios', () => {
     });
   const postedOverride = (call: number) =>
     JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string).overrides[0];
+  const feeTierConfig = getAddressDecoder().decode(new Uint8Array(32).fill(8));
+  const feeTierPool = () => {
+    const data = new Uint8Array(1544);
+    data.set([247, 237, 227, 245, 215, 195, 222, 70]);
+    data.set(new Uint8Array(32).fill(8), 9);
+    return data;
+  };
 
   it('reads the pool and every tick array on the path, then posts price, tick and liquidity', async () => {
     const poolData = new Uint8Array(1544);
@@ -386,6 +394,78 @@ describe('Raydium scenarios', () => {
       values: { status: 2 },
       account: { pubkey: pool },
     });
+  });
+
+  it('rejects an invalid AMM v4 pool address before reading templates', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createRaydiumAmmPoolStatusScenario('http://studio', 'not-a-pool', '2')).rejects.toThrow(
+      'Invalid pool address: not-a-pool'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a getMultipleAccounts reply that is shorter than the request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-pool-state', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts());
+
+    await expect(createRaydiumClmmPriceShockScenario('http://studio', 'http://rpc', pool, '1.001')).rejects.toThrow(
+      'The surfnet returned 0 accounts for 1 requested'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the pool's AmmConfig and posts the new trade fee on that account", async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts(feeTierPool()))
+      .mockResolvedValueOnce(accounts(new Uint8Array(117)))
+      .mockResolvedValueOnce(jsonResponse({ id: 'fee' }));
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).resolves.toEqual({
+      id: 'fee',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual([feeTierConfig]);
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body).name).toBe('Raydium CLMM Fee Tier 10 bps (3ucNos…)');
+    expect(postedOverride(3)).toMatchObject({
+      templateId: 'raydium-clmm-amm-config',
+      values: { trade_fee_rate: 1000 },
+      account: { pubkey: feeTierConfig },
+      fetchBeforeUse: true,
+    });
+  });
+
+  it('rejects a fee tier pool owned by another program', async () => {
+    const tokenProgram = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          result: { value: [{ owner: tokenProgram, data: [Buffer.from(feeTierPool()).toString('base64'), 'base64'] }] },
+        })
+      );
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).rejects.toThrow(
+      `${pool} is owned by ${tokenProgram}, not the CLMM program`
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an AmmConfig of the wrong size', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'raydium-clmm-amm-config', address: { type: 'pubkey' } }]))
+      .mockResolvedValueOnce(accounts(feeTierPool()))
+      .mockResolvedValueOnce(accounts(new Uint8Array(1544)));
+
+    await expect(createRaydiumClmmFeeTierScenario('http://studio', 'http://rpc', pool, '10')).rejects.toThrow(
+      `${feeTierConfig} is 1544 bytes, not an AmmConfig`
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -5,7 +5,6 @@ import {
   createRaydiumClmmFeeTierScenario,
   createRaydiumClmmPriceShockScenario,
   createRaydiumCpmmPriceShockScenario,
-  fetchRaydiumFeeTierOptions,
 } from '@/lib/scenarios-api';
 import {
   Button,
@@ -17,7 +16,7 @@ import {
   Listbox,
   ListboxOption,
 } from '@surfpool/ui';
-import { type ChangeEvent, type ComponentProps, type FormEvent, useEffect, useId, useState } from 'react';
+import { type ChangeEvent, type ComponentProps, type FormEvent, useId, useState } from 'react';
 
 const STATE_MODES = [
   { value: 'clmm-price-shock', label: 'CLMM price shock' },
@@ -32,6 +31,7 @@ const POOL_KINDS: Partial<Record<RaydiumStateMode, string>> = {
   'clmm-price-shock': 'CLMM',
   'cpmm-price-shock': 'CPMM',
   'amm-pool-status': 'AMM v4',
+  'clmm-fee-tier': 'CLMM',
 };
 
 // AmmStatus values from raydium-io/raydium-amm's state.rs; swaps run only at 1, 6 and 7.
@@ -82,9 +82,6 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const [pool, setPool] = useState('');
   const [priceFactor, setPriceFactor] = useState('');
   const [status, setStatus] = useState('2');
-  const [feeTierOptions, setFeeTierOptions] = useState<ListOption[]>([]);
-  const [isLoadingFeeTiers, setIsLoadingFeeTiers] = useState(true);
-  const [configIndex, setConfigIndex] = useState('');
   const [feeBps, setFeeBps] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -95,14 +92,12 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const poolKind = POOL_KINDS[mode];
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
-  const hasFeeTierCatalog = feeTierOptions.length > 0;
-  const hasConfigIndex = !isLoadingFeeTiers && feeTierOptions.some((option) => option.value === configIndex);
   const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) < 10000;
   const canCreate =
     !isCreating &&
     ((isPriceShock && !!pool.trim() && hasValidPriceFactor) ||
       (mode === 'amm-pool-status' && !!pool.trim() && !!status) ||
-      (isFeeTier && hasConfigIndex && hasValidFeeBps));
+      (isFeeTier && !!pool.trim() && hasValidFeeBps));
 
   // HANDLERS
   const handleClose = () => {
@@ -125,7 +120,6 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const handlePoolChange = handleChange(setPool);
   const handlePriceFactorChange = handleChange(setPriceFactor);
   const handleStatusChange = handleChange(setStatus);
-  const handleConfigIndexChange = handleChange(setConfigIndex);
   const handleFeeBpsChange = handleChange(setFeeBps);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -143,7 +137,7 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
             ? await createRaydiumCpmmPriceShockScenario(studioUrl, rpcUrl, pool, priceFactor)
             : mode === 'amm-pool-status'
               ? await createRaydiumAmmPoolStatusScenario(studioUrl, pool, status)
-              : await createRaydiumClmmFeeTierScenario(studioUrl, configIndex, feeBps);
+              : await createRaydiumClmmFeeTierScenario(studioUrl, rpcUrl, pool, feeBps);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Raydium state scenario');
@@ -151,28 +145,6 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
       setIsCreating(false);
     }
   };
-
-  // EFFECTS
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-
-    setIsLoadingFeeTiers(true);
-    setFeeTierOptions([]);
-
-    fetchRaydiumFeeTierOptions(studioUrl).then((options) => {
-      if (cancelled) return;
-      setFeeTierOptions(options);
-      setConfigIndex((current) =>
-        options.some((option) => option.value === current) ? current : (options[0]?.value ?? '')
-      );
-      setIsLoadingFeeTiers(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, studioUrl]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="xl">
@@ -218,33 +190,14 @@ export default function RaydiumStateDialog({ open, studioUrl, rpcUrl, onClose, o
             </div>
           )}
           {isFeeTier && (
-            <>
-              <div>
-                <span className={LABEL_CLASS}>Fee tier</span>
-                <Listbox
-                  aria-label="Fee tier"
-                  value={configIndex}
-                  onChange={handleConfigIndexChange}
-                  disabled={isCreating || isLoadingFeeTiers || !hasFeeTierCatalog}
-                  placeholder={isLoadingFeeTiers ? 'Loading fee tiers…' : 'No fee tiers available'}
-                >
-                  {feeTierOptions.map(renderOption)}
-                </Listbox>
-                {!isLoadingFeeTiers && !hasFeeTierCatalog && (
-                  <p role="status" className="mt-1.5 text-sm text-zinc-400">
-                    No fee tiers available. Check the Studio connection and reopen this dialog.
-                  </p>
-                )}
-              </div>
-              <Field
-                label="New fee (bps)"
-                aria-label="New fee in basis points"
-                placeholder="25 = 0.25%"
-                value={feeBps}
-                onChange={handleFeeBpsChange}
-                disabled={isCreating}
-              />
-            </>
+            <Field
+              label="New fee (bps)"
+              aria-label="New fee in basis points"
+              placeholder="25 = 0.25%"
+              value={feeBps}
+              onChange={handleFeeBpsChange}
+              disabled={isCreating}
+            />
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>

@@ -3,10 +3,9 @@ import {
   createRaydiumClmmFeeTierScenario,
   createRaydiumClmmPriceShockScenario,
   createRaydiumCpmmPriceShockScenario,
-  fetchRaydiumFeeTierOptions,
 } from '@/lib/scenarios-api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import RaydiumStateDialog from './raydium-state-dialog';
 
 const POOL = '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv';
@@ -18,7 +17,6 @@ vi.mock('@/lib/scenarios-api', () => ({
   createRaydiumClmmFeeTierScenario: vi.fn(),
   createRaydiumClmmPriceShockScenario: vi.fn(),
   createRaydiumCpmmPriceShockScenario: vi.fn(),
-  fetchRaydiumFeeTierOptions: vi.fn(),
 }));
 
 vi.mock('@surfpool/ui', () => ({
@@ -41,10 +39,6 @@ vi.mock('@surfpool/ui', () => ({
 }));
 
 const onCreated = vi.fn();
-
-beforeEach(() => {
-  vi.mocked(fetchRaydiumFeeTierOptions).mockResolvedValue([{ value: '8', label: 'Index 8' }]);
-});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -103,13 +97,13 @@ describe('RaydiumStateDialog', () => {
     await submit('status', vi.mocked(createRaydiumAmmPoolStatusScenario), 'http://studio', AMM_POOL, '3');
   });
 
-  it('creates a CLMM fee tier scenario from the catalog', async () => {
+  it("creates a CLMM fee tier scenario on the pool's tier", async () => {
     vi.mocked(createRaydiumClmmFeeTierScenario).mockResolvedValue({ id: 'fee' });
     renderDialog();
     change('State goal', 'clmm-fee-tier');
-    await screen.findByRole('option', { name: 'Index 8' });
+    change('Raydium CLMM pool', POOL);
     change('New fee in basis points', '10');
-    await submit('fee', vi.mocked(createRaydiumClmmFeeTierScenario), 'http://studio', '8', '10');
+    await submit('fee', vi.mocked(createRaydiumClmmFeeTierScenario), 'http://studio', 'http://rpc', POOL, '10');
   });
 
   it('shows the backend error', async () => {
