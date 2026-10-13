@@ -2,11 +2,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
+  ACTIVE_ID_OFFSET,
+  BIN_ARRAY_DISCRIMINATOR,
+  BIN_ARRAY_LEN,
+  BIN_STEP_OFFSET,
+  LB_PAIR_DISCRIMINATOR,
+  LB_PAIR_LEN,
+  METEORA_DLMM_PROGRAM_ID,
+} from './meteora-price-shock';
+import {
   buildAiPrompt,
   createPhoenixCollateralScenario,
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
+  createMeteoraDammV2FeeScenario,
+  createMeteoraDammV2PriceShockScenario,
+  createMeteoraPairHaltScenario,
+  createMeteoraPriceShockScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -296,6 +309,166 @@ describe('fetchDynamicRefOptions', () => {
     await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
   });
 
+});
+
+describe('Meteora scenarios', () => {
+  const pool = 'BGm1tav58oGcsQJehL9WXBFXF7D27vZsKefj4xJKD5Y';
+  const templates = () => jsonResponse([{ id: 'meteora-dlmm-pool-state', address: { pubkey: '' } }]);
+  const postedBody = (call: number) => JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string);
+
+  function rpcAccount(length: number, discriminator: number[]) {
+    const data = new Uint8Array(length);
+    data.set(discriminator);
+    if (length === LB_PAIR_LEN) {
+      new DataView(data.buffer).setInt32(ACTIVE_ID_OFFSET, -2222, true);
+      new DataView(data.buffer).setUint16(BIN_STEP_OFFSET, 10, true);
+    }
+    if (length === BIN_ARRAY_LEN) {
+      // Token X in bin -2127 of array -31, where a 1.1x rise lands.
+      new DataView(data.buffer).setBigUint64(56 + (-2127 + 31 * 70) * 144, BigInt(1), true);
+    }
+    const value = { owner: METEORA_DLMM_PROGRAM_ID, data: [Buffer.from(data).toString('base64'), 'base64'] };
+    return jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } });
+  }
+
+  it('reads the pool and its destination bin array, then moves active_id and its fee reference', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(rpcAccount(LB_PAIR_LEN, LB_PAIR_DISCRIMINATOR))
+      .mockResolvedValueOnce(rpcAccount(BIN_ARRAY_LEN, BIN_ARRAY_DISCRIMINATOR))
+      .mockResolvedValueOnce(templates())
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    const created = createMeteoraPriceShockScenario('http://studio', 'http://rpc', ` ${pool} `, ' 1.1 ');
+    await expect(created).resolves.toEqual({ id: 'scenario-id' });
+
+    expect(postedBody(0).params).toEqual([pool, { encoding: 'base64', commitment: 'confirmed' }]);
+    expect(postedBody(1).params[0]).toBe('28WnLxAM6rpjMToCVqaDys7dpiRmVUeQus1pvzGVR4G2');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://rpc',
+      'http://rpc',
+      'http://studio/v1/scenarios/templates',
+      'http://studio/v1/scenarios',
+    ]);
+    expect(postedBody(3)).toMatchObject({
+      name: 'Meteora DLMM Price Shock (BGm1ta…)',
+      overrides: [
+        {
+          templateId: 'meteora-dlmm-pool-state',
+          values: { active_id: -2127, 'v_parameters.index_reference': -2127 },
+          scenarioRelativeSlot: 1,
+          label: 'DLMM price x1.1',
+          enabled: true,
+          fetchBeforeUse: true,
+          account: { pubkey: pool },
+        },
+      ],
+      tags: ['meteora', 'dlmm', 'price-shock'],
+    });
+  });
+
+  it('reads a DAMM v2 pool, then posts its price and both tracked reserves', async () => {
+    const dammPool = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
+    const data = new Uint8Array(1112);
+    data.set([241, 154, 109, 4, 17, 177, 109, 188]);
+    const view = new DataView(data.buffer);
+    const setU128 = (offset: number, value: string) => {
+      view.setBigUint64(offset, BigInt(value) & ((BigInt(1) << BigInt(64)) - BigInt(1)), true);
+      view.setBigUint64(offset + 8, BigInt(value) >> BigInt(64), true);
+    };
+    setU128(360, '127179428291588464169616526569305');
+    setU128(424, '4880549731789001291');
+    setU128(440, '12236185739241331242');
+    setU128(456, '6258945984289128889');
+    const value = {
+      owner: 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
+      data: [Buffer.from(data).toString('base64'), 'base64'],
+    };
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } }))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'meteora-damm-v2-pool-state', address: { pubkey: '' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'damm-scenario' }));
+
+    await expect(
+      createMeteoraDammV2PriceShockScenario('http://studio', 'http://rpc', dammPool, '1.1')
+    ).resolves.toEqual({
+      id: 'damm-scenario',
+    });
+    expect(postedBody(2).name).toBe('Meteora DAMM v2 Price Shock (8Pm2kZ…)');
+    expect(postedBody(2).overrides[0]).toMatchObject({
+      templateId: 'meteora-damm-v2-pool-state',
+      values: {
+        sqrt_price: '6564437928541476710',
+        token_a_amount: 8980286113728,
+        token_b_amount: 629347738785,
+      },
+      scenarioRelativeSlot: 1,
+      account: { pubkey: dammPool },
+    });
+  });
+
+  it('reads a DAMM v2 pool, then posts a flat base fee', async () => {
+    const dammPool = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
+    const data = new Uint8Array(1112);
+    data.set([241, 154, 109, 4, 17, 177, 109, 188]);
+    const value = {
+      owner: 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
+      data: [Buffer.from(data).toString('base64'), 'base64'],
+    };
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value } }))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'meteora-damm-v2-pool-fees', address: { pubkey: '' } }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'fee-scenario' }));
+
+    await expect(
+      createMeteoraDammV2FeeScenario('http://studio', 'http://rpc', ` ${dammPool} `, ' 500 ')
+    ).resolves.toEqual({ id: 'fee-scenario' });
+    expect(postedBody(0).params[0]).toBe(dammPool);
+    expect(postedBody(2).overrides[0]).toMatchObject({
+      templateId: 'meteora-damm-v2-pool-fees',
+      values: {
+        'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': 50000000,
+        'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
+      },
+      scenarioRelativeSlot: 0,
+      fetchBeforeUse: true,
+      account: { pubkey: dammPool },
+    });
+  });
+
+  it('rejects a DAMM v2 fee outside 1 to 5000 basis points before any request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createMeteoraDammV2FeeScenario('http://studio', 'http://rpc', '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie', '6000')
+    ).rejects.toThrow('whole number of basis points');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('posts a status override for a pair halt', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(templates()).mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await expect(createMeteoraPairHaltScenario('http://studio', ` ${pool} `)).resolves.toEqual({ id: 'scenario-id' });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
+    expect(postedBody(1)).toMatchObject({
+      name: 'Meteora Pair Halt (BGm1ta…)',
+      overrides: [{ values: { status: 1 }, scenarioRelativeSlot: 0, fetchBeforeUse: true, account: { pubkey: pool } }],
+      tags: ['meteora', 'pair-halt'],
+    });
+  });
+
+  it('rejects an invalid pair address before any request', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createMeteoraPairHaltScenario('http://studio', 'not-a-pool')).rejects.toThrow(
+      'Invalid pool address: not-a-pool'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('createScenarioPayload', () => {
