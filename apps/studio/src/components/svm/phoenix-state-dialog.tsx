@@ -4,6 +4,7 @@ import {
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
+  createPhoenixOraclePriceScenario,
   fetchDynamicRefOptions,
   fetchPhoenixTraderPositions,
   type DynamicRefOption,
@@ -30,6 +31,7 @@ import { findOptionByTypedValue } from './token-selector-options';
 
 const PhoenixStateMode = {
   MarketMove: 'market-move',
+  OraclePrice: 'oracle-price',
   CollateralLiquidation: 'collateral-liquidation',
   MaintenanceMargin: 'maintenance-margin',
 } as const;
@@ -38,6 +40,7 @@ type PhoenixStateMode = (typeof PhoenixStateMode)[keyof typeof PhoenixStateMode]
 
 const PhoenixStateModeLabel: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Market price move',
+  [PhoenixStateMode.OraclePrice]: 'Oracle price',
   [PhoenixStateMode.CollateralLiquidation]: 'Liquidate traders by collateral',
   [PhoenixStateMode.MaintenanceMargin]: 'Maintenance margin factor',
 };
@@ -86,13 +89,16 @@ interface UnitChoice {
   placeholder: string;
 }
 
-// The liquidation goal moves no price, so only these two take an amount.
+const priceUnits: UnitChoice[] = [
+  { unit: 'percent', label: '%', placeholder: 'Change from the current mark, for example -10' },
+  { unit: 'usd', label: 'USD', placeholder: 'Target price' },
+  { unit: 'raw', label: 'Ticks', placeholder: 'Target ticks, at least 1' },
+];
+
+// The liquidation goal moves no price, so it takes no amount.
 const unitChoices: Record<PhoenixStateMode, UnitChoice[]> = {
-  [PhoenixStateMode.MarketMove]: [
-    { unit: 'percent', label: '%', placeholder: 'Change from the current mark, for example -10' },
-    { unit: 'usd', label: 'USD', placeholder: 'Target price' },
-    { unit: 'raw', label: 'Ticks', placeholder: 'Target ticks, at least 1' },
-  ],
+  [PhoenixStateMode.MarketMove]: priceUnits,
+  [PhoenixStateMode.OraclePrice]: priceUnits,
   [PhoenixStateMode.CollateralLiquidation]: [],
   [PhoenixStateMode.MaintenanceMargin]: [
     { unit: 'percent', label: '%', placeholder: 'Share of initial margin, mainnet markets use 50' },
@@ -102,11 +108,14 @@ const unitChoices: Record<PhoenixStateMode, UnitChoice[]> = {
 
 const amountLabel: Partial<Record<PhoenixStateMode, string>> = {
   [PhoenixStateMode.MarketMove]: 'Target price',
+  [PhoenixStateMode.OraclePrice]: 'Oracle price',
   [PhoenixStateMode.MaintenanceMargin]: 'Maintenance risk factor',
 };
 
 const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Moves the oracle readings, maker liquidity and the order book to the new price.',
+  [PhoenixStateMode.OraclePrice]:
+    'Moves only the oracle price. The order book and makers keep their old prices, so trades fill against the old book.',
   [PhoenixStateMode.CollateralLiquidation]:
     "Sets each trader's collateral so a keeper can liquidate it now, or only after a price move one slot later.",
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
@@ -234,8 +243,9 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const rawAmount = activeChoice ? (toRawAmount(mode, activeChoice.unit, amount, market) ?? '') : '';
   const markUsd = (market?.markTicks ?? NaN) * usdPerTick(market);
   const markChange = (Number(rawAmount) / (market?.markTicks ?? NaN) - 1) * 100;
+  const isPriceMode = mode === PhoenixStateMode.MarketMove || mode === PhoenixStateMode.OraclePrice;
   const hint =
-    mode === PhoenixStateMode.MarketMove && !!rawAmount && Number.isFinite(markUsd)
+    isPriceMode && !!rawAmount && Number.isFinite(markUsd)
       ? `${formatUsd(markUsd)} → ${formatUsd(Number(rawAmount) * usdPerTick(market))} (${markChange > 0 ? '+' : ''}${Number(markChange.toFixed(1))}%), ${rawAmount} ticks`
       : !!activeChoice && activeChoice.unit !== 'raw' && !!rawAmount
         ? `Sends ${rawAmount} ${unitChoices[mode].at(-1)?.label.toLowerCase()}`
@@ -258,8 +268,7 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
       !invalidTraderAddresses.length &&
       (!isAfterPriceMove || isMoveReady)) ||
       (hasSymbol &&
-        ((mode === PhoenixStateMode.MarketMove && hasTargetTicks) ||
-          (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor))));
+        ((isPriceMode && hasTargetTicks) || (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor))));
 
   // HELPERS
   const matchesMarket = (optionSymbol: string | null, query: string) => {
@@ -372,9 +381,11 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
       const result =
         mode === PhoenixStateMode.MarketMove
           ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount)
-          : isCollateralLiquidation
-            ? await createCollateralLiquidationScenario()
-            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
+          : mode === PhoenixStateMode.OraclePrice
+            ? await createPhoenixOraclePriceScenario(studioUrl, marketSymbol, rawAmount)
+            : isCollateralLiquidation
+              ? await createCollateralLiquidationScenario()
+              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');

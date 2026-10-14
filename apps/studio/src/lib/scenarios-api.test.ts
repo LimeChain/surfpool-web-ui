@@ -7,6 +7,7 @@ import {
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
+  createPhoenixOraclePriceScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -181,6 +182,7 @@ describe('Phoenix scenarios', () => {
 
   it.each([
     [createPhoenixMarketMoveScenario, 'phoenix-market-move', 'target_ticks'],
+    [createPhoenixOraclePriceScenario, 'phoenix-oracle-price', 'target_ticks'],
     [createPhoenixMaintenanceMarginScenario, 'phoenix-market-risk-factors', 'maintenanceRiskFactor'],
   ] as const)(
     '%#: posts the template with its map address and string values, keeping the local copy',

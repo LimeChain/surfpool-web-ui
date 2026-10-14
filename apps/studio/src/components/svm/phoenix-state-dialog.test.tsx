@@ -2,6 +2,7 @@ import {
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
+  createPhoenixOraclePriceScenario,
   fetchDynamicRefOptions,
   fetchPhoenixTraderPositions,
   type DynamicRefOption,
@@ -17,6 +18,7 @@ vi.mock('@/lib/scenarios-api', () => ({
   createPhoenixCollateralLiquidationScenario: vi.fn(),
   createPhoenixMaintenanceMarginScenario: vi.fn(),
   createPhoenixMarketMoveScenario: vi.fn(),
+  createPhoenixOraclePriceScenario: vi.fn(),
   fetchDynamicRefOptions: vi.fn(),
   fetchPhoenixTraderPositions: vi.fn(),
 }));
@@ -448,5 +450,21 @@ describe('PhoenixStateDialog', () => {
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     submit('Maintenance risk factor', '62.5');
     await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250'));
+  });
+
+  it('creates an oracle price scenario, not a market move, from a percent of the mark', async () => {
+    const createOracleMock = vi.mocked(createPhoenixOraclePriceScenario);
+    createOracleMock.mockResolvedValue({ id: 'oracle' });
+    fetchSymbolsMock.mockResolvedValue([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]);
+    renderDialog();
+
+    await screen.findByRole('button', { name: 'BTC' });
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'oracle-price' } });
+    fireEvent.change(screen.getByLabelText('Oracle price'), { target: { value: '-5' } });
+    expect(screen.getByText('$85,957 → $81,659 (-5%), 81659 ticks')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(createOracleMock).toHaveBeenCalledWith('http://studio', 'BTC', '81659'));
+    expect(createMarketMoveMock).not.toHaveBeenCalled();
   });
 });

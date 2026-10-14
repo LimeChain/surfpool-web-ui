@@ -385,6 +385,26 @@ export async function createPhoenixMarketMoveScenario(
   );
 }
 
+export async function createPhoenixOraclePriceScenario(
+  studioUrl: string,
+  symbol: string,
+  targetTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(
+    studioUrl,
+    `Phoenix ${symbol.trim()} Oracle Price`,
+    "Set one Phoenix Eternal market's oracle price; the order book and the makers' quotes stay where they are.",
+    ['phoenix-eternal', 'oracle-price', 'risk'],
+    [
+      {
+        templateId: 'phoenix-oracle-price',
+        label: `Phoenix ${symbol.trim()} oracle price`,
+        values: { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
+      },
+    ]
+  );
+}
+
 export interface PhoenixMarketMove {
   symbol: string;
   targetTicks: string;
