@@ -1,12 +1,12 @@
 import {
-  createPhoenixLiquidationCascadeScenario,
-  createPhoenixLiquidationReadyScenario,
+  createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
   fetchDynamicRefOptions,
   fetchPhoenixTraderPositions,
   type DynamicRefOption,
   type PhoenixTraderPosition,
+  type PhoenixTraderPositions,
 } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -14,8 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PhoenixStateDialog from './phoenix-state-dialog';
 
 vi.mock('@/lib/scenarios-api', () => ({
-  createPhoenixLiquidationCascadeScenario: vi.fn(),
-  createPhoenixLiquidationReadyScenario: vi.fn(),
+  createPhoenixCollateralLiquidationScenario: vi.fn(),
   createPhoenixMaintenanceMarginScenario: vi.fn(),
   createPhoenixMarketMoveScenario: vi.fn(),
   fetchDynamicRefOptions: vi.fn(),
@@ -71,6 +70,39 @@ const position = (symbol: string, side: 'long' | 'short', baseLots: string): Pho
   maintenanceMarginQuoteLots: '1000000',
 });
 
+const OTHER_TRADER = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
+
+// 2^53 + 1 collateral, which a Number would round.
+const traderPositions = (trader: string, hot = false, liquidatable = false): PhoenixTraderPositions => ({
+  trader,
+  positions: [position('SOL', 'long', '100')],
+  hot,
+  // Hawkeye's collateral differs from the field on purpose: the field is the base.
+  quoteLotCollateral: '9007199254740993',
+  margin: {
+    collateral: '1',
+    effectiveCollateral: '-7',
+    maintenanceMargin: '900',
+    backstopMargin: '601',
+    highRiskMargin: '300',
+    liquidatable,
+  },
+});
+
+const afterMoves = (trader: string, effectiveCollateral: string) => ({
+  marginAfterMoves: {
+    ...traderPositions(trader).margin,
+    effectiveCollateral,
+    maintenanceMargin: '1000',
+    backstopMargin: '700',
+  },
+});
+
+const chooseTraders = (traders: string) => {
+  fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral-liquidation' } });
+  fireEvent.change(screen.getByLabelText('Phoenix Trader accounts'), { target: { value: traders } });
+};
+
 const renderDialog = (onCreated = vi.fn()) =>
   render(
     <PhoenixStateDialog open studioUrl="http://studio" rpcUrl="http://rpc" onClose={vi.fn()} onCreated={onCreated} />
@@ -98,108 +130,105 @@ describe('PhoenixStateDialog', () => {
     expect(createMarketMoveMock).not.toHaveBeenCalled();
   });
 
-  it('lists the positions of the typed trader and creates a liquidation-ready scenario for the one chosen', async () => {
-    const createMock = vi.mocked(createPhoenixLiquidationReadyScenario);
-    createMock.mockResolvedValue({ id: 'liquidation-ready' });
-    vi.mocked(fetchPhoenixTraderPositions).mockResolvedValue([
-      { ...position('ETH', 'long', '1000'), maintenanceMarginQuoteLots: '420000' },
-      { ...position('SOL', 'short', '25000'), maintenanceMarginQuoteLots: '4200' },
-    ]);
-    const onCreated = vi.fn();
-    renderDialog(onCreated);
+  it('checks every trader address and gives each trader the collateral of the chosen depth', async () => {
+    const createMock = vi.mocked(createPhoenixCollateralLiquidationScenario);
+    createMock.mockResolvedValue({ id: 'collateral' });
+    vi.mocked(fetchPhoenixTraderPositions).mockImplementation(async (_studio, _rpc, trader) =>
+      traderPositions(trader, trader === TRADER)
+    );
+    renderDialog();
 
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-ready' } });
+    await screen.findByRole('button', { name: 'BTC' });
+    chooseTraders(`${TRADER}, ${TRADER}.`);
     expect(screen.queryByLabelText('Phoenix market')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Unit')).not.toBeInTheDocument();
-    // An address copied with a trailing period is not an account, so no positions are asked for.
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: `${TRADER}.` } });
-    expect(screen.getByRole('status')).toHaveTextContent('Not a valid Solana address');
-    expect(fetchPhoenixTraderPositions).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: TRADER } });
-
-    const sol = await screen.findByRole('checkbox', { name: /^SOL/ });
-    expect(fetchPhoenixTraderPositions).toHaveBeenCalledWith('http://studio', 'http://rpc', TRADER);
-    expect(screen.getByText('0 of 2 selected')).toBeInTheDocument();
-    expect(screen.getByText('1000 base lots · margin $0.42')).toBeInTheDocument();
-    expect(screen.getByText('25000 base lots · margin $0.0042')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(`Not a valid Solana address: ${TRADER}.`);
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
-    fireEvent.click(sol);
+    chooseTraders(`${TRADER},${OTHER_TRADER} ${TRADER}`);
+    fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'every-position' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['SOL']);
-      expect(onCreated).toHaveBeenCalledWith('liquidation-ready');
-    });
+    // collateral - effectiveCollateral + (highRiskMargin + backstopMargin) / 2, rounded toward zero
+    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '9007199254741450' });
+    await waitFor(() =>
+      expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], undefined)
+    );
   });
 
-  it('selects every position of a trader at once, however many it holds', async () => {
-    const createMock = vi.mocked(createPhoenixLiquidationReadyScenario);
-    createMock.mockResolvedValue({ id: 'liquidation-ready' });
-    vi.mocked(fetchPhoenixTraderPositions).mockResolvedValue([
-      position('ETH', 'long', '1000'),
-      position('SOL', 'short', '25000'),
-      position('BTC', 'long', '3000'),
-      position('XRP', 'short', '500'),
-      position('DOGE', 'long', '700'),
+  it('moves each market against its larger side and sets the collateral that crosses after the move', async () => {
+    const createMock = vi.mocked(createPhoenixCollateralLiquidationScenario);
+    createMock.mockResolvedValue({ id: 'price-move' });
+    fetchSymbolsMock.mockResolvedValue([
+      { value: 'BTC', markTicks: 85957 },
+      { value: 'SOL', markTicks: 10000 },
     ]);
+    // SOL: $300 of long margin against $500 of short, so it rises 2%; BTC holds only a long, so it drops 2%.
+    const held = (symbol: string, side: 'long' | 'short', margin: string) => ({
+      ...position(symbol, side, '100'),
+      maintenanceMarginQuoteLots: margin,
+    });
+    vi.mocked(fetchPhoenixTraderPositions).mockImplementation(async (_studio, _rpc, trader, moves) => ({
+      ...traderPositions(trader),
+      positions:
+        trader === TRADER
+          ? [held('SOL', 'long', '300000000'), held('BTC', 'long', '50000000')]
+          : [held('SOL', 'short', '500000000')],
+      ...(moves && afterMoves(trader, '-500')),
+    }));
     renderDialog();
 
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-ready' } });
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: TRADER } });
-    await screen.findByRole('checkbox', { name: /^SOL/ });
-    fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
-    expect(screen.getByText('5 of 5 selected')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(screen.getByText('0 of 5 selected')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
+    await screen.findByRole('button', { name: 'SOL' });
+    chooseTraders(`${TRADER} ${OTHER_TRADER}`);
+    fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'after-price-move' } });
+    expect(screen.getByLabelText('Price move')).toHaveValue('2');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', TRADER, ['BTC', 'DOGE', 'ETH', 'SOL', 'XRP']);
-    });
+    const moves = [
+      { symbol: 'SOL', targetTicks: '10200' },
+      { symbol: 'BTC', targetTicks: '84238' },
+    ];
+    // collateral - effectiveCollateral + (backstopMargin + maintenanceMargin) / 2, all after the moves
+    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '9007199254742343' });
+    await waitFor(() =>
+      expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], moves)
+    );
+    const loadedMoves = vi.mocked(fetchPhoenixTraderPositions).mock.calls.map((call) => call[3]);
+    expect(loadedMoves).toEqual([undefined, undefined, moves, moves]);
   });
 
-  it('keeps the chosen positions when only whitespace around the trader changes', async () => {
-    vi.mocked(fetchPhoenixTraderPositions).mockResolvedValue([
-      position('ETH', 'long', '1000'),
-      position('SOL', 'short', '25000'),
-    ]);
+  // A move too small to cross leaves the trader liquidatable already; one that helps it never crosses.
+  it.each([
+    ['0', `${TRADER} would not stay healthy until the move.`],
+    ['400', `The move does not push ${TRADER} toward liquidation.`],
+  ])('refuses a trader the move cannot cross (effective %s after it)', async (effective, message) => {
+    fetchSymbolsMock.mockResolvedValue([{ value: 'SOL', markTicks: 10000 }]);
+    vi.mocked(fetchPhoenixTraderPositions).mockImplementation(async (_studio, _rpc, trader, moves) => ({
+      ...traderPositions(trader),
+      ...(moves && afterMoves(trader, effective)),
+    }));
     renderDialog();
 
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-ready' } });
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: TRADER } });
-    fireEvent.click(await screen.findByRole('checkbox', { name: /^SOL/ }));
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: ` ${TRADER} ` } });
-
-    expect(screen.getByText('1 of 2 selected')).toBeInTheDocument();
-    expect(fetchPhoenixTraderPositions).toHaveBeenCalledTimes(1);
-  });
-
-  it('tells when the trader holds no positions and keeps the scenario from being created', async () => {
-    vi.mocked(fetchPhoenixTraderPositions).mockResolvedValue([]);
-    renderDialog();
-
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-ready' } });
-    fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: TRADER } });
-
-    expect(await screen.findByText('This trader holds no open Phoenix positions.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
-  });
-
-  it('creates a liquidation cascade for the chosen side, sized by the market rather than a count', async () => {
-    const createMock = vi.mocked(createPhoenixLiquidationCascadeScenario);
-    createMock.mockResolvedValue({ id: 'cascade' });
-    renderDialog();
-
-    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'liquidation-cascade' } });
-    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
-    expect(screen.queryByLabelText('Traders')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Positions to liquidate'), { target: { value: 'short' } });
+    await screen.findByRole('button', { name: 'SOL' });
+    chooseTraders(TRADER);
+    fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'after-price-move' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', 'short');
-    });
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(createPhoenixCollateralLiquidationScenario).not.toHaveBeenCalled();
+  });
+
+  it('names the traders that hold no positions or that the template refuses, and creates nothing', async () => {
+    const refusal = `${OTHER_TRADER} quotes splines on 2 markets`;
+    vi.mocked(fetchPhoenixTraderPositions).mockImplementation(async (_studio, _rpc, trader) =>
+      trader === TRADER ? { ...traderPositions(trader), positions: [] } : { ...traderPositions(trader), refusal }
+    );
+    renderDialog();
+
+    await screen.findByRole('button', { name: 'BTC' });
+    chooseTraders(`${TRADER} ${OTHER_TRADER}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    expect(await screen.findByText(`${TRADER} holds no open Phoenix positions; ${refusal}.`)).toBeInTheDocument();
+    expect(createPhoenixCollateralLiquidationScenario).not.toHaveBeenCalled();
   });
 
   it('surfaces backend validation failures', async () => {

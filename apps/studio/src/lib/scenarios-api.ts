@@ -221,7 +221,7 @@ export async function createPumpSwapPriceShockScenario(
 async function callMcpToolJson<T>(
   studioUrl: string,
   toolName: string,
-  args: Record<string, string | number>
+  args: Record<string, unknown>
 ): Promise<T | undefined> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
@@ -311,13 +311,10 @@ export async function fetchDynamicRefOptions(
  */
 async function createPhoenixScenario(
   studioUrl: string,
-  templateId: string,
   name: string,
   description: string,
-  label: string,
   tags: string[],
-  values: Record<string, string>,
-  account?: string
+  overrides: { templateId: string; label: string; values: Record<string, string>; account?: string; slot?: number }[]
 ): Promise<PhoenixScenarioResult> {
   const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!templatesResponse.ok) {
@@ -325,27 +322,28 @@ async function createPhoenixScenario(
   }
 
   const templates = (await templatesResponse.json()) as ScenarioTemplate[];
-  const template = findScenarioTemplate(templates, templateId);
-  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
 
   const scenario = {
     id: crypto.randomUUID(),
     name,
     description,
-    overrides: [
-      {
+    // Overrides in one slot apply in this order.
+    overrides: overrides.map(({ templateId, label, values, account, slot = 0 }) => {
+      const template = findScenarioTemplate(templates, templateId);
+      if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+      return {
         id: crypto.randomUUID(),
         templateId: template.id,
         values,
-        scenarioRelativeSlot: 0,
+        scenarioRelativeSlot: slot,
         label,
         enabled: true,
         // A refetch would reset this account apart from the market's other accounts, and the
         // dialog's lists already load it into the surfnet.
         fetchBeforeUse: false,
         account: account ? { pubkey: account } : template.address,
-      },
-    ],
+      };
+    }),
     tags,
   };
   const body = stringify(scenario);
@@ -374,31 +372,51 @@ export async function createPhoenixMarketMoveScenario(
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
-    'phoenix-market-move',
     `Phoenix ${symbol.trim()} Market Move`,
     'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
-    `Phoenix ${symbol.trim()} market move`,
     ['phoenix-eternal', 'market-move', 'risk'],
-    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+    [
+      {
+        templateId: 'phoenix-market-move',
+        label: `Phoenix ${symbol.trim()} market move`,
+        values: { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
+      },
+    ]
   );
 }
 
-export async function createPhoenixLiquidationReadyScenario(
+export interface PhoenixMarketMove {
+  symbol: string;
+  targetTicks: string;
+}
+
+/** Hot traders cancel their resting orders before any collateral is set; `moves` follow one slot later. */
+export async function createPhoenixCollateralLiquidationScenario(
   studioUrl: string,
-  trader: string,
-  symbols: string[]
+  traders: { trader: string; collateral: string }[],
+  moves: PhoenixMarketMove[] = []
 ): Promise<PhoenixScenarioResult> {
-  // A trader can hold dozens of positions, which no title or slot card fits.
-  const markets = symbols.length > 3 ? `${symbols.length}-position` : symbols.join(' + ');
   return createPhoenixScenario(
     studioUrl,
-    'phoenix-liquidation-ready',
-    `Phoenix ${markets} Liquidation-Ready Trader`,
-    'Leave the chosen positions of one Phoenix Eternal trader ready for a keeper to liquidate one after another.',
-    `Phoenix ${markets} liquidation-ready trader`,
-    ['phoenix-eternal', 'liquidation', 'risk'],
-    { symbols: symbols.join(',') },
-    trader.trim()
+    `Phoenix ${traders.length}-Trader ${moves.length ? 'Price-Move' : 'Collateral'} Liquidation`,
+    moves.length
+      ? 'Leave the chosen Phoenix Eternal traders healthy, then move their markets one slot later so a keeper can liquidate them.'
+      : 'Lower the collateral of the chosen Phoenix Eternal traders until a keeper can liquidate them, without moving any price.',
+    ['phoenix-eternal', 'liquidation', 'collateral'],
+    [
+      ...traders.map(({ trader, collateral }) => ({
+        templateId: 'phoenix-trader-collateral',
+        label: 'Phoenix trader collateral',
+        values: { 'traderState.quoteLotCollateral': collateral },
+        account: trader,
+      })),
+      ...moves.map(({ symbol, targetTicks }) => ({
+        templateId: 'phoenix-market-move',
+        label: `Phoenix ${symbol} market move`,
+        values: { symbol, target_ticks: targetTicks },
+        slot: 1,
+      })),
+    ]
   );
 }
 
@@ -410,36 +428,36 @@ export interface PhoenixTraderPosition {
   maintenanceMarginQuoteLots: string;
 }
 
-/** A trader's open Phoenix positions, as Phoenix sees them on the surfnet. */
+type MarginField = 'collateral' | 'effectiveCollateral' | 'maintenanceMargin' | 'backstopMargin' | 'highRiskMargin';
+type PhoenixMargin = Record<MarginField, string> & { liquidatable: boolean };
+
+export interface PhoenixTraderPositions {
+  trader: string;
+  positions: PhoenixTraderPosition[];
+  hot: boolean;
+  margin: PhoenixMargin;
+  // The Trader account's collateral field, the base for phoenix-trader-collateral; margin.collateral can differ.
+  quoteLotCollateral: string;
+  marginAfterMoves?: PhoenixMargin;
+  // Why phoenix-trader-collateral would refuse the trader, if it would.
+  refusal?: string | null;
+}
+
+/** A trader's open Phoenix positions and margin, as Phoenix sees them once the trader's resting orders are cancelled. */
 export async function fetchPhoenixTraderPositions(
   studioUrl: string,
   rpcUrl: string,
-  trader: string
-): Promise<PhoenixTraderPosition[]> {
-  const payload = await callMcpToolJson<{ error?: string | null; positions?: PhoenixTraderPosition[] }>(
+  trader: string,
+  moves?: PhoenixMarketMove[]
+): Promise<PhoenixTraderPositions> {
+  const payload = await callMcpToolJson<{ error?: string | null } & PhoenixTraderPositions>(
     studioUrl,
     'list_phoenix_trader_positions',
-    { trader: trader.trim(), ...surfnetPortArg(rpcUrl) }
+    { trader: trader.trim(), ...(moves && { moves }), ...surfnetPortArg(rpcUrl) }
   );
   if (!payload) throw new Error('Surfpool MCP tool list_phoenix_trader_positions returned no result');
   if (payload.error) throw new Error(payload.error);
-  return payload.positions ?? [];
-}
-
-export async function createPhoenixLiquidationCascadeScenario(
-  studioUrl: string,
-  symbol: string,
-  side: 'long' | 'short'
-): Promise<PhoenixScenarioResult> {
-  return createPhoenixScenario(
-    studioUrl,
-    'phoenix-liquidation-cascade',
-    `Phoenix ${symbol.trim()} Liquidation Cascade`,
-    'Leave every Phoenix Eternal trader one price can make liquidatable ready for a keeper to liquidate one after another.',
-    `Phoenix ${symbol.trim()} liquidation cascade`,
-    ['phoenix-eternal', 'liquidation', 'cascade'],
-    { symbol: symbol.trim(), side }
-  );
+  return payload;
 }
 
 export async function createPhoenixMaintenanceMarginScenario(
@@ -449,12 +467,16 @@ export async function createPhoenixMaintenanceMarginScenario(
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
-    'phoenix-market-risk-factors',
     `Phoenix ${symbol.trim()} Maintenance Margin Factor`,
     'Set the maintenance margin risk factor for one Phoenix Eternal market.',
-    `Phoenix ${symbol.trim()} maintenance margin factor`,
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
-    { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() }
+    [
+      {
+        templateId: 'phoenix-market-risk-factors',
+        label: `Phoenix ${symbol.trim()} maintenance margin factor`,
+        values: { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() },
+      },
+    ]
   );
 }
 

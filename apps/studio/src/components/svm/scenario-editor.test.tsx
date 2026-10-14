@@ -179,23 +179,26 @@ it('reads the own account of a fixed-address template with IDL fields as parsed 
   await waitFor(() => expect(rpcParams()).toEqual([['trader', { commitment: 'confirmed', encoding: 'jsonParsed' }]]));
 });
 
-it('keeps the trader of a dialog-created liquidation-ready override when it is saved from the editor', async () => {
+it('keeps the trader of a dialog-created collateral override when it is saved from the editor', async () => {
   const trader = 'HB66UQf7Bv82q9VPhg9Hz6RcDaTMY1yJm8KVDA8VG7Gp';
   const template = {
     ...collateralTemplate,
-    id: 'phoenix-liquidation-ready',
-    name: 'Liquidation-ready trader',
+    id: 'phoenix-trader-collateral',
+    name: 'Phoenix Trader Collateral',
     address: { pubkey: '' },
-    properties: [{ path: 'symbols', type: 'input', value_type: 'string' }],
+    properties: [{ path: 'traderState.quoteLotCollateral', type: 'input', value_type: 'string' }],
   };
-  await openEditor(template, { symbols: 'SOL' }, { pubkey: trader });
+  await openEditor(template, { 'traderState.quoteLotCollateral': '1000' }, { pubkey: trader });
   await waitFor(() =>
     expect(rpcParams()).toEqual([
       [trader, { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }],
     ])
   );
-  fireEvent.change(await screen.findByPlaceholderText('Enter symbols...'), { target: { value: 'SOL,ETH' } });
-  expect(await savedOverride()).toMatchObject({ account: { pubkey: trader }, values: { symbols: 'SOL,ETH' } });
+  fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), { target: { value: '2000' } });
+  expect(await savedOverride()).toMatchObject({
+    account: { pubkey: trader },
+    values: { 'traderState.quoteLotCollateral': 2000 },
+  });
 });
 
 it.each(marketTemplates)('sends only the inputs of a newly selected $name action', async (market) => {

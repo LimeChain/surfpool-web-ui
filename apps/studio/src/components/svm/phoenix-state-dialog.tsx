@@ -1,22 +1,18 @@
 'use client';
 
 import {
-  createPhoenixLiquidationCascadeScenario,
-  createPhoenixLiquidationReadyScenario,
+  createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
   fetchDynamicRefOptions,
   fetchPhoenixTraderPositions,
   type DynamicRefOption,
-  type PhoenixTraderPosition,
+  type PhoenixMarketMove,
+  type PhoenixTraderPositions,
 } from '@/lib/scenarios-api';
 import { PublicKey } from '@solana/web3.js';
 import {
-  Badge,
   Button,
-  Checkbox,
-  CheckboxField,
-  CheckboxGroup,
   Combobox,
   ComboboxDescription,
   ComboboxLabel,
@@ -26,18 +22,15 @@ import {
   DialogDescription,
   DialogTitle,
   Input,
-  Label,
   Listbox,
   ListboxOption,
 } from '@surfpool/ui';
-import clsx from 'clsx';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { findOptionByTypedValue } from './token-selector-options';
 
 const PhoenixStateMode = {
   MarketMove: 'market-move',
-  LiquidationReady: 'liquidation-ready',
-  LiquidationCascade: 'liquidation-cascade',
+  CollateralLiquidation: 'collateral-liquidation',
   MaintenanceMargin: 'maintenance-margin',
 } as const;
 
@@ -45,26 +38,27 @@ type PhoenixStateMode = (typeof PhoenixStateMode)[keyof typeof PhoenixStateMode]
 
 const PhoenixStateModeLabel: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Market price move',
-  [PhoenixStateMode.LiquidationReady]: 'Liquidate trader positions',
-  [PhoenixStateMode.LiquidationCascade]: 'Liquidation cascade',
+  [PhoenixStateMode.CollateralLiquidation]: 'Liquidate traders by collateral',
   [PhoenixStateMode.MaintenanceMargin]: 'Maintenance margin factor',
 };
 
 const phoenixStateModes = Object.values(PhoenixStateMode);
 
-const CascadeSide = {
-  Long: 'long',
-  Short: 'short',
+const LiquidationDepth = {
+  OneLiquidation: 'one-liquidation',
+  EveryPosition: 'every-position',
+  AfterPriceMove: 'after-price-move',
 } as const;
 
-type CascadeSide = (typeof CascadeSide)[keyof typeof CascadeSide];
+type LiquidationDepth = (typeof LiquidationDepth)[keyof typeof LiquidationDepth];
 
-const CascadeSideLabel: Record<CascadeSide, string> = {
-  [CascadeSide.Long]: 'Longs, after a drop',
-  [CascadeSide.Short]: 'Shorts, after a rise',
+const LiquidationDepthLabel: Record<LiquidationDepth, string> = {
+  [LiquidationDepth.OneLiquidation]: 'One liquidation per trader',
+  [LiquidationDepth.EveryPosition]: 'Positions one after another, while it stays liquidatable',
+  [LiquidationDepth.AfterPriceMove]: 'Healthy now, liquidatable after a price move',
 };
 
-const cascadeSides = Object.values(CascadeSide);
+const liquidationDepths = Object.values(LiquidationDepth);
 
 // The backend's ranges: a price is a u32 tick count of at least 1, and a risk factor is at most
 // 100% of the initial margin. Phoenix also refuses a maintenance factor above the market's cancel
@@ -92,15 +86,14 @@ interface UnitChoice {
   placeholder: string;
 }
 
-// The liquidation goals pick their own price, so only these two take an amount.
+// The liquidation goal moves no price, so only these two take an amount.
 const unitChoices: Record<PhoenixStateMode, UnitChoice[]> = {
   [PhoenixStateMode.MarketMove]: [
     { unit: 'percent', label: '%', placeholder: 'Change from the current mark, for example -10' },
     { unit: 'usd', label: 'USD', placeholder: 'Target price' },
     { unit: 'raw', label: 'Ticks', placeholder: 'Target ticks, at least 1' },
   ],
-  [PhoenixStateMode.LiquidationReady]: [],
-  [PhoenixStateMode.LiquidationCascade]: [],
+  [PhoenixStateMode.CollateralLiquidation]: [],
   [PhoenixStateMode.MaintenanceMargin]: [
     { unit: 'percent', label: '%', placeholder: 'Share of initial margin, mainnet markets use 50' },
     { unit: 'raw', label: 'bps', placeholder: 'At most the cancel order factor, mainnet markets use 5000' },
@@ -114,19 +107,9 @@ const amountLabel: Partial<Record<PhoenixStateMode, string>> = {
 
 const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.MarketMove]: 'Moves the oracle readings, maker liquidity and the order book to the new price.',
-  [PhoenixStateMode.LiquidationReady]:
-    'Cancels the resting orders of the trader and moves the chosen markets until a keeper can liquidate each chosen position in turn.',
-  [PhoenixStateMode.LiquidationCascade]:
-    'Moves the market to the price where the most holders are liquidatable and prepares every one of them.',
+  [PhoenixStateMode.CollateralLiquidation]:
+    "Sets each trader's collateral so a keeper can liquidate it now, or only after a price move one slot later.",
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
-};
-
-const formatPositionSize = (position: PhoenixTraderPosition, market?: DynamicRefOption) => {
-  const lots = Math.abs(Number(position.baseLots));
-  const decimals = market?.baseLotDecimals;
-  return decimals === undefined
-    ? `${position.baseLots} base lots`
-    : `${(lots / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${position.symbol}`;
 };
 
 const formatUsd = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 6 })}`;
@@ -152,6 +135,49 @@ const toRawAmount = (mode: PhoenixStateMode, unit: PhoenixUnit, amount: string, 
 const availableUnits = (mode: PhoenixStateMode, market?: DynamicRefOption) =>
   unitChoices[mode].filter((choice) => toRawAmount(mode, choice.unit, '0', market) !== null);
 
+const parseAddresses = (text: string) => [...new Set(text.split(/[\s,]+/).filter(Boolean))];
+
+// Puts the effective collateral midway between the backstop margin and the maintenance or high-risk margin.
+const liquidationCollateral = (
+  { quoteLotCollateral, margin, marginAfterMoves }: PhoenixTraderPositions,
+  depth: LiquidationDepth
+) => {
+  const m = depth === LiquidationDepth.AfterPriceMove ? marginAfterMoves : margin;
+  if (!m) throw new Error('Surfpool returned no margin after the price move.');
+  const pair = BigInt(depth === LiquidationDepth.EveryPosition ? m.highRiskMargin : m.maintenanceMargin);
+  return String(
+    BigInt(quoteLotCollateral) - BigInt(m.effectiveCollateral) + (BigInt(m.backstopMargin) + pair) / BigInt(2)
+  );
+};
+
+const staysHealthy = ({ quoteLotCollateral, margin: m }: PhoenixTraderPositions, collateral: string) =>
+  BigInt(m.effectiveCollateral) + BigInt(collateral) - BigInt(quoteLotCollateral) > BigInt(m.maintenanceMargin);
+
+const cushion = (m: PhoenixTraderPositions['margin']) => BigInt(m.effectiveCollateral) - BigInt(m.maintenanceMargin);
+
+// A move that leaves the trader as far from liquidation, or further, can never make it cross.
+const isHelpedByMove = ({ margin, marginAfterMoves }: PhoenixTraderPositions) =>
+  !!marginAfterMoves && cushion(marginAfterMoves) >= cushion(margin);
+
+// Each market moves against the side holding more maintenance margin there, down on a tie.
+const marketMoves = (
+  traders: PhoenixTraderPositions[],
+  marketBySymbol: Map<string, DynamicRefOption>,
+  percent: number
+) => {
+  const longMinusShort = new Map<string, number>();
+  for (const { symbol, side, maintenanceMarginQuoteLots } of traders.flatMap(({ positions }) => positions)) {
+    const margin = Number(maintenanceMarginQuoteLots);
+    longMinusShort.set(symbol, (longMinusShort.get(symbol) ?? 0) + (side === 'long' ? margin : -margin));
+  }
+  return [...longMinusShort].map(([symbol, weight]): PhoenixMarketMove => {
+    const markTicks = marketBySymbol.get(symbol)?.markTicks;
+    if (!markTicks) throw new Error(`No mark price is loaded for ${symbol}.`);
+    const factor = weight >= 0 ? 1 - percent / 100 : 1 + percent / 100;
+    return { symbol, targetTicks: String(Math.max(1, Math.round(markTicks * factor))) };
+  });
+};
+
 interface PhoenixStateDialogProps {
   open: boolean;
   studioUrl: string;
@@ -166,9 +192,9 @@ const renderStateModeOption = (stateMode: PhoenixStateMode) => (
   </ListboxOption>
 );
 
-const renderCascadeSideOption = (side: CascadeSide) => (
-  <ListboxOption key={side} value={side}>
-    {CascadeSideLabel[side]}
+const renderLiquidationDepthOption = (depth: LiquidationDepth) => (
+  <ListboxOption key={depth} value={depth}>
+    {LiquidationDepthLabel[depth]}
   </ListboxOption>
 );
 
@@ -180,57 +206,19 @@ const renderUnitOption = ({ unit, label }: UnitChoice) => (
 
 const displayMarketSymbol = (marketSymbol: string | null) => marketSymbol ?? undefined;
 
-interface PositionOptionProps {
-  position: PhoenixTraderPosition;
-  size: string;
-  checked: boolean;
-  disabled: boolean;
-  onToggle: (symbol: string, checked: boolean) => void;
-}
-
-function PositionOption({ position, size, checked, disabled, onToggle }: PositionOptionProps) {
-  // DERIVED STATE
-  const isLong = position.side === 'long';
-  const maintenanceUsd = Number(position.maintenanceMarginQuoteLots) / 1e6;
-  // Whole dollars, except below $1, where rounding would show $0.
-  const margin = formatUsd(maintenanceUsd >= 1 ? Math.round(maintenanceUsd) : maintenanceUsd);
-
-  // HANDLERS
-  const handleChange = (isChecked: boolean) => onToggle(position.symbol, isChecked);
-
-  return (
-    <CheckboxField
-      disabled={disabled}
-      className={clsx('items-center px-3 py-2 transition-colors', checked ? 'bg-purple-500/10' : 'hover:bg-white/5')}
-    >
-      <Checkbox checked={checked} onChange={handleChange} color="purple" />
-      <Label className="flex min-w-0 items-center gap-2">
-        <span className="font-semibold text-zinc-100">{position.symbol}</span>
-        <Badge color={isLong ? 'green' : 'red'}>{isLong ? 'Long' : 'Short'}</Badge>
-        <span className="ml-auto truncate text-xs text-zinc-400">
-          {size} · margin {margin}
-        </span>
-      </Label>
-    </CheckboxField>
-  );
-}
-
 export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, onCreated }: PhoenixStateDialogProps) {
   // STATE
   const [mode, setMode] = useState<PhoenixStateMode>(PhoenixStateMode.MarketMove);
   const [trader, setTrader] = useState('');
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
-  const [side, setSide] = useState<CascadeSide>(CascadeSide.Long);
+  const [depth, setDepth] = useState<LiquidationDepth>(LiquidationDepth.OneLiquidation);
+  const [movePercent, setMovePercent] = useState('2');
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
-  const [positions, setPositions] = useState<PhoenixTraderPosition[] | null>(null);
-  const [isLoadingPositions, setIsLoadingPositions] = useState(false);
-  const [positionsError, setPositionsError] = useState<string | null>(null);
-  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
 
   // DERIVED STATE
   const symbolOptions = marketOptions.map((option) => option.value);
@@ -257,25 +245,20 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const backstopBps = mode === PhoenixStateMode.MaintenanceMargin ? market?.backstopRiskFactorBps : undefined;
   const isAtOrBelowBackstop = backstopBps !== undefined && !!rawAmount && Number(rawAmount) <= backstopBps;
   const hasRiskFactor = isWholeNumberInRange(rawAmount, 1, MAX_RISK_FACTOR_BPS) && !isAtOrBelowBackstop;
-  const traderAddress = trader.trim();
-  const hasTraderAddress = isAddress(traderAddress);
-  const isTraderInvalid = !!traderAddress && !hasTraderAddress;
-  const isLiquidationReady = mode === PhoenixStateMode.LiquidationReady;
-  const hasPositionSelection = selectedSymbols.length > 0;
-  const sortedPositions = [...(positions ?? [])].sort(
-    (a, b) => Number(b.maintenanceMarginQuoteLots) - Number(a.maintenanceMarginQuoteLots)
-  );
-  const isEveryPositionSelected = !!sortedPositions.length && selectedSymbols.length === sortedPositions.length;
-  const selectionCount = `${selectedSymbols.length} of ${sortedPositions.length} selected`;
-  const positionsStatus = isLoadingPositions
-    ? 'Loading the positions of this trader…'
-    : (positionsError ?? (positions?.length === 0 ? 'This trader holds no open Phoenix positions.' : null));
+  const traderAddresses = parseAddresses(trader);
+  const invalidTraderAddresses = traderAddresses.filter((address) => !isAddress(address));
+  const isCollateralLiquidation = mode === PhoenixStateMode.CollateralLiquidation;
+  const isAfterPriceMove = isCollateralLiquidation && depth === LiquidationDepth.AfterPriceMove;
+  // A move of 100% or more would leave no positive price.
+  const isMoveReady = Number(movePercent) > 0 && Number(movePercent) < 100 && !isLoadingSymbols;
   const canCreate =
     !isCreating &&
-    ((isLiquidationReady && hasTraderAddress && hasPositionSelection) ||
+    ((isCollateralLiquidation &&
+      !!traderAddresses.length &&
+      !invalidTraderAddresses.length &&
+      (!isAfterPriceMove || isMoveReady)) ||
       (hasSymbol &&
         ((mode === PhoenixStateMode.MarketMove && hasTargetTicks) ||
-          mode === PhoenixStateMode.LiquidationCascade ||
           (mode === PhoenixStateMode.MaintenanceMargin && hasRiskFactor))));
 
   // HELPERS
@@ -294,23 +277,34 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
       ? null
       : query;
 
-  const renderPositionOption = (position: PhoenixTraderPosition) => (
-    <PositionOption
-      key={position.symbol}
-      position={position}
-      size={formatPositionSize(position, marketBySymbol.get(position.symbol))}
-      checked={selectedSymbols.includes(position.symbol)}
-      disabled={isCreating}
-      onToggle={handlePositionToggle}
-    />
-  );
-
   const renderMarketOption = (optionSymbol: string) => (
     <ComboboxOption key={optionSymbol} value={optionSymbol}>
       <ComboboxLabel>{optionSymbol}</ComboboxLabel>
       <ComboboxDescription>{marketBySymbol.get(optionSymbol)?.address ?? 'Custom symbol'}</ComboboxDescription>
     </ComboboxOption>
   );
+
+  const createCollateralLiquidationScenario = async () => {
+    const load = (moves?: PhoenixMarketMove[]) =>
+      Promise.all(traderAddresses.map((address) => fetchPhoenixTraderPositions(studioUrl, rpcUrl, address, moves)));
+    const moves = isAfterPriceMove ? marketMoves(await load(), marketBySymbol, Number(movePercent)) : undefined;
+    const traders = await load(moves);
+    const unprepared = traders.flatMap(({ trader: address, positions, refusal }) => {
+      if (refusal) return [refusal];
+      return positions.length ? [] : [`${address} holds no open Phoenix positions`];
+    });
+    if (unprepared.length) throw new Error(`${unprepared.join('; ')}.`);
+    const prepared = traders.map((plan) => ({ ...plan, collateral: liquidationCollateral(plan, depth) }));
+    const helped = prepared.filter((plan) => isAfterPriceMove && isHelpedByMove(plan));
+    if (helped.length) {
+      throw new Error(`The move does not push ${helped.map((plan) => plan.trader).join(', ')} toward liquidation.`);
+    }
+    const unhealthy = prepared.filter((plan) => isAfterPriceMove && !staysHealthy(plan, plan.collateral));
+    if (unhealthy.length) {
+      throw new Error(`${unhealthy.map((plan) => plan.trader).join(', ')} would not stay healthy until the move.`);
+    }
+    return createPhoenixCollateralLiquidationScenario(studioUrl, prepared, moves);
+  };
 
   // HANDLERS
   const handleClose = () => {
@@ -336,20 +330,13 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
     setError(null);
   };
 
-  const handlePositionToggle = (positionSymbol: string, isChecked: boolean) => {
-    setSelectedSymbols((current) =>
-      isChecked ? [...current, positionSymbol] : current.filter((selected) => selected !== positionSymbol)
-    );
+  const handleDepthChange = (selectedDepth: LiquidationDepth) => {
+    setDepth(selectedDepth);
     setError(null);
   };
 
-  const handleSelectAllToggle = () => {
-    setSelectedSymbols(isEveryPositionSelected ? [] : sortedPositions.map((position) => position.symbol));
-    setError(null);
-  };
-
-  const handleSideChange = (selectedSide: CascadeSide) => {
-    setSide(selectedSide);
+  const handleMovePercentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setMovePercent(event.target.value);
     setError(null);
   };
 
@@ -385,11 +372,9 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
       const result =
         mode === PhoenixStateMode.MarketMove
           ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount)
-          : isLiquidationReady
-            ? await createPhoenixLiquidationReadyScenario(studioUrl, trader, [...selectedSymbols].sort())
-            : mode === PhoenixStateMode.LiquidationCascade
-              ? await createPhoenixLiquidationCascadeScenario(studioUrl, marketSymbol, side)
-              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
+          : isCollateralLiquidation
+            ? await createCollateralLiquidationScenario()
+            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -419,34 +404,6 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
       cancelled = true;
     };
   }, [open, studioUrl, rpcUrl]);
-
-  useEffect(() => {
-    setSelectedSymbols([]);
-    setPositions(null);
-    setPositionsError(null);
-    if (!open || !isLiquidationReady || !hasTraderAddress) return;
-    let cancelled = false;
-
-    setIsLoadingPositions(true);
-
-    const handlePositionsLoaded = (loaded: PhoenixTraderPosition[]) => {
-      if (cancelled) return;
-      setPositions(loaded);
-      setIsLoadingPositions(false);
-    };
-
-    const handlePositionsFailed = (failure: unknown) => {
-      if (cancelled) return;
-      setPositionsError(failure instanceof Error ? failure.message : 'Could not load the positions of this trader.');
-      setIsLoadingPositions(false);
-    };
-
-    fetchPhoenixTraderPositions(studioUrl, rpcUrl, traderAddress).then(handlePositionsLoaded, handlePositionsFailed);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, isLiquidationReady, hasTraderAddress, traderAddress, studioUrl, rpcUrl]);
 
   const amountField = activeChoice ? (
     <div>
@@ -492,54 +449,25 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
             <p className="mt-1.5 text-sm text-zinc-400">{PhoenixStateModeHint[mode]}</p>
           </div>
 
-          {mode === PhoenixStateMode.LiquidationReady && (
+          {isCollateralLiquidation && (
             <div>
-              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Trader account</span>
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Trader accounts</span>
               <Input
-                aria-label="Phoenix Trader account"
-                placeholder="Address of the Phoenix Trader account"
+                aria-label="Phoenix Trader accounts"
+                placeholder="Addresses of Phoenix Trader accounts, separated by commas or spaces"
                 value={trader}
                 onChange={handleTraderChange}
                 spellCheck={false}
                 autoComplete="off"
               />
-              {isTraderInvalid && (
+              {!!invalidTraderAddresses.length && (
                 <p role="status" className="mt-1.5 text-sm text-red-400">
-                  Not a valid Solana address.
+                  Not a valid Solana address: {invalidTraderAddresses.join(', ')}
                 </p>
               )}
             </div>
           )}
-          {isLiquidationReady && hasTraderAddress && (
-            <div>
-              <div className="mb-1.5 flex items-baseline justify-between">
-                <span className="text-sm font-medium text-zinc-300">Positions to liquidate</span>
-                {!!sortedPositions.length && (
-                  <span className="flex items-baseline gap-3 text-xs text-zinc-500">
-                    {selectionCount}
-                    <button
-                      type="button"
-                      onClick={handleSelectAllToggle}
-                      disabled={isCreating}
-                      className="font-medium text-purple-400 hover:text-purple-300 disabled:opacity-50"
-                    >
-                      {isEveryPositionSelected ? 'Clear' : 'Select all'}
-                    </button>
-                  </span>
-                )}
-              </div>
-              {positionsStatus ? (
-                <p role="status" className="text-sm text-zinc-400">
-                  {positionsStatus}
-                </p>
-              ) : (
-                <CheckboxGroup className="max-h-72 space-y-0 divide-y divide-zinc-800 overflow-y-auto rounded-xl border border-zinc-700/60 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {sortedPositions.map(renderPositionOption)}
-                </CheckboxGroup>
-              )}
-            </div>
-          )}
-          {!isLiquidationReady && (
+          {!isCollateralLiquidation && (
             <div>
               <span className="mb-1.5 block text-sm font-medium text-zinc-300">Market</span>
               {/* null, not undefined: Headless UI treats undefined as uncontrolled and warns once markets load. */}
@@ -565,17 +493,23 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
               )}
             </div>
           )}
-          {mode === PhoenixStateMode.LiquidationCascade && (
+          {isCollateralLiquidation && (
             <div>
-              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Positions to liquidate</span>
-              <Listbox
-                aria-label="Positions to liquidate"
-                value={side}
-                onChange={handleSideChange}
-                disabled={isCreating}
-              >
-                {cascadeSides.map(renderCascadeSideOption)}
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Liquidation depth</span>
+              <Listbox aria-label="Liquidation depth" value={depth} onChange={handleDepthChange} disabled={isCreating}>
+                {liquidationDepths.map(renderLiquidationDepthOption)}
               </Listbox>
+            </div>
+          )}
+          {isAfterPriceMove && (
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-zinc-300">Price move (%)</span>
+              <Input
+                aria-label="Price move"
+                value={movePercent}
+                onChange={handleMovePercentChange}
+                inputMode="decimal"
+              />
             </div>
           )}
           {amountField}
