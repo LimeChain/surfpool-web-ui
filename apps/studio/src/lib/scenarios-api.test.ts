@@ -4,9 +4,15 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createPhoenixCollateralLiquidationScenario,
+  createPhoenixMaintenanceMarginScenario,
+  createPhoenixMarketMoveScenario,
+  createPhoenixOraclePriceScenario,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  fetchDynamicRefOptions,
+  fetchPhoenixTraderPositions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -20,7 +26,7 @@ import type { Scenario } from './scenarios-data';
 
 vi.mock('./ai-client', () => ({
   callMCPTool: vi.fn(),
-  fetchMCPTools: vi.fn(),
+  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
 }));
 
 const callMcpToolMock = vi.mocked(callMCPTool);
@@ -163,6 +169,161 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+  });
+});
+
+describe('Phoenix scenarios', () => {
+  const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+  const mockPost = (templateId: string, posted: Response) => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(templates(templateId)).mockResolvedValueOnce(posted);
+  };
+  const postedScenario = () => JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+
+  it.each([
+    [createPhoenixMarketMoveScenario, 'phoenix-market-move', 'target_ticks'],
+    [createPhoenixOraclePriceScenario, 'phoenix-oracle-price', 'target_ticks'],
+    [createPhoenixMaintenanceMarginScenario, 'phoenix-market-risk-factors', 'maintenanceRiskFactor'],
+  ] as const)(
+    '%#: posts the template with its map address and string values, keeping the local copy',
+    async (create, templateId, field) => {
+      mockPost(templateId, jsonResponse({ id: 'phoenix-market' }));
+
+      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
+      expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
+      expect(postedScenario().overrides[0]).toMatchObject({
+        templateId,
+        values: { symbol: 'SOL', [field]: '6000' },
+        fetchBeforeUse: false,
+        account: { pubkey: 'perp-asset-map' },
+      });
+    }
+  );
+
+  it('posts one slot-0 scenario that sets every collateral', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-trader-collateral' }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-collateral' }));
+    const traders = [
+      { trader: 'hot', collateral: '-5' },
+      { trader: 'cold', collateral: '9' },
+    ];
+
+    await createPhoenixCollateralLiquidationScenario('http://studio', traders);
+    const { name, overrides } = postedScenario();
+    const field = 'traderState.quoteLotCollateral';
+    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false };
+    expect(name).toBe('Phoenix 2-Trader Collateral Liquidation');
+    expect(overrides).toMatchObject([
+      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'hot' }, values: { [field]: '-5' } },
+      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'cold' }, values: { [field]: '9' } },
+    ]);
+  });
+
+  it('moves the markets one slot after the traders are set, reading margins after those moves', async () => {
+    const moves = [{ symbol: 'SOL', targetTicks: '10200' }];
+    vi.mocked(callMCPTool).mockResolvedValueOnce({ content: [{ type: 'text', text: '{}' }] });
+    await fetchPhoenixTraderPositions('http://studio', 'http://rpc', 'trader', moves);
+    const args = { trader: 'trader', moves };
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_trader_positions', args, 'session');
+
+    const templates = [{ id: 'phoenix-trader-collateral' }, { id: 'phoenix-market-move', address: 'map' }];
+    const traders = [{ trader: 'cold', collateral: '9' }];
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(templates)).mockResolvedValueOnce(jsonResponse({ id: 'price-move' }));
+    await createPhoenixCollateralLiquidationScenario('http://studio', traders, moves);
+    const { name, overrides } = postedScenario();
+    expect(name).toBe('Phoenix 1-Trader Price-Move Liquidation');
+    expect(overrides).toMatchObject([
+      { templateId: 'phoenix-trader-collateral', scenarioRelativeSlot: 0, account: { pubkey: 'cold' } },
+      { templateId: 'phoenix-market-move', scenarioRelativeSlot: 1, account: 'map', values: { target_ticks: '10200' } },
+    ]);
+  });
+
+  it('reads the positions and margin of a trader from the Phoenix MCP tool', async () => {
+    const positions = [
+      { symbol: 'SOL', orderbook: 'book', side: 'short', baseLots: '25000', maintenanceMarginQuoteLots: '1' },
+    ];
+    const traderPositions = { trader: 'trader', positions, hot: true, margin: { liquidatable: false } };
+    vi.mocked(callMCPTool).mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(traderPositions) }],
+    });
+    await expect(fetchPhoenixTraderPositions('http://studio', 'http://127.0.0.1:18899', ' trader ')).resolves.toEqual(
+      traderPositions
+    );
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'list_phoenix_trader_positions',
+      { trader: 'trader', surfnetPort: 18899 },
+      'session'
+    );
+
+    vi.mocked(callMCPTool).mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'not a Phoenix trader' }) }],
+    });
+    await expect(fetchPhoenixTraderPositions('http://studio', 'http://rpc', 'trader')).rejects.toThrow(
+      'not a Phoenix trader'
+    );
+  });
+
+  it('surfaces failed requests', async () => {
+    mockPost('phoenix-market-risk-factors', new Response('Scenario store unavailable', { status: 503 }));
+
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
+  });
+});
+
+describe('fetchDynamicRefOptions', () => {
+  it('returns each live market with its orderbook address and unit inputs from the list_phoenix_markets tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            perpAssetMap: 'map1',
+            count: 2,
+            symbols: ['BTC', 'SOL'],
+            markets: [
+              {
+                symbol: 'BTC',
+                orderbook: 'btcBook',
+                markTicks: 83391,
+                tickSize: 100,
+                baseLotDecimals: 4,
+                backstopRiskFactorBps: 2000,
+              },
+              { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755 },
+            ],
+          }),
+        },
+      ],
+    });
+
+    await expect(
+      fetchDynamicRefOptions('http://studio', 'http://127.0.0.1:8899', 'list_phoenix_markets')
+    ).resolves.toEqual([
+      {
+        value: 'BTC',
+        address: 'btcBook',
+        markTicks: 83391,
+        tickSize: 100,
+        baseLotDecimals: 4,
+        backstopRiskFactorBps: 2000,
+      },
+      { value: 'SOL', address: 'solBook', markTicks: 11755 },
+    ]);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', { surfnetPort: 8899 }, 'session');
+  });
+
+  it('falls back to [] when the tool reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'http://rpc', 'list_phoenix_markets')).resolves.toEqual([]);
   });
 });
 
