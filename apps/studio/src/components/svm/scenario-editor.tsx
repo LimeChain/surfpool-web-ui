@@ -643,7 +643,8 @@ export default function ScenarioEditor({
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
-      if (accountPubkey && leavesAccountToOverride(action.template.address)) addressString = accountPubkey;
+      // A PDA template, or one that leaves the account to the override, reads the saved account.
+      if (accountPubkey && !addressString) addressString = accountPubkey;
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
@@ -2583,7 +2584,7 @@ export default function ScenarioEditor({
                                                       </option>
                                                       {staticCatalog.options.map((option) => (
                                                         <option key={option.id} value={option.value}>
-                                                          {option.label}
+                                                          {option.metadata?.symbol ?? option.label}
                                                         </option>
                                                       ))}
                                                     </Select>

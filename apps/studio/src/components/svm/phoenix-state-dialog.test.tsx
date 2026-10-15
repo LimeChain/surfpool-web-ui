@@ -197,9 +197,32 @@ describe('PhoenixStateDialog', () => {
     expect(loadedMoves).toEqual([undefined, undefined, moves, moves]);
   });
 
-  // A move too small to cross leaves the trader liquidatable already; one that helps it never crosses.
+  // Collateral at the middle of the band after the move would leave the trader unhealthy before it, so the
+  // collateral moves up to the middle of the part of the band that keeps the trader healthy until the move.
+  it('keeps the trader healthy until the move when the middle of the band would not', async () => {
+    const createMock = vi.mocked(createPhoenixCollateralLiquidationScenario);
+    createMock.mockResolvedValue({ id: 'price-move' });
+    fetchSymbolsMock.mockResolvedValue([{ value: 'SOL', markTicks: 10000 }]);
+    vi.mocked(fetchPhoenixTraderPositions).mockImplementation(async (_studio, _rpc, trader, moves) => ({
+      ...traderPositions(trader),
+      ...(moves && afterMoves(trader, '0')),
+    }));
+    renderDialog();
+
+    await screen.findByRole('button', { name: 'SOL' });
+    chooseTraders(TRADER);
+    fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'after-price-move' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    // Healthy before the move from 908 after it, liquidatable below 1000: the middle is 954.
+    const prepared = expect.objectContaining({ trader: TRADER, collateral: '9007199254741947' });
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', [prepared], expect.any(Array)));
+  });
+
+  // A move too small to cross leaves no collateral both healthy before it and liquidatable after it; one that
+  // helps the trader never crosses.
   it.each([
-    ['0', `${TRADER} would not stay healthy until the move.`],
+    ['92', `${TRADER} would not stay healthy until the move.`],
     ['400', `The move does not push ${TRADER} toward liquidation.`],
   ])('refuses a trader the move cannot cross (effective %s after it)', async (effective, message) => {
     fetchSymbolsMock.mockResolvedValue([{ value: 'SOL', markTicks: 10000 }]);

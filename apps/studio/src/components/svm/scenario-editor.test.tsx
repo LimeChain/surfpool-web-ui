@@ -110,11 +110,21 @@ it('re-derives the address of a PDA template after a seed edit, even over a save
   expect(await savedOverride()).toMatchObject({ account: pda, values: { mint: 'NewMint' } });
 });
 
-it('selects a saved value a small static catalog lacks as its custom option', async () => {
+it('reads a saved PDA action from the account it was saved with', async () => {
+  await openEditor(mintTemplate, { mint: 'OldMint' }, { pubkey: 'OldPool' });
+  await waitFor(() => {
+    const read = fetchMock.mock.calls.find(
+      ([, init]) => typeof init?.body === 'string' && JSON.parse(init.body).method === 'getAccountInfo'
+    );
+    expect(read && JSON.parse(read[1].body).params[0]).toBe('OldPool');
+  });
+});
+
+it('selects a saved value a small static catalog lacks as its custom option, showing the value', async () => {
   await openEditor(mintTemplate, { mint: 'CustomMint' });
   const select = await screen.findByRole('combobox');
   expect(select).toHaveValue('CustomMint');
-  expect(select).toHaveDisplayValue('Custom value');
+  expect(select).toHaveDisplayValue('Custom · CustomMint');
 });
 
 const marketTemplates = [

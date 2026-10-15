@@ -146,7 +146,8 @@ const availableUnits = (mode: PhoenixStateMode, market?: DynamicRefOption) =>
 
 const parseAddresses = (text: string) => [...new Set(text.split(/[\s,]+/).filter(Boolean))];
 
-// Puts the effective collateral midway between the backstop margin and the maintenance or high-risk margin.
+// Puts the effective collateral midway between the backstop margin and the maintenance or high-risk margin. After a
+// price move the range starts no lower than where the trader is still healthy before the move.
 const liquidationCollateral = (
   { quoteLotCollateral, margin, marginAfterMoves }: PhoenixTraderPositions,
   depth: LiquidationDepth
@@ -154,9 +155,14 @@ const liquidationCollateral = (
   const m = depth === LiquidationDepth.AfterPriceMove ? marginAfterMoves : margin;
   if (!m) throw new Error('Surfpool returned no margin after the price move.');
   const pair = BigInt(depth === LiquidationDepth.EveryPosition ? m.highRiskMargin : m.maintenanceMargin);
-  return String(
-    BigInt(quoteLotCollateral) - BigInt(m.effectiveCollateral) + (BigInt(m.backstopMargin) + pair) / BigInt(2)
-  );
+  const healthyBefore =
+    BigInt(m.effectiveCollateral) - BigInt(margin.effectiveCollateral) + BigInt(margin.maintenanceMargin) + BigInt(1);
+  const isAfterPriceMove = depth === LiquidationDepth.AfterPriceMove;
+  const from =
+    isAfterPriceMove && healthyBefore > BigInt(m.backstopMargin) && healthyBefore < pair
+      ? healthyBefore
+      : BigInt(m.backstopMargin);
+  return String(BigInt(quoteLotCollateral) - BigInt(m.effectiveCollateral) + (from + pair) / BigInt(2));
 };
 
 const staysHealthy = ({ quoteLotCollateral, margin: m }: PhoenixTraderPositions, collateral: string) =>
@@ -174,15 +180,15 @@ const marketMoves = (
   marketBySymbol: Map<string, DynamicRefOption>,
   percent: number
 ) => {
-  const longMinusShort = new Map<string, number>();
+  const longMinusShort = new Map<string, bigint>();
   for (const { symbol, side, maintenanceMarginQuoteLots } of traders.flatMap(({ positions }) => positions)) {
-    const margin = Number(maintenanceMarginQuoteLots);
-    longMinusShort.set(symbol, (longMinusShort.get(symbol) ?? 0) + (side === 'long' ? margin : -margin));
+    const margin = BigInt(maintenanceMarginQuoteLots);
+    longMinusShort.set(symbol, (longMinusShort.get(symbol) ?? BigInt(0)) + (side === 'long' ? margin : -margin));
   }
   return [...longMinusShort].map(([symbol, weight]): PhoenixMarketMove => {
     const markTicks = marketBySymbol.get(symbol)?.markTicks;
     if (!markTicks) throw new Error(`No mark price is loaded for ${symbol}.`);
-    const factor = weight >= 0 ? 1 - percent / 100 : 1 + percent / 100;
+    const factor = weight >= BigInt(0) ? 1 - percent / 100 : 1 + percent / 100;
     return { symbol, targetTicks: String(Math.max(1, Math.round(markTicks * factor))) };
   });
 };
