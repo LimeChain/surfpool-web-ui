@@ -56,6 +56,27 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'Tessera Price Shock',
+    prompt:
+      'Create an editable SOL/USDC scenario where Tessera reprices SOL to $100 in both directions and keeps the quote fresh, so swaps fill at that price. Prepare state only; do not build or execute a swap.',
+    icon: '🎯',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Stale Quote',
+    prompt:
+      "Make Tessera's SOL/USDC quote stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.",
+    icon: '⏳',
+    protocols: ['tessera'],
+  },
+  {
+    label: 'Tessera Halt',
+    prompt:
+      'Halt all Tessera liquidity on the cbBTC/USDC market in both directions and keep the quote fresh. Prepare state only; do not build or execute a swap.',
+    icon: '🛑',
+    protocols: ['tessera'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
