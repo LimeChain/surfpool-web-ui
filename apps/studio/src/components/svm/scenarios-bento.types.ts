@@ -96,4 +96,11 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Save Liquidation',
+    prompt:
+      'Crash the SOL price and its EMA to $50 in the Pyth feed the Save main pool SOL reserve reads so its SOL-backed borrowers become liquidatable',
+    icon: '🛟',
+    protocols: ['save', 'pyth'],
+  },
 ];
