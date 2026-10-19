@@ -305,6 +305,14 @@ export async function fetchDynamicRefOptions(
   }
 }
 
+interface PhoenixOverride {
+  templateId: string;
+  label: string;
+  values: Record<string, string>;
+  account?: string;
+  slot?: number;
+}
+
 /**
  * Phoenix scenarios are built here and posted to the generic API. A market template carries the
  * perp asset map address; a trader template targets the Trader account it is given.
@@ -314,7 +322,7 @@ async function createPhoenixScenario(
   name: string,
   description: string,
   tags: string[],
-  overrides: { templateId: string; label: string; values: Record<string, string>; account?: string; slot?: number }[]
+  overrides: PhoenixOverride[]
 ): Promise<PhoenixScenarioResult> {
   const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!templatesResponse.ok) {
@@ -365,6 +373,17 @@ async function createPhoenixScenario(
   return { id: result.id };
 }
 
+// A move leaves the resting orders it crosses until the uncross after it matches them.
+const marketMoveOverrides = (symbol: string, targetTicks: string, slot = 0): PhoenixOverride[] => [
+  {
+    templateId: 'phoenix-market-move',
+    label: `Phoenix ${symbol} market move`,
+    values: { symbol, target_ticks: targetTicks },
+    slot,
+  },
+  { templateId: 'phoenix-market-uncross', label: `Phoenix ${symbol} uncross`, values: { symbol }, slot },
+];
+
 export async function createPhoenixMarketMoveScenario(
   studioUrl: string,
   symbol: string,
@@ -375,13 +394,7 @@ export async function createPhoenixMarketMoveScenario(
     `Phoenix ${symbol.trim()} Market Move`,
     'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
     ['phoenix-eternal', 'market-move', 'risk'],
-    [
-      {
-        templateId: 'phoenix-market-move',
-        label: `Phoenix ${symbol.trim()} market move`,
-        values: { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
-      },
-    ]
+    marketMoveOverrides(symbol.trim(), targetTicks.trim())
   );
 }
 
@@ -410,7 +423,7 @@ export interface PhoenixMarketMove {
   targetTicks: string;
 }
 
-/** Hot traders cancel their resting orders before any collateral is set; `moves` follow one slot later. */
+/** Each trader cancels its resting orders before its collateral is set; `moves` follow one slot later. */
 export async function createPhoenixCollateralLiquidationScenario(
   studioUrl: string,
   traders: { trader: string; collateral: string }[],
@@ -421,21 +434,20 @@ export async function createPhoenixCollateralLiquidationScenario(
     `Phoenix ${traders.length}-Trader ${moves.length ? 'Price-Move' : 'Collateral'} Liquidation`,
     moves.length
       ? 'Leave the chosen Phoenix Eternal traders healthy, then move their markets one slot later so a keeper can liquidate them.'
-      : 'Lower the collateral of the chosen Phoenix Eternal traders until a keeper can liquidate them, without moving any price.',
+      : "Cancel the chosen Phoenix Eternal traders' orders and lower their collateral until a keeper can liquidate them, without moving any price.",
     ['phoenix-eternal', 'liquidation', 'collateral'],
     [
-      ...traders.map(({ trader, collateral }) => ({
-        templateId: 'phoenix-trader-collateral',
-        label: 'Phoenix trader collateral',
-        values: { 'traderState.quoteLotCollateral': collateral },
-        account: trader,
-      })),
-      ...moves.map(({ symbol, targetTicks }) => ({
-        templateId: 'phoenix-market-move',
-        label: `Phoenix ${symbol} market move`,
-        values: { symbol, target_ticks: targetTicks },
-        slot: 1,
-      })),
+      ...traders.flatMap(({ trader, collateral }): PhoenixOverride[] => [
+        // Phoenix reads a trader in its active index from there, not from the collateral field.
+        { templateId: 'phoenix-trader-cancel-orders', label: 'Phoenix trader cancel orders', values: { trader } },
+        {
+          templateId: 'phoenix-trader-collateral',
+          label: 'Phoenix trader collateral',
+          values: { 'traderState.quoteLotCollateral': collateral },
+          account: trader,
+        },
+      ]),
+      ...moves.flatMap(({ symbol, targetTicks }) => marketMoveOverrides(symbol, targetTicks, 1)),
     ]
   );
 }
@@ -459,7 +471,7 @@ export interface PhoenixTraderPositions {
   // The Trader account's collateral field, the base for phoenix-trader-collateral; margin.collateral can differ.
   quoteLotCollateral: string;
   marginAfterMoves?: PhoenixMargin;
-  // Why phoenix-trader-collateral would refuse the trader, if it would.
+  // Why phoenix-trader-cancel-orders or phoenix-trader-collateral would refuse the trader, if one would.
   refusal?: string | null;
 }
 

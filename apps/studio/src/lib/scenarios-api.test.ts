@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
@@ -117,9 +117,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -168,15 +168,18 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
 describe('Phoenix scenarios', () => {
-  const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+  const templates = (...ids: string[]) =>
+    jsonResponse(ids.map((id) => ({ id, address: { pubkey: 'perp-asset-map' } })));
   const mockPost = (templateId: string, posted: Response) => {
     vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValueOnce(templates(templateId)).mockResolvedValueOnce(posted);
+    fetchMock.mockResolvedValueOnce(templates(templateId, 'phoenix-market-uncross')).mockResolvedValueOnce(posted);
   };
   const postedScenario = () => JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
 
@@ -200,10 +203,23 @@ describe('Phoenix scenarios', () => {
     }
   );
 
-  it('posts one slot-0 scenario that sets every collateral', async () => {
+  it('follows a market move with the uncross of the same market, in the same slot', async () => {
+    mockPost('phoenix-market-move', jsonResponse({ id: 'phoenix-market' }));
+
+    await createPhoenixMarketMoveScenario('http://studio', ' SOL ', ' 6000 ');
+    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false, account: { pubkey: 'perp-asset-map' } };
+    expect(postedScenario().overrides).toMatchObject([
+      { ...shared, templateId: 'phoenix-market-move', values: { symbol: 'SOL', target_ticks: '6000' } },
+      { ...shared, templateId: 'phoenix-market-uncross', values: { symbol: 'SOL' } },
+    ]);
+  });
+
+  it("posts one slot-0 scenario that cancels each trader's orders before setting its collateral", async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-trader-collateral' }]))
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'phoenix-trader-cancel-orders', address: 'map' }, { id: 'phoenix-trader-collateral' }])
+      )
       .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-collateral' }));
     const traders = [
       { trader: 'hot', collateral: '-5' },
@@ -216,7 +232,9 @@ describe('Phoenix scenarios', () => {
     const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false };
     expect(name).toBe('Phoenix 2-Trader Collateral Liquidation');
     expect(overrides).toMatchObject([
+      { ...shared, templateId: 'phoenix-trader-cancel-orders', account: 'map', values: { trader: 'hot' } },
       { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'hot' }, values: { [field]: '-5' } },
+      { ...shared, templateId: 'phoenix-trader-cancel-orders', account: 'map', values: { trader: 'cold' } },
       { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'cold' }, values: { [field]: '9' } },
     ]);
   });
@@ -228,7 +246,12 @@ describe('Phoenix scenarios', () => {
     const args = { trader: 'trader', moves };
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_trader_positions', args, 'session');
 
-    const templates = [{ id: 'phoenix-trader-collateral' }, { id: 'phoenix-market-move', address: 'map' }];
+    const templates = [
+      { id: 'phoenix-trader-cancel-orders', address: 'map' },
+      { id: 'phoenix-trader-collateral' },
+      { id: 'phoenix-market-move', address: 'map' },
+      { id: 'phoenix-market-uncross', address: 'map' },
+    ];
     const traders = [{ trader: 'cold', collateral: '9' }];
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse(templates)).mockResolvedValueOnce(jsonResponse({ id: 'price-move' }));
@@ -236,8 +259,15 @@ describe('Phoenix scenarios', () => {
     const { name, overrides } = postedScenario();
     expect(name).toBe('Phoenix 1-Trader Price-Move Liquidation');
     expect(overrides).toMatchObject([
+      {
+        templateId: 'phoenix-trader-cancel-orders',
+        scenarioRelativeSlot: 0,
+        account: 'map',
+        values: { trader: 'cold' },
+      },
       { templateId: 'phoenix-trader-collateral', scenarioRelativeSlot: 0, account: { pubkey: 'cold' } },
       { templateId: 'phoenix-market-move', scenarioRelativeSlot: 1, account: 'map', values: { target_ticks: '10200' } },
+      { templateId: 'phoenix-market-uncross', scenarioRelativeSlot: 1, account: 'map', values: { symbol: 'SOL' } },
     ]);
   });
 
@@ -713,8 +743,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -739,8 +768,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

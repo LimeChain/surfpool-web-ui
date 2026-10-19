@@ -117,7 +117,7 @@ const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.OraclePrice]:
     'Moves only the oracle price. The order book and makers keep their old prices, so trades fill against the old book.',
   [PhoenixStateMode.CollateralLiquidation]:
-    "Sets each trader's collateral so a keeper can liquidate it now, or only after a price move one slot later.",
+    "Cancels each trader's resting orders and sets its collateral so a keeper can liquidate it now, or only after a price move one slot later.",
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
 };
 
