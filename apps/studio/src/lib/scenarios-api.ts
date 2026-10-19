@@ -433,12 +433,13 @@ export async function createPhoenixCollateralLiquidationScenario(
     studioUrl,
     `Phoenix ${traders.length}-Trader ${moves.length ? 'Price-Move' : 'Collateral'} Liquidation`,
     moves.length
-      ? 'Leave the chosen Phoenix Eternal traders healthy, then move their markets one slot later so a keeper can liquidate them.'
+      ? "Cancel the chosen Phoenix Eternal traders' orders and leave them healthy, then move their markets one slot later so a keeper can liquidate them."
       : "Cancel the chosen Phoenix Eternal traders' orders and lower their collateral until a keeper can liquidate them, without moving any price.",
     ['phoenix-eternal', 'liquidation', 'collateral'],
     [
       ...traders.flatMap(({ trader, collateral }): PhoenixOverride[] => [
-        // Phoenix reads a trader in its active index from there, not from the collateral field.
+        // Phoenix reads a hot trader's state from its trader index, not from the Trader account the collateral is
+        // written to; the cancel takes the trader out of the index first.
         { templateId: 'phoenix-trader-cancel-orders', label: 'Phoenix trader cancel orders', values: { trader } },
         {
           templateId: 'phoenix-trader-collateral',
