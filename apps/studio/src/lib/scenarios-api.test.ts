@@ -212,28 +212,25 @@ describe('Phoenix scenarios', () => {
     ]);
   });
 
-  it("posts one slot-0 scenario that cancels each trader's orders before setting its collateral", async () => {
+  it("posts one slot-0 scenario that sets each trader's effective collateral in USDC", async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse([{ id: 'phoenix-trader-cancel-orders', address: 'map' }, { id: 'phoenix-trader-collateral' }])
-      )
+      .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-trader-collateral' }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-collateral' }));
     const traders = [
-      { trader: 'hot', collateral: '-5' },
-      { trader: 'cold', collateral: '9' },
+      { trader: 'hot', collateral: '-5030916850' },
+      { trader: 'cold', collateral: '750607480' },
     ];
 
     await createPhoenixCollateralLiquidationScenario('http://studio', traders);
     const { name, overrides } = postedScenario();
-    const field = 'traderState.quoteLotCollateral';
-    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false };
+    const field = 'effective_collateral_usdc';
+    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false, templateId: 'phoenix-trader-collateral' };
     expect(name).toBe('Phoenix 2-Trader Collateral Liquidation');
+    expect(overrides).toHaveLength(2);
     expect(overrides).toMatchObject([
-      { ...shared, templateId: 'phoenix-trader-cancel-orders', account: 'map', values: { trader: 'hot' } },
-      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'hot' }, values: { [field]: '-5' } },
-      { ...shared, templateId: 'phoenix-trader-cancel-orders', account: 'map', values: { trader: 'cold' } },
-      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'cold' }, values: { [field]: '9' } },
+      { ...shared, account: { pubkey: 'hot' }, values: { [field]: '-5030.916850' } },
+      { ...shared, account: { pubkey: 'cold' }, values: { [field]: '750.607480' } },
     ]);
   });
 
@@ -263,7 +260,12 @@ describe('Phoenix scenarios', () => {
         account: 'map',
         values: { trader: 'cold' },
       },
-      { templateId: 'phoenix-trader-collateral', scenarioRelativeSlot: 0, account: { pubkey: 'cold' } },
+      {
+        templateId: 'phoenix-trader-collateral',
+        scenarioRelativeSlot: 0,
+        account: { pubkey: 'cold' },
+        values: { effective_collateral_usdc: '0.000009' },
+      },
       { templateId: 'phoenix-market-move', scenarioRelativeSlot: 1, account: 'map', values: { target_ticks: '10200' } },
       { templateId: 'phoenix-market-uncross', scenarioRelativeSlot: 1, account: 'map', values: { symbol: 'SOL' } },
     ]);

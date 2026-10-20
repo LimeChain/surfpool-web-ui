@@ -117,7 +117,7 @@ const PhoenixStateModeHint: Record<PhoenixStateMode, string> = {
   [PhoenixStateMode.OraclePrice]:
     'Moves only the oracle price. The order book and makers keep their old prices, so trades fill against the old book.',
   [PhoenixStateMode.CollateralLiquidation]:
-    "Cancels each trader's resting orders and sets its collateral so a keeper can liquidate it now, or only after a price move one slot later.",
+    "Sets each trader's effective collateral so a keeper can liquidate it now, or cancels its orders and keeps it healthy until a price move one slot later.",
   [PhoenixStateMode.MaintenanceMargin]: 'Changes the share of initial margin a position must keep before liquidation.',
 };
 
@@ -147,11 +147,9 @@ const availableUnits = (mode: PhoenixStateMode, market?: DynamicRefOption) =>
 const parseAddresses = (text: string) => [...new Set(text.split(/[\s,]+/).filter(Boolean))];
 
 // Puts the effective collateral midway between the backstop margin and the maintenance or high-risk margin. After a
-// price move the range starts no lower than where the trader is still healthy before the move.
-const liquidationCollateral = (
-  { quoteLotCollateral, margin, marginAfterMoves }: PhoenixTraderPositions,
-  depth: LiquidationDepth
-) => {
+// price move the range starts no lower than where the trader is still healthy before the move, and the collateral set
+// a slot earlier leaves out what the move changes.
+const liquidationCollateral = ({ margin, marginAfterMoves }: PhoenixTraderPositions, depth: LiquidationDepth) => {
   const m = depth === LiquidationDepth.AfterPriceMove ? marginAfterMoves : margin;
   if (!m) throw new Error('Surfpool returned no margin after the price move.');
   const pair = BigInt(depth === LiquidationDepth.EveryPosition ? m.highRiskMargin : m.maintenanceMargin);
@@ -162,11 +160,11 @@ const liquidationCollateral = (
     isAfterPriceMove && healthyBefore > BigInt(m.backstopMargin) && healthyBefore < pair
       ? healthyBefore
       : BigInt(m.backstopMargin);
-  return String(BigInt(quoteLotCollateral) - BigInt(m.effectiveCollateral) + (from + pair) / BigInt(2));
+  return String(BigInt(margin.effectiveCollateral) - BigInt(m.effectiveCollateral) + (from + pair) / BigInt(2));
 };
 
-const staysHealthy = ({ quoteLotCollateral, margin: m }: PhoenixTraderPositions, collateral: string) =>
-  BigInt(m.effectiveCollateral) + BigInt(collateral) - BigInt(quoteLotCollateral) > BigInt(m.maintenanceMargin);
+const staysHealthy = ({ margin: m }: PhoenixTraderPositions, collateral: string) =>
+  BigInt(collateral) > BigInt(m.maintenanceMargin);
 
 const cushion = (m: PhoenixTraderPositions['margin']) => BigInt(m.effectiveCollateral) - BigInt(m.maintenanceMargin);
 

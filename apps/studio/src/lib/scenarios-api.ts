@@ -423,7 +423,18 @@ export interface PhoenixMarketMove {
   targetTicks: string;
 }
 
-/** Each trader cancels its resting orders before its collateral is set; `moves` follow one slot later. */
+// Phoenix counts USDC in quote lots of a millionth.
+const usdcFromQuoteLots = (quoteLots: string) => {
+  const lots = BigInt(quoteLots);
+  const whole = lots < BigInt(0) ? -lots : lots;
+  const fraction = String(whole % BigInt(1000000)).padStart(6, '0');
+  return `${lots < BigInt(0) ? '-' : ''}${whole / BigInt(1000000)}.${fraction}`;
+};
+
+/**
+ * Sets each trader's effective collateral, given in quote lots. With `moves`, which follow one slot later, each trader
+ * cancels its resting orders first.
+ */
 export async function createPhoenixCollateralLiquidationScenario(
   studioUrl: string,
   traders: { trader: string; collateral: string }[],
@@ -434,17 +445,19 @@ export async function createPhoenixCollateralLiquidationScenario(
     `Phoenix ${traders.length}-Trader ${moves.length ? 'Price-Move' : 'Collateral'} Liquidation`,
     moves.length
       ? "Cancel the chosen Phoenix Eternal traders' orders and leave them healthy, then move their markets one slot later so a keeper can liquidate them."
-      : "Cancel the chosen Phoenix Eternal traders' orders and lower their collateral until a keeper can liquidate them, without moving any price.",
+      : "Lower the chosen Phoenix Eternal traders' effective collateral until a keeper can liquidate them, without moving any price; a keeper force-cancels their risk-increasing orders first.",
     ['phoenix-eternal', 'liquidation', 'collateral'],
     [
       ...traders.flatMap(({ trader, collateral }): PhoenixOverride[] => [
-        // Phoenix reads a hot trader's state from its trader index, not from the Trader account the collateral is
-        // written to; the cancel takes the trader out of the index first.
-        { templateId: 'phoenix-trader-cancel-orders', label: 'Phoenix trader cancel orders', values: { trader } },
+        // The move would otherwise fill the trader's resting orders and change the positions its collateral is
+        // worked out for.
+        ...(moves.length
+          ? [{ templateId: 'phoenix-trader-cancel-orders', label: 'Phoenix trader cancel orders', values: { trader } }]
+          : []),
         {
           templateId: 'phoenix-trader-collateral',
           label: 'Phoenix trader collateral',
-          values: { 'traderState.quoteLotCollateral': collateral },
+          values: { effective_collateral_usdc: usdcFromQuoteLots(collateral) },
           account: trader,
         },
       ]),
@@ -469,8 +482,6 @@ export interface PhoenixTraderPositions {
   positions: PhoenixTraderPosition[];
   hot: boolean;
   margin: PhoenixMargin;
-  // The Trader account's collateral field, the base for phoenix-trader-collateral; margin.collateral can differ.
-  quoteLotCollateral: string;
   marginAfterMoves?: PhoenixMargin;
   // Why phoenix-trader-cancel-orders or phoenix-trader-collateral would refuse the trader, if one would.
   refusal?: string | null;
