@@ -43,15 +43,16 @@ describe('resolveTokenSelectorOptions', () => {
 
 describe('getSolFiCustomAccountKind', () => {
   it('names the concrete account expected by each SolFi template', () => {
-    expect(getSolFiCustomAccountKind('SolFi', 'solfi-spread')).toBe('market');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-size-impact')).toBe('market');
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-swap-pressure')).toBe('market');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-price')).toBe('oracle');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-freshness')).toBe('oracle');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-vault-balance')).toBe('vault');
   });
 
   it('does not add a custom-address control to other protocols', () => {
-    expect(getSolFiCustomAccountKind('Raydium', 'solfi-spread')).toBeUndefined();
+    expect(getSolFiCustomAccountKind('Raydium', 'solfi-size-impact')).toBeUndefined();
+    expect(getSolFiCustomAccountKind('SolFi', 'solfi-spread')).toBeUndefined();
     expect(getSolFiCustomAccountKind('SolFi', 'unknown-template')).toBeUndefined();
   });
 });
@@ -88,7 +89,7 @@ describe('getSolFiAccountOptions', () => {
 
 describe('resolveSolFiAccount', () => {
   it('uses the account selected in Studio for a SolFi override', () => {
-    expect(resolveSolFiAccount('solfi-spread', { pubkey: '' }, ' CustomMarket111 ')).toEqual({
+    expect(resolveSolFiAccount('solfi-size-impact', { pubkey: '' }, ' CustomMarket111 ')).toEqual({
       pubkey: 'CustomMarket111',
     });
   });
@@ -97,6 +98,6 @@ describe('resolveSolFiAccount', () => {
     const address = { pubkey: 'ExistingAccount111' };
 
     expect(resolveSolFiAccount('bisonfi-spread', address, 'IgnoredAccount111')).toBe(address);
-    expect(resolveSolFiAccount('solfi-spread', { pubkey: '' }, '  ')).toBeUndefined();
+    expect(resolveSolFiAccount('solfi-size-impact', { pubkey: '' }, '  ')).toBeUndefined();
   });
 });

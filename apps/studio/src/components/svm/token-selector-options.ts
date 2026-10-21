@@ -14,7 +14,7 @@ export const getSolFiCustomAccountKind = (protocol: unknown, templateId: unknown
   if (protocol !== 'SolFi' || typeof templateId !== 'string') return undefined;
   if (templateId === 'solfi-price' || templateId === 'solfi-freshness') return 'oracle';
   if (templateId === 'solfi-vault-balance') return 'vault';
-  if (templateId === 'solfi-spread' || templateId === 'solfi-size-impact') return 'market';
+  if (templateId === 'solfi-size-impact' || templateId === 'solfi-swap-pressure') return 'market';
   return undefined;
 };
 
