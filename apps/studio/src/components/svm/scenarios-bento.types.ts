@@ -56,6 +56,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'SolFi Risk-Off',
+    prompt:
+      'Create an editable WSOL/USDC scenario where SOL crashes to $50, so the PMM becomes cautious about accumulating more SOL without completely leaving the market. It should keep serving small trades, buy SOL at a 1% discount, spend no more than 25 USDC on sellers, and continue selling SOL at its normal 0.1% spread. To achieve this, use the SolFi price override, keep that quote active for 200 slots, apply a directional spread, and limit the USDC vault balance.',
+    icon: '🛡️',
+    protocols: ['solfi'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
@@ -88,5 +95,12 @@ export const exampleScenarios: ExampleScenario[] = [
       'Create an editable PumpSwap price shock for token mint <PASTE_TOKEN_MINT_HERE>. Fetch the existing override templates, then call create_scenario once with the pump-amm-canonical-pool template, base_mint set to that mint, virtual_quote_reserves set to 15000000000000, slot 1, and fetchBeforeUse enabled. Prepare state only; do not build or execute a swap.',
     icon: '⚡',
     protocols: ['pumpswap'],
+  },
+  {
+    label: 'Phoenix Price Shock',
+    prompt:
+      'Create an editable Phoenix price shock that drops the mark price of market <PASTE_MARKET_SYMBOL_OR_ADDRESS> by 10% from its current mark. Prepare state only; do not submit trades or liquidations.',
+    icon: '📉',
+    protocols: ['phoenix-eternal'],
   },
 ];
