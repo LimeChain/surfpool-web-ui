@@ -74,13 +74,10 @@ const position = (symbol: string, side: 'long' | 'short', baseLots: string): Pho
 
 const OTHER_TRADER = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
 
-// 2^53 + 1 collateral, which a Number would round.
 const traderPositions = (trader: string, hot = false, liquidatable = false): PhoenixTraderPositions => ({
   trader,
   positions: [position('SOL', 'long', '100')],
   hot,
-  // Hawkeye's collateral differs from the field on purpose: the field is the base.
-  quoteLotCollateral: '9007199254740993',
   margin: {
     collateral: '1',
     effectiveCollateral: '-7',
@@ -149,8 +146,8 @@ describe('PhoenixStateDialog', () => {
     fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'every-position' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    // collateral - effectiveCollateral + (highRiskMargin + backstopMargin) / 2, rounded toward zero
-    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '9007199254741450' });
+    // (highRiskMargin + backstopMargin) / 2, rounded toward zero
+    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '450' });
     await waitFor(() =>
       expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], undefined)
     );
@@ -188,8 +185,8 @@ describe('PhoenixStateDialog', () => {
       { symbol: 'SOL', targetTicks: '10200' },
       { symbol: 'BTC', targetTicks: '84238' },
     ];
-    // collateral - effectiveCollateral + (backstopMargin + maintenanceMargin) / 2, all after the moves
-    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '9007199254742343' });
+    // effectiveCollateral before the moves - after them + (backstopMargin + maintenanceMargin) / 2 after them
+    const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '1343' });
     await waitFor(() =>
       expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], moves)
     );
@@ -214,8 +211,8 @@ describe('PhoenixStateDialog', () => {
     fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'after-price-move' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    // Healthy before the move from 908 after it, liquidatable below 1000: the middle is 954.
-    const prepared = expect.objectContaining({ trader: TRADER, collateral: '9007199254741947' });
+    // Healthy before the move from 908 after it, liquidatable below 1000: the middle is 954, 947 before the move.
+    const prepared = expect.objectContaining({ trader: TRADER, collateral: '947' });
     await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', [prepared], expect.any(Array)));
   });
 

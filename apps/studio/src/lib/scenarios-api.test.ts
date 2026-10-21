@@ -173,10 +173,11 @@ describe('createPumpSwapPriceShockScenario', () => {
 });
 
 describe('Phoenix scenarios', () => {
-  const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+  const templates = (...ids: string[]) =>
+    jsonResponse(ids.map((id) => ({ id, address: { pubkey: 'perp-asset-map' } })));
   const mockPost = (templateId: string, posted: Response) => {
     vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValueOnce(templates(templateId)).mockResolvedValueOnce(posted);
+    fetchMock.mockResolvedValueOnce(templates(templateId, 'phoenix-market-uncross')).mockResolvedValueOnce(posted);
   };
   const postedScenario = () => JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
 
@@ -200,24 +201,36 @@ describe('Phoenix scenarios', () => {
     }
   );
 
-  it('posts one slot-0 scenario that sets every collateral', async () => {
+  it('follows a market move with the uncross of the same market, in the same slot', async () => {
+    mockPost('phoenix-market-move', jsonResponse({ id: 'phoenix-market' }));
+
+    await createPhoenixMarketMoveScenario('http://studio', ' SOL ', ' 6000 ');
+    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false, account: { pubkey: 'perp-asset-map' } };
+    expect(postedScenario().overrides).toMatchObject([
+      { ...shared, templateId: 'phoenix-market-move', values: { symbol: 'SOL', target_ticks: '6000' } },
+      { ...shared, templateId: 'phoenix-market-uncross', values: { symbol: 'SOL' } },
+    ]);
+  });
+
+  it("posts one slot-0 scenario that sets each trader's effective collateral in USDC", async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(jsonResponse([{ id: 'phoenix-trader-collateral' }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-collateral' }));
     const traders = [
-      { trader: 'hot', collateral: '-5' },
-      { trader: 'cold', collateral: '9' },
+      { trader: 'hot', collateral: '-5030916850' },
+      { trader: 'cold', collateral: '750607480' },
     ];
 
     await createPhoenixCollateralLiquidationScenario('http://studio', traders);
     const { name, overrides } = postedScenario();
-    const field = 'traderState.quoteLotCollateral';
-    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false };
+    const field = 'effective_collateral_usdc';
+    const shared = { scenarioRelativeSlot: 0, fetchBeforeUse: false, templateId: 'phoenix-trader-collateral' };
     expect(name).toBe('Phoenix 2-Trader Collateral Liquidation');
+    expect(overrides).toHaveLength(2);
     expect(overrides).toMatchObject([
-      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'hot' }, values: { [field]: '-5' } },
-      { ...shared, templateId: 'phoenix-trader-collateral', account: { pubkey: 'cold' }, values: { [field]: '9' } },
+      { ...shared, account: { pubkey: 'hot' }, values: { [field]: '-5030.916850' } },
+      { ...shared, account: { pubkey: 'cold' }, values: { [field]: '750.607480' } },
     ]);
   });
 
@@ -228,7 +241,12 @@ describe('Phoenix scenarios', () => {
     const args = { trader: 'trader', moves };
     expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_trader_positions', args, 'session');
 
-    const templates = [{ id: 'phoenix-trader-collateral' }, { id: 'phoenix-market-move', address: 'map' }];
+    const templates = [
+      { id: 'phoenix-trader-cancel-orders', address: 'map' },
+      { id: 'phoenix-trader-collateral' },
+      { id: 'phoenix-market-move', address: 'map' },
+      { id: 'phoenix-market-uncross', address: 'map' },
+    ];
     const traders = [{ trader: 'cold', collateral: '9' }];
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse(templates)).mockResolvedValueOnce(jsonResponse({ id: 'price-move' }));
@@ -236,8 +254,20 @@ describe('Phoenix scenarios', () => {
     const { name, overrides } = postedScenario();
     expect(name).toBe('Phoenix 1-Trader Price-Move Liquidation');
     expect(overrides).toMatchObject([
-      { templateId: 'phoenix-trader-collateral', scenarioRelativeSlot: 0, account: { pubkey: 'cold' } },
+      {
+        templateId: 'phoenix-trader-cancel-orders',
+        scenarioRelativeSlot: 0,
+        account: 'map',
+        values: { trader: 'cold' },
+      },
+      {
+        templateId: 'phoenix-trader-collateral',
+        scenarioRelativeSlot: 0,
+        account: { pubkey: 'cold' },
+        values: { effective_collateral_usdc: '0.000009' },
+      },
       { templateId: 'phoenix-market-move', scenarioRelativeSlot: 1, account: 'map', values: { target_ticks: '10200' } },
+      { templateId: 'phoenix-market-uncross', scenarioRelativeSlot: 1, account: 'map', values: { symbol: 'SOL' } },
     ]);
   });
 

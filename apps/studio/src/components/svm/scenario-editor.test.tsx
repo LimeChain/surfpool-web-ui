@@ -196,18 +196,20 @@ it('keeps the trader of a dialog-created collateral override when it is saved fr
     id: 'phoenix-trader-collateral',
     name: 'Phoenix Trader Collateral',
     address: { pubkey: '' },
-    properties: [{ path: 'traderState.quoteLotCollateral', type: 'input', value_type: 'string' }],
+    properties: [{ path: 'effective_collateral_usdc', type: 'input', value_type: 'string' }],
   };
-  await openEditor(template, { 'traderState.quoteLotCollateral': '1000' }, { pubkey: trader });
+  await openEditor(template, { effective_collateral_usdc: '1000' }, { pubkey: trader });
   await waitFor(() =>
     expect(rpcParams()).toEqual([
       [trader, { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }],
     ])
   );
-  fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), { target: { value: '2000' } });
+  fireEvent.change(await screen.findByPlaceholderText('Enter effective_collateral_usdc...'), {
+    target: { value: '2000' },
+  });
   expect(await savedOverride()).toMatchObject({
     account: { pubkey: trader },
-    values: { 'traderState.quoteLotCollateral': 2000 },
+    values: { effective_collateral_usdc: '2000' },
   });
 });
 
