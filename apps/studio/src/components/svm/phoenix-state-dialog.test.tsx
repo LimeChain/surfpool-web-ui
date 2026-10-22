@@ -194,6 +194,23 @@ describe('PhoenixStateDialog', () => {
     expect(loadedMoves).toEqual([undefined, undefined, moves, moves]);
   });
 
+  it('explains which way the price moves and names a percent outside 0 to 100', async () => {
+    renderDialog();
+
+    await screen.findByRole('button', { name: 'SOL' });
+    chooseTraders(TRADER);
+    fireEvent.change(screen.getByLabelText('Liquidation depth'), { target: { value: 'after-price-move' } });
+    expect(screen.getByText(/down for longs, up for shorts/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Price move'), { target: { value: '-5' } });
+    expect(screen.getByText('Enter a percent above 0 and below 100.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Price move'), { target: { value: '5' } });
+    expect(screen.queryByText('Enter a percent above 0 and below 100.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+  });
+
   // Collateral at the middle of the band after the move would leave the trader unhealthy before it, so the
   // collateral moves up to the middle of the part of the band that keeps the trader healthy until the move.
   it('keeps the trader healthy until the move when the middle of the band would not', async () => {

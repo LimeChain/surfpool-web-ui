@@ -264,7 +264,8 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const isCollateralLiquidation = mode === PhoenixStateMode.CollateralLiquidation;
   const isAfterPriceMove = isCollateralLiquidation && depth === LiquidationDepth.AfterPriceMove;
   // A move of 100% or more would leave no positive price.
-  const isMoveReady = Number(movePercent) > 0 && Number(movePercent) < 100 && !isLoadingSymbols;
+  const isMovePercentInRange = Number(movePercent) > 0 && Number(movePercent) < 100;
+  const isMoveReady = isMovePercentInRange && !isLoadingSymbols;
   const canCreate =
     !isCreating &&
     ((isCollateralLiquidation &&
@@ -525,6 +526,15 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
                 onChange={handleMovePercentChange}
                 inputMode="decimal"
               />
+              <p className="mt-1.5 text-sm text-zinc-400">
+                Each market moves against the positions held there by this percent: down for longs, up for shorts, and
+                against the side with more margin when both are held.
+              </p>
+              {!!movePercent.trim() && !isMovePercentInRange && (
+                <p role="status" className="mt-1.5 text-sm text-red-400">
+                  Enter a percent above 0 and below 100.
+                </p>
+              )}
             </div>
           )}
           {amountField}
