@@ -104,6 +104,7 @@ const goonfiAccounts = (kind: 'market' | 'oracle' | 'vault'): FeaturedAccounts =
 // Templates that write a caller-selected account, with the accounts Studio offers for each.
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['goonfi-reference-band', goonfiAccounts('market')],
+  ['goonfi-size-impact', goonfiAccounts('market')],
   ['goonfi-price', goonfiAccounts('oracle')],
   ['goonfi-freshness', goonfiAccounts('oracle')],
   ['goonfi-vault-balance', goonfiAccounts('vault')],

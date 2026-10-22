@@ -72,6 +72,7 @@ describe('getFeaturedAccounts', () => {
 
   it('offers each GoonFi template the account it writes', () => {
     expect(values('goonfi-reference-band')?.[0]).toBe(sol.market);
+    expect(values('goonfi-size-impact')?.[0]).toBe(sol.market);
     expect(values('goonfi-price')?.[0]).toBe(sol.oracle);
     expect(values('goonfi-freshness')?.[0]).toBe(sol.oracle);
     expect(values('goonfi-vault-balance')?.slice(0, 2)).toEqual([sol.baseVault, sol.quoteVault]);
