@@ -11,6 +11,12 @@ vi.mock('@surfpool/ui', async () => ({
   Combobox: (await import('@/test-utils')).MockCombobox,
   ComboboxLabel: ({ children }: any) => <span>{children}</span>,
   ComboboxOption: ({ children }: any) => <div>{children}</div>,
+  Dropdown: ({ children }: any) => <div>{children}</div>,
+  DropdownButton: ({ children, title }: any) => <button title={title}>{children}</button>,
+  DropdownMenu: ({ children }: any) => <div>{children}</div>,
+  DropdownItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
+  DropdownLabel: ({ children }: any) => <span>{children}</span>,
+  DropdownDescription: ({ children }: any) => <span>{children}</span>,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
   Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
 }));
@@ -38,6 +44,9 @@ const collateralTemplate = {
     ],
   },
 };
+
+const PAUSED_CLOCK_WARNING_TEXT =
+  'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
 
 const fetchMock = vi.fn();
 
@@ -429,30 +438,38 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
 
 const rpcCalls = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body));
+const rpcMethods = () => rpcCalls().map((call) => call.method);
 
-it('plays one column per produced slot: the first at Play, the next on each step', async () => {
-  const column = (id: string) => ({
-    id,
-    name: 'Slot',
-    type: 'slot' as const,
-    actions: [
-      {
-        protocolId: 'phoenix-eternal',
-        actionId: collateralTemplate.id,
-        protocol: 'Phoenix Eternal',
-        action: collateralTemplate.name,
-        account: collateralTemplate.address,
-        overrides: { 'traderState.quoteLotCollateral': id },
-      },
-    ],
-  });
+const clockSensitiveTemplate = { ...collateralTemplate, tags: ['clock-sensitive'] };
+
+const column = (id: string) => ({
+  id,
+  name: 'Slot',
+  type: 'slot' as const,
+  actions: [
+    {
+      protocolId: 'phoenix-eternal',
+      actionId: collateralTemplate.id,
+      protocol: 'Phoenix Eternal',
+      action: collateralTemplate.name,
+      account: collateralTemplate.address,
+      overrides: { 'traderState.quoteLotCollateral': id },
+    },
+  ],
+});
+
+const renderColumns = (template: any, ids: string[]) => {
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
-    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { absoluteSlot: 500 } }),
   }));
-  render(<ScenarioEditor scenarioId="columns" initialSteps={[column('1'), column('2')]} />);
+  render(<ScenarioEditor scenarioId="columns" initialSteps={ids.map(column)} />);
+};
 
-  fireEvent.click(await screen.findByTitle('Play scenario'));
+it('plays one column per produced slot: the first at Play, the next on each step', async () => {
+  renderColumns(clockSensitiveTemplate, ['1', '2']);
+
+  fireEvent.click(await screen.findByText('Play with paused clock'));
   await waitFor(() =>
     expect(rpcCalls().map((call) => call.method)).toEqual([
       'surfnet_registerScenario',
@@ -488,35 +505,20 @@ it('plays one column per produced slot: the first at Play, the next on each step
 });
 
 it('stays in read mode and never pauses the clock when the first column is rejected', async () => {
-  await renderEditor();
+  await renderEditor(clockSensitiveTemplate);
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
     json: async () =>
       url.endsWith('/templates')
-        ? [collateralTemplate]
+        ? [clockSensitiveTemplate]
         : { error: { code: -32602, message: 'base slot 500 is already produced; the next slot is 501' } },
   }));
-  fireEvent.click(await screen.findByTitle('Play scenario'));
+  fireEvent.click(await screen.findByText('Play with paused clock'));
   await waitFor(() => expect(rpcCalls().map((call) => call.method)).toEqual(['surfnet_registerScenario']));
   expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
 });
 
 it('retries a step whose time travel failed without registering the column again', async () => {
-  const column = (id: string) => ({
-    id,
-    name: 'Slot',
-    type: 'slot' as const,
-    actions: [
-      {
-        protocolId: 'phoenix-eternal',
-        actionId: collateralTemplate.id,
-        protocol: 'Phoenix Eternal',
-        action: collateralTemplate.name,
-        account: collateralTemplate.address,
-        overrides: { 'traderState.quoteLotCollateral': id },
-      },
-    ],
-  });
   let failNextTimeTravel = false;
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
@@ -526,11 +528,11 @@ it('retries a step whose time travel failed without registering the column again
     }
     return {
       ok: true,
-      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+      json: async () => (url.endsWith('/templates') ? [clockSensitiveTemplate] : { result: { absoluteSlot: 500 } }),
     };
   });
   render(<ScenarioEditor scenarioId="retry" initialSteps={[column('1'), column('2')]} />);
-  fireEvent.click(await screen.findByTitle('Play scenario'));
+  fireEvent.click(await screen.findByText('Play with paused clock'));
   await waitFor(() => expect(rpcCalls()).toHaveLength(4));
 
   failNextTimeTravel = true;
@@ -545,4 +547,39 @@ it('retries a step whose time travel failed without registering the column again
       .map((call) => call.method)
       .slice(4)
   ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
+});
+
+it('plays with the running clock: one registration per Play and per step, no pause or time travel', async () => {
+  renderColumns(collateralTemplate, ['1', '2', '3']);
+
+  fireEvent.click(await screen.findByText('Play with running clock'));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario']));
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario', 'surfnet_registerScenario']));
+  expect(rpcCalls()[1].params[0].overrides[0].values).toEqual({ 'traderState.quoteLotCollateral': '2' });
+
+  fireEvent.click(await screen.findByTitle('Stop scenario'));
+  expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
+  expect(rpcMethods()).toEqual(['surfnet_registerScenario', 'surfnet_registerScenario']);
+});
+
+it('resumes the clock when a paused playback is stopped', async () => {
+  renderColumns(clockSensitiveTemplate, ['1', '2']);
+  fireEvent.click(await screen.findByText('Play with paused clock'));
+  fireEvent.click(await screen.findByTitle('Stop scenario'));
+  await waitFor(() => expect(rpcMethods().at(-1)).toBe('surfnet_resumeClock'));
+});
+
+it('offers both clocks without a warning when no used template is clock-sensitive', async () => {
+  await renderEditor();
+  expect(await screen.findByText('Play with paused clock')).toBeInTheDocument();
+  expect(screen.getByText('Play with running clock')).toBeInTheDocument();
+  expect(screen.queryByText(/Time-sensitive scenario/)).not.toBeInTheDocument();
+});
+
+it('offers both clocks and warns on the paused one when a used template is clock-sensitive', async () => {
+  await renderEditor(clockSensitiveTemplate);
+  expect(await screen.findByText('Play with paused clock')).toBeInTheDocument();
+  expect(screen.getByText('Play with running clock')).toBeInTheDocument();
+  expect(screen.getByText(PAUSED_CLOCK_WARNING_TEXT)).toBeInTheDocument();
 });

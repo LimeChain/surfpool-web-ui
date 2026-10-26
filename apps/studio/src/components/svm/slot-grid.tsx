@@ -4,6 +4,7 @@ import { Dialog, DialogActions, DialogBody, DialogTitle } from '@surfpool/ui';
 import { Listbox, ListboxOption } from '@surfpool/ui';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
+import { setSurfnetClockPaused } from '@/lib/surfnet-clock';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon } from '@heroicons/react/24/solid';
 import { snapshotDownloadContents } from '@/lib/scenarios-api';
@@ -220,43 +221,19 @@ export const SlotsGrid: React.FC = () => {
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
-    try {
-      const method = isClockPaused ? 'surfnet_resumeClock' : 'surfnet_pauseClock';
+    const newPauseState = !isClockPaused;
+    if (!(await setSurfnetClockPaused(rpcUrl, newPauseState))) {
+      console.error('Error toggling clock');
+      return;
+    }
+    setIsClockPaused(newPauseState);
 
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: method,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.result !== undefined) {
-          const newPauseState = !isClockPaused;
-          setIsClockPaused(newPauseState);
-
-          // Dispatch global event so other components (like header widget) can sync
-          window.dispatchEvent(new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: newPauseState }
-          }));
-
-          // If we're pausing, ignore slot events for a short period
-          if (!isClockPaused) {
-            setIgnoreSlotEvents(true);
-            setTimeout(() => {
-              setIgnoreSlotEvents(false);
-            }, 1000); // Ignore slot events for 1 second after pausing
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error toggling clock:', error);
+    // If we're pausing, ignore slot events for a short period
+    if (newPauseState) {
+      setIgnoreSlotEvents(true);
+      setTimeout(() => {
+        setIgnoreSlotEvents(false);
+      }, 1000); // Ignore slot events for 1 second after pausing
     }
   };
 
