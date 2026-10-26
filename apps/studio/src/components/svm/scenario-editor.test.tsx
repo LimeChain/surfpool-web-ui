@@ -500,3 +500,49 @@ it('stays in read mode and never pauses the clock when the first column is rejec
   await waitFor(() => expect(rpcCalls().map((call) => call.method)).toEqual(['surfnet_registerScenario']));
   expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
 });
+
+it('retries a step whose time travel failed without registering the column again', async () => {
+  const column = (id: string) => ({
+    id,
+    name: 'Slot',
+    type: 'slot' as const,
+    actions: [
+      {
+        protocolId: 'phoenix-eternal',
+        actionId: collateralTemplate.id,
+        protocol: 'Phoenix Eternal',
+        action: collateralTemplate.name,
+        account: collateralTemplate.address,
+        overrides: { 'traderState.quoteLotCollateral': id },
+      },
+    ],
+  });
+  let failNextTimeTravel = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failNextTimeTravel) {
+      failNextTimeTravel = false;
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="retry" initialSteps={[column('1'), column('2')]} />);
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  failNextTimeTravel = true;
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(7));
+  expect(await screen.findByTitle('Step forward')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(9));
+  expect(
+    rpcCalls()
+      .map((call) => call.method)
+      .slice(4)
+  ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
+});

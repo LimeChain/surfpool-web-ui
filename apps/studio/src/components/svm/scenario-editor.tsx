@@ -160,6 +160,8 @@ export default function ScenarioEditor({
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const accountRequestRef = useRef(0);
+  // The column already registered for the next slot, so a retried step only advances the clock
+  const registeredColumnRef = useRef<number | null>(null);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -917,11 +919,18 @@ export default function ScenarioEditor({
   const handleStepForward = async () => {
     if (currentPlaybackSlot < slots.length - 1) {
       setIsExecuting(false);
-      const landed = (await registerColumn(slots[currentPlaybackSlot + 1])) && (await advanceOneSlot());
-      if (!landed) {
+      const next = currentPlaybackSlot + 1;
+      const registered = registeredColumnRef.current === next || (await registerColumn(slots[next]));
+      if (!registered) {
         setIsExecuting(true);
         return;
       }
+      registeredColumnRef.current = next;
+      if (!(await advanceOneSlot())) {
+        setIsExecuting(true);
+        return;
+      }
+      registeredColumnRef.current = null;
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
@@ -1000,9 +1009,10 @@ export default function ScenarioEditor({
 
   const handlePlay = async () => {
     const [firstSlot] = slots;
-    if (firstSlot && !(await registerColumn(firstSlot))) {
+    if (firstSlot && registeredColumnRef.current !== 0 && !(await registerColumn(firstSlot))) {
       return;
     }
+    registeredColumnRef.current = firstSlot ? 0 : null;
 
     try {
       const pauseResponse = await fetch(rpcUrl, {
@@ -1030,6 +1040,7 @@ export default function ScenarioEditor({
     if (firstSlot && !(await advanceOneSlot())) {
       return;
     }
+    registeredColumnRef.current = null;
 
     setCurrentPlaybackSlot(0);
     setIsExecuting(true);
@@ -1037,6 +1048,7 @@ export default function ScenarioEditor({
   };
 
   const handleStop = () => {
+    registeredColumnRef.current = null;
     setMode('read');
     setIsExecuting(false);
     setCurrentPlaybackSlot(0);
