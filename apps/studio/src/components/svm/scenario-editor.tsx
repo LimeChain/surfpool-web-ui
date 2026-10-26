@@ -861,53 +861,58 @@ export default function ScenarioEditor({
     setMouseX(null);
   };
 
+  // A time travel of one slot makes the surfnet produce it and apply the column registered for it
+  const advanceOneSlot = async () => {
+    try {
+      // Get current absolute slot from getEpochInfo
+      const epochResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getEpochInfo',
+        }),
+      });
+
+      if (epochResponse.ok) {
+        const epochData = await epochResponse.json();
+        if (epochData.result) {
+          const currentAbsoluteSlot = epochData.result.absoluteSlot;
+          const nextSlot = currentAbsoluteSlot + 1;
+
+          logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
+
+          // Call surfnet_timeTravel with next absolute slot
+          const timeTravelResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'surfnet_timeTravel',
+              params: [{ absoluteSlot: nextSlot }],
+            }),
+          });
+
+          if (timeTravelResponse.ok) {
+            const timeTravelData = await timeTravelResponse.json();
+            logger.log('✅ Time travel successful:', timeTravelData.result);
+          } else {
+            console.error('❌ Time travel failed:', timeTravelResponse.status);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error stepping forward:', error);
+    }
+  };
+
   const handleStepForward = async () => {
     if (currentPlaybackSlot < slots.length - 1) {
       setIsExecuting(false);
-
-      try {
-        // Get current absolute slot from getEpochInfo
-        const epochResponse = await fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getEpochInfo',
-          }),
-        });
-
-        if (epochResponse.ok) {
-          const epochData = await epochResponse.json();
-          if (epochData.result) {
-            const currentAbsoluteSlot = epochData.result.absoluteSlot;
-            const nextSlot = currentAbsoluteSlot + 1;
-
-            logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
-
-            // Call surfnet_timeTravel with next absolute slot
-            const timeTravelResponse = await fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'surfnet_timeTravel',
-                params: [{ absoluteSlot: nextSlot }],
-              }),
-            });
-
-            if (timeTravelResponse.ok) {
-              const timeTravelData = await timeTravelResponse.json();
-              logger.log('✅ Time travel successful:', timeTravelData.result);
-            } else {
-              console.error('❌ Time travel failed:', timeTravelResponse.status);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('❌ Error stepping forward:', error);
-      }
+      await registerColumn(slots[currentPlaybackSlot + 1]);
+      await advanceOneSlot();
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
@@ -915,74 +920,47 @@ export default function ScenarioEditor({
     }
   };
 
-  const handlePlay = async () => {
-    // Build scenario structure for RPC
-    const overrides = slots.flatMap((slot) =>
-      slot.actions.map((action) => {
-        // The backend expects flat dot-notation values ("price_message.price": 123);
-        // fields edited in the UI live nested and are reachable via modifiedFields
-        const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
+  // One column is registered at a time, when the user reaches it, so the surfnet never holds
+  // overrides for a slot it has not produced yet.
+  const registerColumn = async (slot: Slot) => {
+    const overrides = slot.actions.map((action) => {
+      // The backend expects flat dot-notation values ("price_message.price": 123);
+      // fields edited in the UI live nested and are reachable via modifiedFields
+      const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
-        const original = (action.original ?? {}) as Partial<OverridePayload>;
-        const override: OverridePayload = {
-          // Fields the UI does not edit (enabled, future backend additions)
-          // come from the loaded override and pass through unchanged
-          ...original,
-          // Use existing overrideId if available, otherwise generate one
-          id: action.overrideId || `${action.actionId}_${slot.height}`,
-          templateId: action.actionId, // actionId IS the templateId
-          values: flatValues,
-          scenarioRelativeSlot: slot.height, // 0-indexed to match backend
-          label: action.action,
-          enabled: original.enabled ?? true,
-          fetchBeforeUse: action.fetchBeforeUse || false,
-        };
+      const original = (action.original ?? {}) as Partial<OverridePayload>;
+      const override: OverridePayload = {
+        // Fields the UI does not edit (enabled, future backend additions)
+        // come from the loaded override and pass through unchanged
+        ...original,
+        // Use existing overrideId if available, otherwise generate one
+        id: action.overrideId || `${action.actionId}_${slot.height}`,
+        templateId: action.actionId, // actionId IS the templateId
+        values: flatValues,
+        scenarioRelativeSlot: 0,
+        label: action.action,
+        enabled: original.enabled ?? true,
+        fetchBeforeUse: action.fetchBeforeUse || false,
+      };
 
-        // Only include account if it exists, don't send default values
-        if (action.account) {
-          override.account = action.account;
-        }
+      // Only include account if it exists, don't send default values
+      if (action.account) {
+        override.account = action.account;
+      }
 
-        return override;
-      })
-    );
+      return override;
+    });
 
     const scenario = {
       id: scenarioId,
-      name: scenarioName,
+      name: `${scenarioName} · column ${slots.indexOf(slot) + 1}/${slots.length}`,
       description: scenarioDescription,
       overrides,
       tags: [],
     };
 
-    // IMPORTANT: Pause the clock BEFORE registering the scenario to prevent race conditions
-    // Otherwise, clock ticks between registration and pause can apply overrides prematurely
     try {
-      const pauseResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
-
-      if (pauseResponse.ok) {
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
-        logger.log('🎬 Clock paused before scenario registration');
-      }
-    } catch (error) {
-      console.error('Error pausing clock:', error);
-    }
-
-    // Register scenario with surfnet (clock is now paused, no race condition)
-    try {
-      logger.log('📤 Registering scenario:', scenario);
+      logger.log('📤 Registering column', slot.height, 'of scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1002,6 +980,40 @@ export default function ScenarioEditor({
       }
     } catch (error) {
       console.error('❌ Error registering scenario:', error);
+    }
+  };
+
+  const handlePlay = async () => {
+    const [firstSlot] = slots;
+    if (firstSlot) {
+      await registerColumn(firstSlot);
+    }
+
+    try {
+      const pauseResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'surfnet_pauseClock',
+        }),
+      });
+
+      if (pauseResponse.ok) {
+        window.dispatchEvent(
+          new CustomEvent('clockPauseStateChanged', {
+            detail: { isPaused: true },
+          })
+        );
+        logger.log('🎬 Clock paused after scenario registration');
+      }
+    } catch (error) {
+      console.error('Error pausing clock:', error);
+    }
+
+    if (firstSlot) {
+      await advanceOneSlot();
     }
 
     setCurrentPlaybackSlot(0);

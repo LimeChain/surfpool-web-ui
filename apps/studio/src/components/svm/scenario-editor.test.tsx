@@ -52,7 +52,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function openEditor(
+async function renderEditor(
   template: any = collateralTemplate,
   values: Record<string, unknown> = {},
   account: unknown = template.address
@@ -84,6 +84,14 @@ async function openEditor(
     />
   );
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+}
+
+async function openEditor(
+  template: any = collateralTemplate,
+  values: Record<string, unknown> = {},
+  account: unknown = template.address
+) {
+  await renderEditor(template, values, account);
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
 }
@@ -417,4 +425,64 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   releaseFirst();
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
+});
+
+const rpcCalls = () =>
+  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body));
+
+it('plays one column per produced slot: the first at Play, the next on each step', async () => {
+  const column = (id: string) => ({
+    id,
+    name: 'Slot',
+    type: 'slot' as const,
+    actions: [
+      {
+        protocolId: 'phoenix-eternal',
+        actionId: collateralTemplate.id,
+        protocol: 'Phoenix Eternal',
+        action: collateralTemplate.name,
+        account: collateralTemplate.address,
+        overrides: { 'traderState.quoteLotCollateral': id },
+      },
+    ],
+  });
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="columns" initialSteps={[column('1'), column('2')]} />);
+
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() =>
+    expect(rpcCalls().map((call) => call.method)).toEqual([
+      'surfnet_registerScenario',
+      'surfnet_pauseClock',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+  const [first] = rpcCalls();
+  expect(first.params[0].name).toBe('Scenario · column 1/2');
+  expect(first.params[0].overrides).toHaveLength(1);
+  expect(first.params[0].overrides[0]).toMatchObject({
+    scenarioRelativeSlot: 0,
+    values: { 'traderState.quoteLotCollateral': '1' },
+  });
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() =>
+    expect(
+      rpcCalls()
+        .map((call) => call.method)
+        .slice(4)
+    ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel'])
+  );
+  const [, , , , second, , timeTravel] = rpcCalls();
+  expect(second.params[0].name).toBe('Scenario · column 2/2');
+  expect(second.params[0].overrides).toHaveLength(1);
+  expect(second.params[0].overrides[0]).toMatchObject({
+    scenarioRelativeSlot: 0,
+    values: { 'traderState.quoteLotCollateral': '2' },
+  });
+  expect(timeTravel.params).toEqual([{ absoluteSlot: 501 }]);
 });
