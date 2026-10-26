@@ -895,24 +895,33 @@ export default function ScenarioEditor({
             }),
           });
 
-          if (timeTravelResponse.ok) {
-            const timeTravelData = await timeTravelResponse.json();
-            logger.log('✅ Time travel successful:', timeTravelData.result);
-          } else {
+          if (!timeTravelResponse.ok) {
             console.error('❌ Time travel failed:', timeTravelResponse.status);
+            return false;
           }
+          const timeTravelData = await timeTravelResponse.json();
+          if (timeTravelData.error) {
+            console.error('❌ Time travel failed:', timeTravelData.error);
+            return false;
+          }
+          logger.log('✅ Time travel successful:', timeTravelData.result);
+          return true;
         }
       }
     } catch (error) {
       console.error('❌ Error stepping forward:', error);
     }
+    return false;
   };
 
   const handleStepForward = async () => {
     if (currentPlaybackSlot < slots.length - 1) {
       setIsExecuting(false);
-      await registerColumn(slots[currentPlaybackSlot + 1]);
-      await advanceOneSlot();
+      const landed = (await registerColumn(slots[currentPlaybackSlot + 1])) && (await advanceOneSlot());
+      if (!landed) {
+        setIsExecuting(true);
+        return;
+      }
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
@@ -953,7 +962,7 @@ export default function ScenarioEditor({
 
     const scenario = {
       id: scenarioId,
-      name: `${scenarioName} · column ${slots.indexOf(slot) + 1}/${slots.length}`,
+      name: `${scenarioName} · column ${slot.height + 1}/${slots.length}`,
       description: scenarioDescription,
       overrides,
       tags: [],
@@ -972,21 +981,27 @@ export default function ScenarioEditor({
         }),
       });
 
-      if (registerResponse.ok) {
-        const registerData = await registerResponse.json();
-        logger.log('✅ Scenario registered:', registerData);
-      } else {
+      if (!registerResponse.ok) {
         console.error('❌ Failed to register scenario:', await registerResponse.text());
+        return false;
       }
+      const registerData = await registerResponse.json();
+      if (registerData.error) {
+        console.error('❌ Failed to register scenario:', registerData.error);
+        return false;
+      }
+      logger.log('✅ Scenario registered:', registerData);
+      return true;
     } catch (error) {
       console.error('❌ Error registering scenario:', error);
+      return false;
     }
   };
 
   const handlePlay = async () => {
     const [firstSlot] = slots;
-    if (firstSlot) {
-      await registerColumn(firstSlot);
+    if (firstSlot && !(await registerColumn(firstSlot))) {
+      return;
     }
 
     try {
@@ -1012,8 +1027,8 @@ export default function ScenarioEditor({
       console.error('Error pausing clock:', error);
     }
 
-    if (firstSlot) {
-      await advanceOneSlot();
+    if (firstSlot && !(await advanceOneSlot())) {
+      return;
     }
 
     setCurrentPlaybackSlot(0);

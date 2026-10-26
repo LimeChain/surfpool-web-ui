@@ -486,3 +486,17 @@ it('plays one column per produced slot: the first at Play, the next on each step
   });
   expect(timeTravel.params).toEqual([{ absoluteSlot: 501 }]);
 });
+
+it('stays in read mode and never pauses the clock when the first column is rejected', async () => {
+  await renderEditor();
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () =>
+      url.endsWith('/templates')
+        ? [collateralTemplate]
+        : { error: { code: -32602, message: 'base slot 500 is already produced; the next slot is 501' } },
+  }));
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls().map((call) => call.method)).toEqual(['surfnet_registerScenario']));
+  expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+});
