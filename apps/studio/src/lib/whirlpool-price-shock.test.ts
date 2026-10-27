@@ -6,6 +6,7 @@ import {
   DYNAMIC_TICKS_OFFSET,
   LIQUIDITY_OFFSET,
   liquidityAfterShock,
+  MAX_PATH_TICK_ARRAYS,
   planWhirlpoolPriceShock,
   POOL_STATE_LEN,
   SQRT_PRICE_OFFSET,
@@ -89,18 +90,35 @@ describe('Whirlpool price shock', () => {
     expect(TICK_CURRENT_INDEX_OFFSET).toBe(SQRT_PRICE_OFFSET + 16);
   });
 
-  it('halves and quadruples the price', async () => {
+  it('halves and quadruples the price, landing in the middle of the nearest tick', async () => {
     const halved = await planWhirlpoolPriceShock(POOL, poolAccount, 0.5);
     const quadrupled = await planWhirlpoolPriceShock(POOL, poolAccount, 4);
 
-    expect(Number(halved.newSqrtPrice) / 2 ** 64).toBeCloseTo(Math.SQRT1_2, 9);
+    expect(Number(halved.newSqrtPrice) / 2 ** 64).toBeCloseTo(Math.SQRT1_2, 4);
     expect(halved).toMatchObject({ newTickCurrentIndex: -6932, tickArrayStartIndex: -6952 });
+    expect(Number(quadrupled.newSqrtPrice) / 2 ** 64).toBeCloseTo(2, 3);
     expect(quadrupled).toMatchObject({
-      newSqrtPrice: BigInt(2) ** BigInt(65),
       newTickCurrentIndex: 13863,
       tickArrayStartIndex: 13816,
       tickArray: 'GtpuS8hUCDTzME7YENqarRQ51uxBziaXuyMjEFAMU53R',
     });
+  });
+
+  it('keeps the price inside the tick it writes, even when the factor lands on a tick boundary', async () => {
+    for (const ticks of [2, 100, 1000, 13863, -2, -100, -1000, -6932]) {
+      const plan = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** ticks);
+      expect(Math.abs(plan.newTickCurrentIndex - ticks)).toBeLessThanOrEqual(1);
+      const tickOfPrice = (2 * Math.log(Number(plan.newSqrtPrice) / 2 ** 64)) / Math.log(1.0001);
+      expect(tickOfPrice).toBeCloseTo(plan.newTickCurrentIndex + 0.5, 3);
+    }
+  });
+
+  it('refuses a move that crosses more tick arrays than it reads', async () => {
+    await expect(planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** (88 * MAX_PATH_TICK_ARRAYS))).rejects.toThrow(
+      `crosses ${MAX_PATH_TICK_ARRAYS + 1} tick arrays, more than the ${MAX_PATH_TICK_ARRAYS} this preset reads`
+    );
+    const widest = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** (88 * MAX_PATH_TICK_ARRAYS - 1));
+    expect(widest.pathTickArrays).toHaveLength(MAX_PATH_TICK_ARRAYS);
   });
 
   it('rejects bad factors and foreign accounts', async () => {
@@ -167,6 +185,16 @@ describe('Whirlpool price shock', () => {
 
     expect(() => liquidityAfterShock(up, [array])).toThrow(
       `dynamic tick array ${up.tickArray} has a tick tag at byte ${DYNAMIC_TICKS_OFFSET + 5} that disagrees with its bitmap`
+    );
+  });
+
+  it('rejects a dynamic tick array that ends before the ticks its bitmap declares', async () => {
+    const up = await planWhirlpoolPriceShock(POOL, poolAccount, 1.0001 ** 50.5);
+    const array = dynamicTickArray({ 5: BigInt(200) });
+    const truncated = { owner: WHIRLPOOL_PROGRAM_ID, data: array.data.subarray(0, DYNAMIC_TICKS_OFFSET + 90) };
+
+    expect(() => liquidityAfterShock(up, [truncated])).toThrow(
+      `dynamic tick array ${up.tickArray} (${DYNAMIC_TICKS_OFFSET + 90} bytes) ends before the ticks its bitmap declares`
     );
   });
 

@@ -8,6 +8,7 @@ import {
   assertTickArrayExists,
   assertWhirlpoolAccount,
   liquidityAfterShock,
+  MAX_WHIRLPOOL_FEE_BPS,
   planWhirlpoolPriceShock,
   type WhirlpoolAccount,
 } from './whirlpool-price-shock';
@@ -530,6 +531,10 @@ export async function createWhirlpoolFeeRateScenario(
   feeBps: string
 ): Promise<WhirlpoolScenarioResult> {
   const normalizedPool = pool.trim();
+  const bps = feeBps.trim();
+  if (!/^\d+$/.test(bps) || Number(bps) > MAX_WHIRLPOOL_FEE_BPS) {
+    throw new Error(`fee must be a whole number of basis points up to ${MAX_WHIRLPOOL_FEE_BPS}, not "${feeBps}"`);
+  }
   const [template, [poolAccount]] = await Promise.all([
     whirlpoolPoolTemplate(studioUrl),
     fetchWhirlpoolAccounts(rpcUrl, [normalizedPool]),
@@ -544,7 +549,7 @@ export async function createWhirlpoolFeeRateScenario(
     ['whirlpool', 'fee-rate'],
     {
       templateId: template.id,
-      values: { fee_rate: Number(feeBps.trim()) * 100 },
+      values: { fee_rate: Number(bps) * 100 },
       scenarioRelativeSlot: 0,
       label: 'Whirlpool fee rate',
       account: { pubkey: normalizedPool },

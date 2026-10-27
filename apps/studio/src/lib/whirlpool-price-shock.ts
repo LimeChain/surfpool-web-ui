@@ -18,9 +18,13 @@ export const DYNAMIC_TICK_ARRAY_DISCRIMINATOR = [17, 216, 246, 142, 225, 199, 21
 // tag byte (1 = initialized) followed by the same 112 bytes of tick data only when initialized.
 export const DYNAMIC_TICK_BITMAP_OFFSET = 44;
 export const DYNAMIC_TICKS_OFFSET = 60;
+// fee_rate is capped at 60000 hundredths of a bp (6%), so plain bps stop at 600.
+export const MAX_WHIRLPOOL_FEE_BPS = 600;
 
 const TICK_ARRAY_SIZE = 88;
 const MAX_TICK = 443636;
+// 500 arrays are five getMultipleAccounts batches; at tick spacing 1 that still allows an 80x move.
+export const MAX_PATH_TICK_ARRAYS = 500;
 const MIN_SQRT_PRICE_X64 = BigInt('4295048016');
 const MAX_SQRT_PRICE_X64 = BigInt('79226673515401279992447579055');
 const Q64 = 18446744073709551616;
@@ -76,25 +80,32 @@ export async function planWhirlpoolPriceShock(
   const sqrtPrice =
     view.getBigUint64(SQRT_PRICE_OFFSET, true) | (view.getBigUint64(SQRT_PRICE_OFFSET + 8, true) << BigInt(64));
 
-  // f64 is exact to ~1e-16 here, far below the 1e-4 relative tick step.
-  const shocked = Math.round(Number(sqrtPrice) * Math.sqrt(priceFactor));
-  if (shocked < Number(MIN_SQRT_PRICE_X64) || shocked >= Number(MAX_SQRT_PRICE_X64)) {
-    throw new Error(
-      `price factor moves sqrt_price to ${BigInt(shocked)}, outside the range the program accepts [${MIN_SQRT_PRICE_X64}, ${MAX_SQRT_PRICE_X64})`
-    );
-  }
+  // The tick comes from an f64 log and can be one off right at a tick boundary, so the price is
+  // taken from the tick instead, at the middle of its range, where f64 error cannot cross a boundary.
+  const shocked = Number(sqrtPrice) * Math.sqrt(priceFactor);
   const newTickCurrentIndex = Math.floor((2 * Math.log(shocked / Q64)) / Math.log(TICK_BASE));
-  if (Math.abs(newTickCurrentIndex) > MAX_TICK) {
+  if (!Number.isFinite(newTickCurrentIndex) || Math.abs(newTickCurrentIndex) > MAX_TICK) {
     throw new Error(`shocked price lands on tick ${newTickCurrentIndex}, outside [-${MAX_TICK}, ${MAX_TICK}]`);
+  }
+  const newSqrtPrice = BigInt(Math.round(Q64 * TICK_BASE ** ((newTickCurrentIndex + 0.5) / 2)));
+  if (newSqrtPrice < MIN_SQRT_PRICE_X64 || newSqrtPrice >= MAX_SQRT_PRICE_X64) {
+    throw new Error(
+      `price factor moves sqrt_price to ${newSqrtPrice}, outside the range the program accepts [${MIN_SQRT_PRICE_X64}, ${MAX_SQRT_PRICE_X64})`
+    );
   }
 
   const oldTickCurrentIndex = view.getInt32(TICK_CURRENT_INDEX_OFFSET, true);
   const span = TICK_ARRAY_SIZE * tickSpacing;
   const step = newTickCurrentIndex >= oldTickCurrentIndex ? span : -span;
-  const pathStarts = [tickArrayStartIndex(oldTickCurrentIndex, tickSpacing)];
-  while (pathStarts[pathStarts.length - 1] !== tickArrayStartIndex(newTickCurrentIndex, tickSpacing)) {
-    pathStarts.push(pathStarts[pathStarts.length - 1] + step);
+  const firstStart = tickArrayStartIndex(oldTickCurrentIndex, tickSpacing);
+  const lastStart = tickArrayStartIndex(newTickCurrentIndex, tickSpacing);
+  const pathLength = Math.abs(lastStart - firstStart) / span + 1;
+  if (pathLength > MAX_PATH_TICK_ARRAYS) {
+    throw new Error(
+      `the move from tick ${oldTickCurrentIndex} to tick ${newTickCurrentIndex} crosses ${pathLength} tick arrays, more than the ${MAX_PATH_TICK_ARRAYS} this preset reads; use a factor closer to 1`
+    );
   }
+  const pathStarts = Array.from({ length: pathLength }, (_, index) => firstStart + index * step);
   const pathTickArrays = await Promise.all(
     pathStarts.map(async (startIndex) => ({ address: await tickArrayAddress(pool, startIndex), startIndex }))
   );
@@ -106,7 +117,7 @@ export async function planWhirlpoolPriceShock(
     oldTickCurrentIndex,
     oldLiquidity:
       view.getBigUint64(LIQUIDITY_OFFSET, true) | (view.getBigUint64(LIQUIDITY_OFFSET + 8, true) << BigInt(64)),
-    newSqrtPrice: BigInt(shocked),
+    newSqrtPrice,
     newTickCurrentIndex,
     tickArray: destination.address,
     tickArrayStartIndex: destination.startIndex,
@@ -198,6 +209,11 @@ function initializedTickLiquidityNets(address: string, tickArray: WhirlpoolAccou
     let offset = DYNAMIC_TICKS_OFFSET;
     for (let slot = 0; slot < TICK_ARRAY_SIZE; slot++) {
       const isInitialized = ((bitmap >> BigInt(slot)) & BigInt(1)) === BigInt(1);
+      if (offset + (isInitialized ? TICK_LEN : 1) > data.length) {
+        throw new Error(
+          `dynamic tick array ${address} (${data.length} bytes) ends before the ticks its bitmap declares`
+        );
+      }
       // The program locates ticks by the bitmap, so a tag that disagrees means we would read the wrong bytes.
       if (data[offset] !== (isInitialized ? 1 : 0)) {
         throw new Error(

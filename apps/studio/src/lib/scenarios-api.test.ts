@@ -361,7 +361,11 @@ describe('Whirlpool scenarios', () => {
       overrides: [
         {
           templateId: 'whirlpool-pool-state',
-          values: { sqrt_price: '36893488147419103232', tick_current_index: 13863, liquidity: '1000' },
+          values: {
+            sqrt_price: BigInt(Math.round(2 ** 64 * 1.0001 ** (13863.5 / 2))).toString(),
+            tick_current_index: 13863,
+            liquidity: '1000',
+          },
           scenarioRelativeSlot: 1,
           label: 'Whirlpool price x4',
           enabled: true,
@@ -403,6 +407,17 @@ describe('Whirlpool scenarios', () => {
       ],
       tags: ['whirlpool', 'fee-rate'],
     });
+  });
+
+  it('refuses a fee that is not a whole number of basis points up to 600', async () => {
+    vi.stubGlobal('fetch', fetchMock.mockImplementation(respond));
+
+    for (const feeBps of ['abc', '2.5', '-1', '601', '']) {
+      await expect(createWhirlpoolFeeRateScenario('http://studio', 'http://rpc', pool, feeBps)).rejects.toThrow(
+        `fee must be a whole number of basis points up to 600, not "${feeBps}"`
+      );
+    }
+    expect(requestBodies('http://studio/v1/scenarios')).toEqual([]);
   });
 
   it('refuses a fee rate on an account that is not a Whirlpool pool', async () => {

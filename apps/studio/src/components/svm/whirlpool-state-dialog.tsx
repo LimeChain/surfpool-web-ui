@@ -1,6 +1,7 @@
 'use client';
 
 import { createWhirlpoolFeeRateScenario, createWhirlpoolPriceShockScenario } from '@/lib/scenarios-api';
+import { MAX_WHIRLPOOL_FEE_BPS } from '@/lib/whirlpool-price-shock';
 import {
   Button,
   Dialog,
@@ -24,9 +25,6 @@ const WhirlpoolStateModeLabel: Record<WhirlpoolStateMode, string> = {
   [WhirlpoolStateMode.PriceShock]: 'Price shock',
   [WhirlpoolStateMode.FeeRate]: 'Fee rate',
 };
-
-// fee_rate is capped at 60000 hundredths of a bp (6%), so plain bps stop at 600.
-const MAX_FEE_BPS = 600;
 
 interface WhirlpoolDialogProps {
   open: boolean;
@@ -67,7 +65,7 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
   // DERIVED STATE
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
-  const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) <= MAX_FEE_BPS;
+  const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) <= MAX_WHIRLPOOL_FEE_BPS;
   const isPriceShock = mode === WhirlpoolStateMode.PriceShock;
   const canCreate = !isCreating && !!pool.trim() && (isPriceShock ? hasValidPriceFactor : hasValidFeeBps);
 
