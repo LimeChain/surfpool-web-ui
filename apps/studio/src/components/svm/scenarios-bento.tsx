@@ -35,6 +35,7 @@ import ScenarioCard from './scenario-card';
 import ScenarioDetailOverview from './scenario-detail-overview';
 import ScenarioPresets from './scenario-presets';
 import type { ScenarioBentoItem, ScenariosBentoProps } from './scenarios-bento.types';
+import WhirlpoolStateDialog from './whirlpool-state-dialog';
 
 const ScenarioEditor = dynamic(() => import('./scenario-editor').then((mod) => mod.default), {
   ssr: false,
@@ -53,7 +54,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { studioUrl, rpcUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export default function ScenariosBento({
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
   const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
+  const [whirlpoolStateDialogOpen, setWhirlpoolStateDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -203,6 +205,20 @@ export default function ScenariosBento({
 
   const handlePhoenixStateCreated = (scenarioId: string) => {
     setPhoenixStateDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenWhirlpoolStateDialog = () => {
+    setWhirlpoolStateDialogOpen(true);
+  };
+
+  const handleCloseWhirlpoolStateDialog = () => {
+    setWhirlpoolStateDialogOpen(false);
+  };
+
+  const handleWhirlpoolStateCreated = (scenarioId: string) => {
+    setWhirlpoolStateDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -350,6 +366,7 @@ export default function ScenariosBento({
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
             onPhoenixStateSelect={handleOpenPhoenixStateDialog}
+            onWhirlpoolStateSelect={handleOpenWhirlpoolStateDialog}
           />
         </>
       )}
@@ -459,6 +476,13 @@ export default function ScenariosBento({
         studioUrl={studioUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
+      />
+      <WhirlpoolStateDialog
+        open={whirlpoolStateDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleCloseWhirlpoolStateDialog}
+        onCreated={handleWhirlpoolStateCreated}
       />
     </div>
   );

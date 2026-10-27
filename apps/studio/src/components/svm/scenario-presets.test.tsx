@@ -11,6 +11,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={onPumpGraduationSelect}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={vi.fn()}
+        onWhirlpoolStateSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Pump graduation/i }));
@@ -26,6 +27,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={onPumpSwapPriceShockSelect}
         onPhoenixStateSelect={vi.fn()}
+        onWhirlpoolStateSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /PumpSwap price shock/i }));
@@ -41,10 +43,27 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={onPhoenixStateSelect}
+        onWhirlpoolStateSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Phoenix state/i }));
 
     expect(onPhoenixStateSelect).toHaveBeenCalledOnce();
+  });
+
+  it('opens the Whirlpool state preset', () => {
+    const onWhirlpoolStateSelect = vi.fn();
+
+    render(
+      <ScenarioPresets
+        onPumpGraduationSelect={vi.fn()}
+        onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={vi.fn()}
+        onWhirlpoolStateSelect={onWhirlpoolStateSelect}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Whirlpool state/i }));
+
+    expect(onWhirlpoolStateSelect).toHaveBeenCalledOnce();
   });
 });
