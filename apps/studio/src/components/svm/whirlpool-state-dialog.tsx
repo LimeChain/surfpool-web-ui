@@ -2,6 +2,7 @@
 
 import { createWhirlpoolFeeRateScenario, createWhirlpoolPriceShockScenario } from '@/lib/scenarios-api';
 import { MAX_WHIRLPOOL_FEE_BPS } from '@/lib/whirlpool-price-shock';
+import { isAddress } from '@solana/kit';
 import {
   Button,
   Dialog,
@@ -66,8 +67,9 @@ export default function WhirlpoolStateDialog({ open, studioUrl, rpcUrl, onClose,
   const priceFactorNumber = Number(priceFactor.trim());
   const hasValidPriceFactor = Number.isFinite(priceFactorNumber) && priceFactorNumber > 0 && priceFactorNumber !== 1;
   const hasValidFeeBps = /^\d+$/.test(feeBps.trim()) && Number(feeBps.trim()) <= MAX_WHIRLPOOL_FEE_BPS;
+  const hasValidPool = isAddress(pool.trim());
   const isPriceShock = mode === WhirlpoolStateMode.PriceShock;
-  const canCreate = !isCreating && !!pool.trim() && (isPriceShock ? hasValidPriceFactor : hasValidFeeBps);
+  const canCreate = !isCreating && hasValidPool && (isPriceShock ? hasValidPriceFactor : hasValidFeeBps);
 
   // HANDLERS
   const handleTextChange = (setter: (value: string) => void) => (event: ChangeEvent<HTMLInputElement>) => {

@@ -175,14 +175,14 @@ export function assertTickArrayExists(plan: WhirlpoolPriceShockPlan, tickArray: 
         `${missing} The pool already sits on the edge of its current tick array [${currentStart}, ${currentEnd}].`
       );
     }
-    // Rounded toward the array's interior, so the suggestion itself lands inside it.
-    const exact = TICK_BASE ** (edgeTick - plan.oldTickCurrentIndex) * 1e6;
-    const safeFactor = (isRaise ? Math.floor(exact) : Math.ceil(exact)) / 1e6;
+    // Six significant digits, rounded toward the array's interior so the suggestion itself lands inside it.
+    const exact = TICK_BASE ** (edgeTick - plan.oldTickCurrentIndex);
+    const scale = 10 ** (5 - Math.floor(Math.log10(exact)));
+    const safeFactor = (isRaise ? Math.floor(exact * scale) : Math.ceil(exact * scale)) / scale;
     throw new Error(
-      `${missing} The ${isRaise ? 'largest' : 'smallest'} factor that stays on the pool's current tick array [${currentStart}, ${currentEnd}] is ${safeFactor.toFixed(6)}.`
+      `${missing} The ${isRaise ? 'largest' : 'smallest'} factor that stays on the pool's current tick array [${currentStart}, ${currentEnd}] is ${safeFactor.toPrecision(6)}.`
     );
   }
-  initializedTickLiquidityNets(plan.tickArray, tickArray);
 }
 
 /** liquidity_net of every initialized tick, keyed by its slot in the array. */

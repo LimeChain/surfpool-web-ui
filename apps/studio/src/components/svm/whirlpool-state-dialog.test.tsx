@@ -71,6 +71,16 @@ describe('WhirlpoolStateDialog', () => {
     expect(createFeeRateMock).toHaveBeenCalledWith('http://studio', 'http://rpc', POOL, '25');
   });
 
+  it('stays disabled until the pool is a well-formed address', () => {
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('Price factor'), { target: { value: '0.5' } });
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: POOL.slice(0, 20) } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Whirlpool pool'), { target: { value: ` ${POOL} ` } });
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeEnabled();
+  });
+
   it('accepts a fee up to and including the 600 bps program maximum', () => {
     renderDialog();
 

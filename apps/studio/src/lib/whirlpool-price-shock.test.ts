@@ -74,7 +74,7 @@ function suggestedFactor(plan: Awaited<ReturnType<typeof planWhirlpoolPriceShock
   try {
     assertTickArrayExists(plan, null);
   } catch (error) {
-    return Number(/is (\d+\.\d+)\.$/.exec((error as Error).message)?.[1]);
+    return Number(/is (\S+)\.$/.exec((error as Error).message)?.[1]);
   }
   throw new Error('expected the missing tick array to be rejected');
 }
@@ -133,8 +133,19 @@ describe('Whirlpool price shock', () => {
 
     expect(() => assertTickArrayExists(plan, null)).toThrow(
       `tick array ${plan.tickArray} (start index 13816) does not exist, so a swap could not resume from tick 13863. ` +
-        "The largest factor that stays on the pool's current tick array [0, 87] is 1.008737."
+        "The largest factor that stays on the pool's current tick array [0, 87] is 1.00873."
     );
+  });
+
+  it('suggests a tiny factor with significant digits rather than six decimals', async () => {
+    // A spacing-128 pool at tick 0 whose array starts 11264 ticks lower: the edge factor is about 0.32.
+    const wide = new Uint8Array(data);
+    new DataView(wide.buffer).setUint16(TICK_SPACING_OFFSET, 128, true);
+    new DataView(wide.buffer).setInt32(TICK_CURRENT_INDEX_OFFSET, 11263, true);
+    const plan = await planWhirlpoolPriceShock(POOL, { owner: WHIRLPOOL_PROGRAM_ID, data: wide }, 1e-9);
+
+    expect(() => assertTickArrayExists(plan, null)).toThrow(/is 0\.324\d{3}\.$/);
+    expect(suggestedFactor(plan)).toBeGreaterThan(1.0001 ** -11263);
   });
 
   it('rounds the suggested factor toward the inside of the current array', async () => {
@@ -204,7 +215,6 @@ describe('Whirlpool price shock', () => {
     const message = `tick array ${up.tickArray} (${TICK_ARRAY_LEN} bytes) is neither a ${TICK_ARRAY_LEN}-byte TickArray nor a DynamicTickArray`;
 
     expect(() => liquidityAfterShock(up, [unknown])).toThrow(message);
-    expect(() => assertTickArrayExists(up, unknown)).toThrow(message);
   });
 
   it('rejects a crossing that would leave negative liquidity', async () => {
