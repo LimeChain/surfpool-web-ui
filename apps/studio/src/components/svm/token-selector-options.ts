@@ -128,9 +128,8 @@ export const resolveFeaturedAccount = (templateId: unknown, templateAddress: unk
 const getProject0AiContext = () =>
   [
     'Featured Project 0 accounts available in Studio:',
-    ...PROJECT0_FEATURED_BANKS.map(
-      (bank) => `- ${bank.label}: bank ${bank.bank}; price account ${bank.priceAccount}.`
-    ),
+    ...PROJECT0_FEATURED_BANKS.map((bank) => `- ${bank.label}: bank ${bank.bank}; price account ${bank.priceAccount}.`),
+    'A bank refuses a price that moved past its circuit breaker: before moving a price, read the project0-bank-oracle template and follow it.',
   ].join('\n');
 
 const PROTOCOL_AI_CONTEXT: Partial<Record<string, () => string>> = {
