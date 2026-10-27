@@ -447,9 +447,10 @@ async function postWhirlpoolScenario(
 }
 
 async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promise<(WhirlpoolAccount | null)[]> {
-  const accounts: (WhirlpoolAccount | null)[] = [];
-  for (let start = 0; start < pubkeys.length; start += 100) {
-    const batch = pubkeys.slice(start, start + 100);
+  const batches = Array.from({ length: Math.ceil(pubkeys.length / 100) }, (_, index) =>
+    pubkeys.slice(index * 100, index * 100 + 100)
+  );
+  const readBatch = async (batch: string[]): Promise<(WhirlpoolAccount | null)[]> => {
     const response = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -473,13 +474,11 @@ async function fetchWhirlpoolAccounts(rpcUrl: string, pubkeys: string[]): Promis
         `Failed to read accounts from Surfnet: expected ${batch.length} accounts, got ${Array.isArray(values) ? values.length : 'none'}`
       );
     }
-    for (const value of values) {
-      accounts.push(
-        value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null
-      );
-    }
-  }
-  return accounts;
+    return values.map((value) =>
+      value ? { owner: value.owner, data: new Uint8Array(getBase64Encoder().encode(value.data[0])) } : null
+    );
+  };
+  return (await Promise.all(batches.map(readBatch))).flat();
 }
 
 export async function createWhirlpoolPriceShockScenario(
@@ -516,7 +515,7 @@ export async function createWhirlpoolPriceShockScenario(
         tick_current_index: plan.newTickCurrentIndex,
         liquidity: liquidity.toString(),
       },
-      scenarioRelativeSlot: 1,
+      scenarioRelativeSlot: 0,
       label: `Whirlpool price x${factor}`,
       account: { pubkey: normalizedPool },
     }

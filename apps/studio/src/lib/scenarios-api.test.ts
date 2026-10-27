@@ -366,7 +366,7 @@ describe('Whirlpool scenarios', () => {
             tick_current_index: 13863,
             liquidity: '1000',
           },
-          scenarioRelativeSlot: 1,
+          scenarioRelativeSlot: 0,
           label: 'Whirlpool price x4',
           enabled: true,
           fetchBeforeUse: true,
