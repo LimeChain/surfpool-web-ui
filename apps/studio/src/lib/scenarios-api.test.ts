@@ -369,7 +369,7 @@ describe('Whirlpool scenarios', () => {
           scenarioRelativeSlot: 1,
           label: 'Whirlpool price x4',
           enabled: true,
-          fetchBeforeUse: false,
+          fetchBeforeUse: true,
           account: { pubkey: pool },
         },
       ],
@@ -402,9 +402,7 @@ describe('Whirlpool scenarios', () => {
     expect(requestBodies('http://rpc').map((body) => body.params[0])).toEqual([[pool]]);
     expect(requestBodies('http://studio/v1/scenarios')[0]).toMatchObject({
       name: 'Whirlpool Fee Rate (Czfq3x…)',
-      overrides: [
-        { values: { fee_rate: 2500 }, scenarioRelativeSlot: 0, fetchBeforeUse: false, account: { pubkey: pool } },
-      ],
+      overrides: [{ values: { fee_rate: 2500 }, scenarioRelativeSlot: 0, account: { pubkey: pool } }],
       tags: ['whirlpool', 'fee-rate'],
     });
   });

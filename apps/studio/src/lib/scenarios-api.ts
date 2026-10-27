@@ -428,7 +428,7 @@ async function postWhirlpoolScenario(
     id: crypto.randomUUID(),
     name,
     description,
-    overrides: [{ id: crypto.randomUUID(), ...override, enabled: true, fetchBeforeUse: false }],
+    overrides: [{ id: crypto.randomUUID(), ...override, enabled: true, fetchBeforeUse: true }],
     tags,
   };
   const response = await fetch(`${studioUrl}/v1/scenarios`, {
