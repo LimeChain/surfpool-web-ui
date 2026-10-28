@@ -901,6 +901,7 @@ export default function ScenarioEditor({
           jsonrpc: '2.0',
           id: 1,
           method: 'getEpochInfo',
+          params: [{ commitment: 'processed' }],
         }),
       });
 
@@ -1050,6 +1051,7 @@ export default function ScenarioEditor({
       }
 
       if (firstSlot && !(await advanceOneSlot())) {
+        await resumeClock();
         return;
       }
     }

@@ -570,6 +570,52 @@ it('resumes the clock when a paused playback is stopped', async () => {
   await waitFor(() => expect(rpcMethods().at(-1)).toBe('surfnet_resumeClock'));
 });
 
+it('plays to the slot after the processed one, which surfnet reads ahead of the finalized default', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const body = url === 'http://rpc' ? JSON.parse(`${init?.body}`) : {};
+    if (body.method === 'getEpochInfo') {
+      const absoluteSlot = body.params?.[0]?.commitment === 'processed' ? 663 : 632;
+      return { ok: true, json: async () => ({ result: { absoluteSlot } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="processed" initialSteps={[column('1'), column('2')]} />);
+
+  fireEvent.click(await screen.findByText('Play with paused clock'));
+  await waitFor(() =>
+    expect(rpcCalls().find((call) => call.method === 'surfnet_timeTravel')?.params).toEqual([{ absoluteSlot: 664 }])
+  );
+});
+
+it('resumes the clock when a paused Play cannot move it to the next slot', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel') {
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="advance-fails" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText('Play with paused clock'));
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual([
+      'surfnet_registerScenario',
+      'surfnet_pauseClock',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+      'surfnet_resumeClock',
+    ])
+  );
+  expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+});
+
 it('offers both clocks without a warning when no used template is clock-sensitive', async () => {
   await renderEditor();
   expect(await screen.findByText('Play with paused clock')).toBeInTheDocument();
