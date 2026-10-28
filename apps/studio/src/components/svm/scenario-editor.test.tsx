@@ -427,3 +427,59 @@ it('keeps restored SolFi values when the saved account is re-selected after its 
   expect(rpcParams().map(([account]) => account)).toEqual([oracle]);
   expect(coefficient()).toHaveValue(500);
 });
+
+it('fills the oracle input of a SolFi vault override from the featured market and saves it', async () => {
+  const template = {
+    id: 'solfi-vault-balance',
+    name: 'SolFi vault balance',
+    protocol: 'SolFi',
+    description: 'Limit a payout vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'oracle', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="solfi-oracle-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: template.id,
+              protocol: 'SolFi',
+              action: template.name,
+              account: { pubkey: '' },
+              overrides: {},
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(
+    within(await screen.findByLabelText('SolFi vault results')).getByRole('button', {
+      name: /^SOL \/ USDC \(USDC vault\)/,
+    })
+  );
+  const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter oracle...')).toHaveValue(oracle));
+
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: 'GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic' });
+  expect(override.values).toEqual({ oracle });
+});

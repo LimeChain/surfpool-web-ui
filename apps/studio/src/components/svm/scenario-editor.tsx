@@ -35,6 +35,7 @@ import {
   findOptionByTypedValue,
   getSolFiAccountOptions,
   getSolFiCustomAccountKind,
+  getSolFiFeaturedOracle,
   resolveSolFiAccount,
   resolveTokenSelectorOptions,
 } from './token-selector-options';
@@ -663,6 +664,17 @@ export default function ScenarioEditor({
     }
 
     if (actionSolFiAccountKind && !selectedPubkey) return requestId === accountRequestRef.current;
+
+    // A SolFi market or vault template keeps its market's oracle alive through its `oracle` input,
+    // which a featured account fills in.
+    const takesOracle = (action.template.properties ?? []).some(
+      (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === 'oracle'
+    );
+    const featuredOracle = takesOracle ? getSolFiFeaturedOracle(selectedPubkey) : undefined;
+    if (featuredOracle) {
+      setAccountData({ oracle: featuredOracle });
+      setModifiedFields(new Set(['oracle']));
+    }
 
     let addressString: string | undefined;
     if (actionSolFiAccountKind) {

@@ -12,7 +12,7 @@ export type TokenSelectorOption = {
 
 export const getSolFiCustomAccountKind = (protocol: unknown, templateId: unknown) => {
   if (protocol !== 'SolFi' || typeof templateId !== 'string') return undefined;
-  if (templateId === 'solfi-price' || templateId === 'solfi-freshness') return 'oracle';
+  if (templateId === 'solfi-price') return 'oracle';
   if (templateId === 'solfi-vault-balance') return 'vault';
   if (templateId === 'solfi-size-impact' || templateId === 'solfi-swap-pressure') return 'market';
   return undefined;
@@ -114,6 +114,13 @@ export const getSolFiAccountOptions = (accountKind: 'market' | 'oracle' | 'vault
     },
   ]);
 };
+
+// The oracle of the featured market a SolFi market or vault account belongs to.
+export const getSolFiFeaturedOracle = (accountPubkey: string): string | undefined =>
+  SOLFI_FEATURED_MARKETS.find(
+    (market) =>
+      market.market === accountPubkey || market.baseVault === accountPubkey || market.quoteVault === accountPubkey
+  )?.oracle;
 
 export const resolveSolFiAccount = (templateId: unknown, templateAddress: unknown, selectedPubkey: string) => {
   if (!isSolFiTemplate(templateId)) return templateAddress;

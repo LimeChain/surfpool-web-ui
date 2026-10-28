@@ -58,7 +58,7 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'SolFi Risk-Off',
     prompt:
-      'Create an editable WSOL/USDC scenario where SOL crashes to $50, so the PMM becomes cautious about accumulating more SOL without completely leaving the market. It should keep serving small trades, buy SOL at a 1% discount, spend no more than 25 USDC on sellers, and continue selling SOL at its normal 0.1% spread. To achieve this, use the SolFi price override, keep that quote active for 200 slots, apply a directional spread, and limit the USDC vault balance.',
+      'Create an editable WSOL/USDC scenario where SOL crashes to $50, so the PMM becomes cautious about accumulating more SOL without completely leaving the market. It should keep serving small trades, buy SOL at a 1% discount, spend no more than 25 USDC on sellers, and continue selling SOL at its normal 0.1% spread. To achieve this, use the SolFi price override, apply a directional spread, and limit the USDC vault balance.',
     icon: '🛡️',
     protocols: ['solfi'],
   },

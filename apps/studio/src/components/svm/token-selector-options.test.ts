@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getSolFiAccountOptions,
   getSolFiCustomAccountKind,
+  getSolFiFeaturedOracle,
   resolveSolFiAccount,
   resolveTokenSelectorOptions,
   type TokenSelectorOption,
@@ -46,7 +47,6 @@ describe('getSolFiCustomAccountKind', () => {
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-size-impact')).toBe('market');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-swap-pressure')).toBe('market');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-price')).toBe('oracle');
-    expect(getSolFiCustomAccountKind('SolFi', 'solfi-freshness')).toBe('oracle');
     expect(getSolFiCustomAccountKind('SolFi', 'solfi-vault-balance')).toBe('vault');
   });
 
@@ -84,6 +84,20 @@ describe('getSolFiAccountOptions', () => {
     expect(result).toHaveLength(8);
     expect(result.map((option) => option.value)).toContain('CRo8DBwrmd97DJfAnvCv96tZPL5Mktf2NZy2ZnhDer1A');
     expect(result.map((option) => option.value)).toContain('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic');
+  });
+});
+
+describe('getSolFiFeaturedOracle', () => {
+  it('names the oracle of the featured market a market or vault belongs to', () => {
+    const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+
+    expect(getSolFiFeaturedOracle('65ZHSArs5XxPseKQbB1B4r16vDxMWnCxHMzogDAqiDUc')).toBe(oracle);
+    expect(getSolFiFeaturedOracle('CRo8DBwrmd97DJfAnvCv96tZPL5Mktf2NZy2ZnhDer1A')).toBe(oracle);
+    expect(getSolFiFeaturedOracle('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic')).toBe(oracle);
+  });
+
+  it('knows no oracle for an account outside the featured markets', () => {
+    expect(getSolFiFeaturedOracle('CustomMarket111')).toBeUndefined();
   });
 });
 
