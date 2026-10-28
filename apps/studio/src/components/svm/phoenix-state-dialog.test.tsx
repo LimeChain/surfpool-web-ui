@@ -38,6 +38,11 @@ vi.mock('@surfpool/ui', async () => ({
   },
   ListboxOption: ({ children, ...props }: any) => <option {...props}>{children}</option>,
   Input: (props: any) => <input {...props} />,
+  Switch: ({ onChange, color, ...props }: any) => {
+    const handleChange = (event: any) => onChange(event.target.checked);
+
+    return <input type="checkbox" role="switch" {...props} onChange={handleChange} />;
+  },
 }));
 
 const createDirectMarkMock = vi.mocked(createPhoenixDirectMarkScenario);
@@ -133,7 +138,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350', true);
     });
   });
 
@@ -155,7 +160,7 @@ describe('PhoenixStateDialog', () => {
     expect(screen.getByLabelText('Phoenix market')).toHaveValue('XYZ');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000', true);
     });
   });
 
@@ -173,9 +178,31 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'NEW', '12345');
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'NEW', '12345', true);
       expect(onCreated).toHaveBeenCalledWith('direct-mark');
     });
+  });
+
+  it('creates a market scenario on the local map when fetch before use is off', async () => {
+    createDirectMarkMock.mockResolvedValue({ id: 'direct-mark' });
+    renderDialog();
+
+    await screen.findByRole('button', { name: 'BTC' });
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'raw' } });
+    fireEvent.change(screen.getByLabelText('Target mark'), { target: { value: '12345' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Fetch before use' }));
+    expect(screen.getByText(/An account that is not there is skipped/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345', false));
+  });
+
+  it('leaves fetch before use to the collateral tool', () => {
+    renderDialog();
+
+    expect(screen.getByRole('switch', { name: 'Fetch before use' })).toBeChecked();
+    fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
+    expect(screen.queryByRole('switch', { name: 'Fetch before use' })).not.toBeInTheDocument();
   });
 
   it('creates a maintenance margin scenario and keeps invalid factors out of the backend', async () => {
@@ -195,7 +222,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000');
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000', true);
       expect(onCreated).toHaveBeenCalledWith('maintenance');
     });
   });
@@ -220,7 +247,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ETH' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
+      expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345', true);
     });
   });
 
@@ -252,7 +279,7 @@ describe('PhoenixStateDialog', () => {
 
     await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345', true));
   });
 
   it('converts percent and USD inputs to the raw values the backend takes', async () => {
@@ -274,18 +301,18 @@ describe('PhoenixStateDialog', () => {
     };
     submit('Target mark', '-10');
     expect(screen.getByText('$85,957 → $77,361 (-10%), 77361 ticks')).toBeInTheDocument();
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361', true));
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'usd' } });
     submit('Target mark', '85000.4');
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000'));
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000', true));
     fireEvent.click(screen.getByRole('button', { name: 'kBONK' }));
     submit('Target mark', '0.000015');
-    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500'));
+    await waitFor(() => expect(createDirectMarkMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500', true));
 
     fireEvent.click(screen.getByRole('button', { name: 'BTC' }));
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     submit('Maintenance risk factor', '62.5');
-    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250'));
+    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250', true));
 
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'collateral' } });
     fireEvent.change(screen.getByLabelText('Phoenix Trader account'), { target: { value: 'trader' } });

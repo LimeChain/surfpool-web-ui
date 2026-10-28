@@ -115,9 +115,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(
+      createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ', true)
+    ).resolves.toEqual({ id: '11111111-1111-4111-8111-111111111111' });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -152,10 +152,24 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
-    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615');
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615', true);
 
     const init = fetchMock.mock.calls[1][1] as RequestInit;
     expect(init.body).toContain('"virtual_quote_reserves":18446744073709551615');
+  });
+
+  it('posts fetchBeforeUse off when the caller turns it off', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '1', false);
+
+    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+    expect(override.fetchBeforeUse).toBe(false);
   });
 
   it('surfaces generic scenario API failures', async () => {
@@ -166,7 +180,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1', true)).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -217,23 +233,25 @@ describe('Phoenix market scenarios', () => {
   const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
 
   it.each([
-    [createPhoenixDirectMarkScenario, 'phoenix-direct-mark-risk-shock', 'target_ticks'],
-    [createPhoenixMaintenanceMarginScenario, 'phoenix-maintenance-margin-stress', 'maintenance_risk_factor_bps'],
+    [createPhoenixDirectMarkScenario, 'phoenix-direct-mark-risk-shock', 'target_ticks', true],
+    [createPhoenixMaintenanceMarginScenario, 'phoenix-maintenance-margin-stress', 'maintenance_risk_factor_bps', false],
   ] as const)(
-    '%#: posts the template with its map address, string values and fetchBeforeUse',
-    async (create, templateId, field) => {
+    '%#: posts the template with its map address, string values and the chosen fetchBeforeUse',
+    async (create, templateId, field, fetchBeforeUse) => {
       vi.stubGlobal('fetch', fetchMock);
       fetchMock
         .mockResolvedValueOnce(templates(templateId))
         .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-market' }));
 
-      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
+      await expect(create('http://studio', ' SOL ', ' 6000 ', fetchBeforeUse)).resolves.toEqual({
+        id: 'phoenix-market',
+      });
       expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
       const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
       expect(override).toMatchObject({
         templateId,
         values: { symbol: 'SOL', [field]: '6000' },
-        fetchBeforeUse: true,
+        fetchBeforeUse,
         account: { pubkey: 'perp-asset-map' },
       });
     }
@@ -245,7 +263,7 @@ describe('Phoenix market scenarios', () => {
       .mockResolvedValueOnce(templates('phoenix-maintenance-margin-stress'))
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000', true)).rejects.toThrow(
       'Scenario store unavailable'
     );
   });

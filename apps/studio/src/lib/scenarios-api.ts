@@ -165,7 +165,8 @@ function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string)
 export async function createPumpSwapPriceShockScenario(
   studioUrl: string,
   tokenMint: string,
-  virtualQuoteReserves: string
+  virtualQuoteReserves: string,
+  fetchBeforeUse: boolean
 ): Promise<PumpSwapPriceShockScenarioResult> {
   const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!templatesResponse.ok) {
@@ -194,7 +195,7 @@ export async function createPumpSwapPriceShockScenario(
         scenarioRelativeSlot: 1,
         label: 'PumpSwap virtual quote reserve shock',
         enabled: true,
-        fetchBeforeUse: true,
+        fetchBeforeUse,
         account: template.address,
       },
     ],
@@ -323,7 +324,8 @@ async function createPhoenixMarketScenario(
   description: string,
   label: string,
   tags: string[],
-  values: Record<string, string>
+  values: Record<string, string>,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   const template = await phoenixMarketTemplate(studioUrl, templateId);
   const scenario = {
@@ -338,9 +340,7 @@ async function createPhoenixMarketScenario(
         scenarioRelativeSlot: 0,
         label,
         enabled: true,
-        // A stale map fails Phoenix's mark staleness check, so fetch the current one from the
-        // upstream datasource first.
-        fetchBeforeUse: true,
+        fetchBeforeUse,
         account: template.address,
       },
     ],
@@ -368,7 +368,8 @@ async function createPhoenixMarketScenario(
 export async function createPhoenixDirectMarkScenario(
   studioUrl: string,
   symbol: string,
-  targetTicks: string
+  targetTicks: string,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixMarketScenario(
     studioUrl,
@@ -377,14 +378,16 @@ export async function createPhoenixDirectMarkScenario(
     'Set exact mark-price ticks for one market in the Phoenix Eternal PerpAssetMap.',
     `Phoenix ${symbol.trim()} direct mark risk shock`,
     ['phoenix-eternal', 'direct-mark', 'risk'],
-    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+    { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
+    fetchBeforeUse
   );
 }
 
 export async function createPhoenixMaintenanceMarginScenario(
   studioUrl: string,
   symbol: string,
-  riskFactor: string
+  riskFactor: string,
+  fetchBeforeUse: boolean
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixMarketScenario(
     studioUrl,
@@ -393,7 +396,8 @@ export async function createPhoenixMaintenanceMarginScenario(
     'Set the maintenance margin risk factor for one Phoenix Eternal market.',
     `Phoenix ${symbol.trim()} maintenance margin stress`,
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
-    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
+    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() },
+    fetchBeforeUse
   );
 }
 

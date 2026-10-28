@@ -22,6 +22,7 @@ import {
   ListboxOption,
 } from '@surfpool/ui';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import FetchBeforeUseSwitch from './fetch-before-use-switch';
 import { findOptionByTypedValue } from './token-selector-options';
 
 const PhoenixStateMode = {
@@ -132,6 +133,9 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
+  // A stale map fails Phoenix's mark staleness check, so by default Play fetches the current one
+  // from the upstream datasource first.
+  const [fetchBeforeUse, setFetchBeforeUse] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
@@ -248,8 +252,8 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
         mode === PhoenixStateMode.Collateral
           ? await createPhoenixCollateralScenario(studioUrl, trader, rawAmount)
           : mode === PhoenixStateMode.DirectMark
-            ? await createPhoenixDirectMarkScenario(studioUrl, marketSymbol, rawAmount)
-            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
+            ? await createPhoenixDirectMarkScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
+            : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -355,6 +359,7 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
                 )}
               </div>
               {amountField}
+              <FetchBeforeUseSwitch checked={fetchBeforeUse} onChange={setFetchBeforeUse} disabled={isCreating} />
             </>
           )}
           {!!error && <p className="text-sm text-red-400">{error}</p>}
