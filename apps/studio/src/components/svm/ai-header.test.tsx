@@ -157,6 +157,7 @@ describe('AIHeader', () => {
     const prompt = vi.mocked(streamAIResponse).mock.calls[0][1];
     expect(prompt).toContain('SOL / USD');
     expect(prompt).toContain('Use only these protocols: Chainlink.');
+    // A chip states only the goal; template ids live in the backend's llm_context.
     expect(prompt).not.toContain('chainlink-data-feed');
   });
 
