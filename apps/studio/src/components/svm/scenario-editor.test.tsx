@@ -343,3 +343,37 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(2);
 });
+
+it('steps forward to the slot after the processed one, which surfnet reads ahead of the finalized default', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+    if (body.method === 'getEpochInfo') {
+      const absoluteSlot = body.params?.[0]?.commitment === 'processed' ? 663 : 632;
+      return { ok: true, json: async () => ({ result: { absoluteSlot } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { value: null } }),
+    };
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="editor-test"
+      initialSteps={[0, 1].map((height) => ({
+        id: `slot-${height}`,
+        name: `Slot ${height}`,
+        type: 'slot',
+        actions: [stepAction(collateralTemplate)],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  fireEvent.click(await screen.findByTitle('Step forward'));
+
+  await waitFor(() => {
+    const travel = fetchMock.mock.calls
+      .map(([, init]) => (typeof init?.body === 'string' ? JSON.parse(init.body) : {}))
+      .find((body) => body.method === 'surfnet_timeTravel');
+    expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
+  });
+});
