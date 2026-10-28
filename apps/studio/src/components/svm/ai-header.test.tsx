@@ -1,3 +1,4 @@
+import { buildAiPrompt } from '@/lib/scenarios-api';
 import { renderWithConfig } from '@/test-utils';
 import { fireEvent, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -89,6 +90,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('Chainlink Price Crash')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -134,6 +136,17 @@ describe('AIHeader', () => {
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_MARKET_SYMBOL_OR_ADDRESS>');
     expect(prompt).toContain('10%');
+  });
+
+  it('loads a goal-level Chainlink prompt limited to Chainlink', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Chainlink Price Crash'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('SOL / USD');
+    expect(prompt).not.toContain('chainlink-data-feed');
+    expect(buildAiPrompt(prompt, new Set(['chainlink']))).toContain('Use only these protocols: Chainlink.');
   });
 
   it('renders the model selector button', () => {
