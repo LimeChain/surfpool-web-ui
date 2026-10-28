@@ -25,12 +25,20 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { customValueOption, findOptionByTypedValue, resolveTokenSelectorOptions } from './token-selector-options';
+import {
+  customValueOption,
+  findOptionByTypedValue,
+  getSolFiAccountOptions,
+  getSolFiCustomAccountKind,
+  getSolFiFeaturedOracle,
+  resolveSolFiAccount,
+  resolveTokenSelectorOptions,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -108,6 +116,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'SolFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -150,6 +159,8 @@ export default function ScenarioEditor({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
+  const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
+  const [usesCustomDirectAccountAddress, setUsesCustomDirectAccountAddress] = useState(false);
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -171,6 +182,10 @@ export default function ScenarioEditor({
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
   const accountRequestRef = useRef(0);
+  const activeSolFiAccountAddressRef = useRef('');
+  const pendingSolFiAccountAddressRef = useRef('');
+  const solfiAccountKind = getSolFiCustomAccountKind(selectedAction?.template?.protocol, selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(solfiAccountKind && selectedAccountPubkey.trim() === '');
   const isFirstSlotsChangeRef = useRef(true);
 
   // Reset first slots change flag when scenario changes
@@ -614,39 +629,71 @@ export default function ScenarioEditor({
     return result;
   };
 
-  // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
+  // Select an action and load its current account state. The request id prevents a slower response
+  // for a previously selected SolFi account from replacing the active account's values.
+  const handleActionSelect = async (action: Action, savedAccount?: any) => {
     const requestId = ++accountRequestRef.current;
+    setLoadingAccountData(false);
     setSelectedAction(action);
     setAccountData({});
+    const savedPubkey =
+      typeof savedAccount === 'string'
+        ? savedAccount
+        : typeof savedAccount?.pubkey === 'string'
+          ? savedAccount.pubkey
+          : '';
+    const actionSolFiAccountKind = getSolFiCustomAccountKind(action.template?.protocol, action.template?.id);
+    const selectedPubkey = actionSolFiAccountKind ? savedPubkey : '';
+    activeSolFiAccountAddressRef.current = '';
+    pendingSolFiAccountAddressRef.current = '';
+    setSelectedAccountPubkey(selectedPubkey);
+    setUsesCustomDirectAccountAddress(
+      Boolean(
+        actionSolFiAccountKind &&
+          savedPubkey &&
+          !getSolFiAccountOptions(actionSolFiAccountKind).some((option) => String(option.value) === savedPubkey)
+      )
+    );
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
 
-    if (!action.template?.idl || !action.template?.address) {
-      console.warn('Action template missing IDL or address');
-      setLoadingAccountData(false);
-      return;
+    if (!action.template?.address) {
+      console.warn('Action template missing address');
+      return requestId === accountRequestRef.current;
     }
+
+    if (actionSolFiAccountKind && !selectedPubkey) return requestId === accountRequestRef.current;
+
+    // A SolFi market or vault template keeps its market's oracle alive through its `oracle` input,
+    // which a featured account fills in.
+    const takesOracle = (action.template.properties ?? []).some(
+      (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === 'oracle'
+    );
+    const featuredOracle = takesOracle ? getSolFiFeaturedOracle(selectedPubkey) : undefined;
+    if (featuredOracle) {
+      setAccountData({ oracle: featuredOracle });
+      setModifiedFields(new Set(['oracle']));
+    }
+
+    let addressString: string | undefined;
+    if (actionSolFiAccountKind) {
+      addressString = selectedPubkey;
+    } else if (typeof action.template.address === 'string') {
+      addressString = action.template.address;
+    } else if (action.template.address && typeof action.template.address === 'object') {
+      addressString =
+        action.template.address.pubkey || action.template.address.address || action.template.address.value;
+    }
+    // A PDA template, or one that leaves the account to the override, reads the saved account.
+    if (savedPubkey && !addressString) addressString = savedPubkey;
+
+    if (!addressString) return requestId === accountRequestRef.current;
+    if (actionSolFiAccountKind) pendingSolFiAccountAddressRef.current = addressString;
 
     setLoadingAccountData(true);
 
     try {
-      // Step 1: Register the IDL using slot 1
-      logger.log('📝 Registering IDL for', action.template.address);
-
-      // Extract address string
-      let addressString;
-      if (typeof action.template.address === 'string') {
-        addressString = action.template.address;
-      } else if (action.template.address && typeof action.template.address === 'object') {
-        addressString =
-          action.template.address.pubkey || action.template.address.address || action.template.address.value;
-      }
-      // A PDA template, or one that leaves the account to the override, reads the saved account.
-      if (accountPubkey && !addressString) addressString = accountPubkey;
-
-      // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
       // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
@@ -667,7 +714,7 @@ export default function ScenarioEditor({
           addressString,
           inputsOnly
             ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
-            : { commitment: 'confirmed', encoding: 'jsonParsed' },
+            : { commitment: 'confirmed', encoding: action.template.rawLayout ? 'base64' : 'jsonParsed' },
         ],
       };
 
@@ -681,19 +728,31 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
-      if (requestId !== accountRequestRef.current) return;
+      if (requestId !== accountRequestRef.current) return false;
 
-      if (accountInfoData.result?.value?.data?.parsed) {
-        // Populate accountData with the parsed data
-        const parsed = accountInfoData.result.value.data.parsed;
+      // SolFi raw-layout values are entered explicitly, so only parsed (IDL) accounts seed the form;
+      // fetching a SolFi account still verifies and caches it in the surfnet.
+      const responseData = accountInfoData.result?.value?.data;
+      if (responseData?.parsed) {
+        const parsed = responseData.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
 
-      setLoadingAccountData(false);
+      return true;
     } catch (error) {
-      console.error('Error loading account data:', error);
-      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
+      if (requestId === accountRequestRef.current) console.error('Error loading account data:', error);
+      return requestId === accountRequestRef.current;
+    } finally {
+      if (requestId === accountRequestRef.current) {
+        if (pendingSolFiAccountAddressRef.current === addressString) {
+          pendingSolFiAccountAddressRef.current = '';
+        }
+        // Mark the SolFi account as loaded even when the fetch failed or found nothing, so
+        // re-selecting it does not reload and wipe override values restored from a saved scenario.
+        if (actionSolFiAccountKind) activeSolFiAccountAddressRef.current = addressString;
+        setLoadingAccountData(false);
+      }
     }
   };
 
@@ -776,7 +835,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: resolveSolFiAccount(action.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -819,10 +878,11 @@ export default function ScenarioEditor({
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
-                    account:
-                      leavesAccountToOverride(action.template?.address) &&
-                      existingAction.actionId === action.id &&
-                      existingAction.account?.pubkey
+                    account: getSolFiCustomAccountKind(action.template?.protocol, action.id)
+                      ? resolveSolFiAccount(action.id, action.template?.address, selectedAccountPubkey)
+                      : leavesAccountToOverride(action.template?.address) &&
+                          existingAction.actionId === action.id &&
+                          existingAction.account?.pubkey
                         ? existingAction.account
                         : action.template?.address,
                   }
@@ -1331,13 +1391,11 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    const loading = handleActionSelect(
+                                                    const selectionIsCurrent = await handleActionSelect(
                                                       foundAction,
-                                                      action.account?.pubkey
+                                                      action.account
                                                     );
-                                                    const requestId = accountRequestRef.current;
-                                                    await loading;
-                                                    if (requestId !== accountRequestRef.current) return;
+                                                    if (!selectionIsCurrent) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1904,6 +1962,104 @@ export default function ScenarioEditor({
                                     updates, and dynamic balances.
                                   </p>
                                 </div>
+                                {solfiAccountKind &&
+                                  (() => {
+                                    const accountOptions = getSolFiAccountOptions(solfiAccountKind);
+                                    const selectedOption = accountOptions.find(
+                                      (option) => String(option.value) === selectedAccountPubkey
+                                    );
+                                    const customOption = {
+                                      id: `custom-solfi-${solfiAccountKind}`,
+                                      label: `Custom ${solfiAccountKind} address`,
+                                      value: '__custom__',
+                                      description: `Enter a SolFi ${solfiAccountKind} address`,
+                                    };
+
+                                    const changeAccount = (pubkey: string, custom = false) => {
+                                      const address = pubkey.trim();
+                                      if (
+                                        address === selectedAccountPubkey.trim() &&
+                                        custom === usesCustomDirectAccountAddress
+                                      ) {
+                                        return;
+                                      }
+                                      ++accountRequestRef.current;
+                                      setSelectedAccountPubkey(address);
+                                      setUsesCustomDirectAccountAddress(custom);
+                                      setAccountData({});
+                                      activeSolFiAccountAddressRef.current = '';
+                                      pendingSolFiAccountAddressRef.current = '';
+                                      setModifiedFields(new Set());
+                                      setLoadingAccountData(false);
+                                    };
+
+                                    const loadAccount = (pubkey: string) => {
+                                      const address = pubkey.trim();
+                                      if (
+                                        !address ||
+                                        address === activeSolFiAccountAddressRef.current ||
+                                        address === pendingSolFiAccountAddressRef.current
+                                      )
+                                        return;
+                                      void handleActionSelect(selectedAction, { pubkey: address });
+                                    };
+
+                                    return (
+                                      <div className="mb-6 space-y-3 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                        <div>
+                                          <label className="block text-sm font-medium capitalize text-zinc-300">
+                                            {solfiAccountKind}
+                                          </label>
+                                          <p className="mt-1 text-xs text-zinc-500">
+                                            Choose a featured SolFi account or enter another address.
+                                          </p>
+                                        </div>
+                                        <Combobox
+                                          aria-label={`SolFi ${solfiAccountKind}`}
+                                          value={
+                                            usesCustomDirectAccountAddress ? customOption : (selectedOption ?? null)
+                                          }
+                                          onChange={(option: any) => {
+                                            if (!option) return;
+                                            const custom = option.value === '__custom__';
+                                            const pubkey = custom ? '' : String(option.value);
+                                            changeAccount(pubkey, custom);
+                                            if (!custom) loadAccount(pubkey);
+                                          }}
+                                          options={[customOption, ...accountOptions]}
+                                          displayValue={(option: any) => option?.label || ''}
+                                          filter={(option: any, query: string) =>
+                                            [option.label, option.description, option.value]
+                                              .filter(Boolean)
+                                              .join(' ')
+                                              .toLowerCase()
+                                              .includes(query.toLowerCase())
+                                          }
+                                          placeholder={`Search SolFi ${solfiAccountKind}s...`}
+                                        >
+                                          {(option: any) => (
+                                            <ComboboxOption key={option.id} value={option}>
+                                              <ComboboxLabel>
+                                                <span className="font-medium">{option.label}</span>
+                                                {option.description && (
+                                                  <span className="ml-2 text-zinc-400">{option.description}</span>
+                                                )}
+                                              </ComboboxLabel>
+                                            </ComboboxOption>
+                                          )}
+                                        </Combobox>
+                                        {usesCustomDirectAccountAddress && (
+                                          <Input
+                                            aria-label={`Custom SolFi ${solfiAccountKind} address`}
+                                            value={selectedAccountPubkey}
+                                            onChange={(event) => changeAccount(event.target.value, true)}
+                                            onBlur={() => loadAccount(selectedAccountPubkey)}
+                                            placeholder={`Enter a SolFi ${solfiAccountKind} address...`}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
                                     <div className="flex flex-col items-center gap-3">
@@ -2467,7 +2623,8 @@ export default function ScenarioEditor({
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
-                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                                const symbol =
+                                                  option.metadata?.symbol || option.label || option.id?.toUpperCase();
                                                 return symbol;
                                               }}
                                               filter={(option: any, query: string) => {
@@ -2510,7 +2667,9 @@ export default function ScenarioEditor({
                                                     )}
                                                     <ComboboxLabel>
                                                       <span className="font-medium">
-                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                        {option.metadata?.symbol ||
+                                                          option.label ||
+                                                          option.id?.toUpperCase()}
                                                       </span>
                                                       {option.description && (
                                                         <span className="ml-2 text-zinc-400">{option.description}</span>
@@ -2652,7 +2811,12 @@ export default function ScenarioEditor({
 
                                 {/* Add/Update Action Button - Right Aligned */}
                                 {!loadingAccountData && (
-                                  <div className="flex justify-end">
+                                  <div className="flex flex-col items-end gap-2">
+                                    {isAddressSelectionMissing && (
+                                      <p className="text-right text-sm text-amber-400">
+                                        Select a target account above before adding this override.
+                                      </p>
+                                    )}
                                     <button
                                       onClick={() => {
                                         if (selectedSlotId && selectedProtocol && selectedAction) {
@@ -2673,12 +2837,14 @@ export default function ScenarioEditor({
                                           setSelectedProduct(null);
                                           setSelectedAction(null);
                                           setAccountData({});
+                                          setSelectedAccountPubkey('');
+                                          setUsesCustomDirectAccountAddress(false);
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={!selectedSlotId || !selectedAction || isAddressSelectionMissing}
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
