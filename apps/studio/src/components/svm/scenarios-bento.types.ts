@@ -98,8 +98,7 @@ export const exampleScenarios: ExampleScenario[] = [
   },
   {
     label: 'Chainlink Price Crash',
-    prompt:
-      "Crash SOL to $60 on Chainlink's SOL / USD data feed so lending markets that price SOL with Chainlink, such as Jupiter Lend, see the drop",
+    prompt: "Crash SOL to $60 on Chainlink's SOL / USD data feed",
     icon: '🔗',
     protocols: ['chainlink'],
   },
