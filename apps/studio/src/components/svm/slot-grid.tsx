@@ -51,7 +51,6 @@ export const SlotsGrid: React.FC = () => {
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(DEFAULT_SLOTS_IN_EPOCH);
   const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
-  const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false);
 
   // Time travel popup state
   const [showTimeTravel, setShowTimeTravel] = useState<boolean>(false);
@@ -227,14 +226,6 @@ export const SlotsGrid: React.FC = () => {
       return;
     }
     setIsClockPaused(newPauseState);
-
-    // If we're pausing, ignore slot events for a short period
-    if (newPauseState) {
-      setIgnoreSlotEvents(true);
-      setTimeout(() => {
-        setIgnoreSlotEvents(false);
-      }, 1000); // Ignore slot events for 1 second after pausing
-    }
   };
 
   // Fetch epoch and slot data from RPC
@@ -332,7 +323,7 @@ export const SlotsGrid: React.FC = () => {
     return () => {
       solanaWebSocketService.off('slot', handleSlot);
     };
-  }, [slotsInEpoch, isClockPaused, ignoreSlotEvents]);
+  }, [slotsInEpoch, isClockPaused]);
 
   // Listen for connection status changes
   useEffect(() => {

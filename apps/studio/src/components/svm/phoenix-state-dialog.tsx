@@ -133,8 +133,6 @@ export default function PhoenixStateDialog({ open, studioUrl, onClose, onCreated
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
-  // A stale map fails Phoenix's mark staleness check, so by default Play fetches the current one
-  // from the upstream datasource first.
   const [fetchBeforeUse, setFetchBeforeUse] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
