@@ -398,6 +398,34 @@ export async function createPhoenixMaintenanceMarginScenario(
 }
 
 /**
+ * Unregister a scenario on the surfnet: its overrides that have not played yet are dropped and its
+ * keep-alive stops. Resolves to whether the surfnet had it registered.
+ */
+export async function unregisterScenario(rpcUrl: string, scenarioId: string): Promise<boolean> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'surfnet_unregisterScenario',
+      params: [scenarioId],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to unregister scenario ${scenarioId}: ${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    result?: { value?: boolean };
+    error?: { message?: string };
+  };
+  if (payload.error) {
+    throw new Error(`Failed to unregister scenario ${scenarioId}: ${payload.error.message ?? 'unknown error'}`);
+  }
+  return payload.result?.value === true;
+}
+
+/**
  * Build the POST body for creating a new scenario.
  */
 export function createScenarioPayload(scenario: Scenario) {

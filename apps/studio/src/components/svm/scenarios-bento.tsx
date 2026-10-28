@@ -7,6 +7,7 @@ import {
   scenarioImportPayload,
   scenarioToBentoItem,
   serializeScenarioJson,
+  unregisterScenario,
 } from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
@@ -53,7 +54,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { studioUrl } = useAppConfig();
+  const { rpcUrl, studioUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -242,6 +243,14 @@ export default function ScenariosBento({
 
   // Delete scenario
   const handleDeleteScenario = async (id: string) => {
+    // The surfnet keeps playing a registered scenario, and keeps its accounts alive, until it is
+    // unregistered there. A surfnet that cannot be reached must not block removing the scenario.
+    try {
+      await unregisterScenario(rpcUrl, id);
+    } catch (error) {
+      console.error('Error unregistering scenario from the surfnet:', error);
+    }
+
     try {
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'DELETE',

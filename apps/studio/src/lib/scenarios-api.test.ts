@@ -1,12 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  buildUpdatePayload,
   createPhoenixCollateralScenario,
   createPhoenixDirectMarkScenario,
   createPhoenixMaintenanceMarginScenario,
-  buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
@@ -19,6 +19,7 @@ import {
   serializeScenarioJson,
   snapshotDownloadContents,
   toScenarioNumber,
+  unregisterScenario,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
 
@@ -115,9 +116,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -166,7 +167,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -295,7 +298,6 @@ describe('fetchDynamicRefOptions', () => {
 
     await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
   });
-
 });
 
 describe('createScenarioPayload', () => {
@@ -684,8 +686,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -710,8 +711,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
@@ -756,5 +756,42 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
   it('snapshotDownloadContents returns null when there is no snapshot value or invalid JSON', () => {
     expect(snapshotDownloadContents('{"result":{"context":{"slot":1}}}')).toBeNull();
     expect(snapshotDownloadContents('not json')).toBeNull();
+  });
+});
+
+describe('unregisterScenario', () => {
+  it('asks the surfnet to unregister the scenario', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: {}, value: true } }));
+
+    await expect(unregisterScenario('http://rpc', 'scenario-id')).resolves.toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://rpc');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'surfnet_unregisterScenario',
+      params: ['scenario-id'],
+    });
+  });
+
+  it('resolves to false for a scenario the surfnet does not have', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ jsonrpc: '2.0', id: 1, result: { context: {}, value: false } }));
+
+    await expect(unregisterScenario('http://rpc', 'scenario-id')).resolves.toBe(false);
+  });
+
+  it('surfaces JSON-RPC and HTTP failures', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'Method not found' } })
+      )
+      .mockResolvedValueOnce(new Response('down', { status: 503 }));
+
+    await expect(unregisterScenario('http://rpc', 'scenario-id')).rejects.toThrow('Method not found');
+    await expect(unregisterScenario('http://rpc', 'scenario-id')).rejects.toThrow('503');
   });
 });
