@@ -96,4 +96,11 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Project 0 Liquidation',
+    prompt:
+      'Crash SOL to $20 in the price account the Project 0 SOL bank reads so its SOL-backed borrowers become liquidatable',
+    icon: '🏦',
+    protocols: ['project-0', 'pyth'],
+  },
 ];

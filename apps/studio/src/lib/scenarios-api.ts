@@ -1,4 +1,5 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
+import { getProtocolAiContext } from '@/components/svm/token-selector-options';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
@@ -34,9 +35,17 @@ export function snapshotDownloadContents(rawResponse: string): string | null {
   return stringify(value, null, 2) ?? '';
 }
 
-export function toScenarioNumber(input: string): number | LosslessNumber {
+export function toScenarioNumber(input: string): number | LosslessNumber | string {
   if (input.trim() === '' || Number.isNaN(Number(input))) return Number(input);
-  return isSafeNumber(input) ? Number(input) : new LosslessNumber(input);
+  if (isSafeNumber(input)) return Number(input);
+  // Surfnet reads JSON numbers as 64-bit at most and asks for wider integers (an i128) as decimal strings.
+  if (
+    /^-?\d+$/.test(input) &&
+    (BigInt(input) > BigInt('18446744073709551615') || BigInt(input) < BigInt('-9223372036854775808'))
+  ) {
+    return input;
+  }
+  return new LosslessNumber(input);
 }
 
 /**
@@ -544,5 +553,53 @@ export function buildAiPrompt(basePrompt: string, selectedProtocolIds: Set<strin
     return trimmed;
   }
 
-  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.`;
+  const protocolContext = [...selectedProtocolIds]
+    .map(getProtocolAiContext)
+    .filter((context): context is string => Boolean(context))
+    .join('\n\n');
+
+  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.${
+    protocolContext ? `\n\n${protocolContext}` : ''
+  }`;
+}
+
+/** Extract the created scenario id from the MCP result returned by create_scenario. */
+export function createdScenarioIdFromToolResult(result: unknown): string | null {
+  const candidates: unknown[] = [result];
+  if (result && typeof result === 'object') {
+    const record = result as Record<string, unknown>;
+    if (record.isError === true) return null;
+    candidates.push(record.structuredContent);
+    if (Array.isArray(record.content)) {
+      for (const item of record.content) {
+        if (!item || typeof item !== 'object') continue;
+        const text = (item as Record<string, unknown>).text;
+        if (typeof text !== 'string') continue;
+        try {
+          candidates.push(JSON.parse(text));
+        } catch {
+          // Non-JSON text cannot identify a created scenario.
+        }
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const record = candidate as Record<string, unknown>;
+    if (record.error) continue;
+    for (const key of ['scenarioId', 'scenario_id', 'id']) {
+      if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+    }
+    if (typeof record.url === 'string') {
+      try {
+        const id = new URL(record.url).searchParams.get('id');
+        if (id) return id;
+      } catch {
+        // Ignore malformed URLs returned by a tool.
+      }
+    }
+  }
+
+  return null;
 }
