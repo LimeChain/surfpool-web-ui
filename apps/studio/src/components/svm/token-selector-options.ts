@@ -86,8 +86,8 @@ const project0Banks: FeaturedAccounts = {
 };
 
 const project0PriceAccounts: FeaturedAccounts = {
-  label: 'Pyth Pro-compatible price account',
-  description: "Pick a featured bank's price account or type any Pyth Pro-compatible price account.",
+  label: 'Pyth Core Compatible price account',
+  description: "Pick a featured bank's price account or type any Pyth Core Compatible price account.",
   options: PROJECT0_FEATURED_BANKS.map((bank) => ({
     id: bank.id,
     label: `${bank.label} / USD`,
@@ -112,7 +112,7 @@ const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['project0-bank-shares', project0Banks],
   ['project0-account-balance', project0Accounts],
   ['project0-account-authority', project0Accounts],
-  ['pyth-pro-price-feed-v2', project0PriceAccounts],
+  ['pyth-core-compatible-price-feed-v2', project0PriceAccounts],
 ]);
 
 export const getFeaturedAccounts = (templateId: unknown) =>

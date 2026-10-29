@@ -73,7 +73,7 @@ describe('getFeaturedAccounts', () => {
   it('offers each Project 0 template the account it writes', () => {
     expect(values('project0-bank-risk-weights')?.[0]).toBe(sol.bank);
     expect(values('project0-bank-oracle')?.[0]).toBe(sol.bank);
-    expect(values('pyth-pro-price-feed-v2')?.[0]).toBe(sol.priceAccount);
+    expect(values('pyth-core-compatible-price-feed-v2')?.[0]).toBe(sol.priceAccount);
     expect(values('project0-account-balance')).toEqual([]);
     expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();
     expect(getFeaturedAccounts('constructor')).toBeUndefined();
