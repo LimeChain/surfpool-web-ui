@@ -1,3 +1,4 @@
+import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/humidifi-markets';
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -417,4 +418,62 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   releaseFirst();
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
+});
+
+it('fills the market input of a HumidiFi vault override from the featured market and saves it', async () => {
+  const [sol] = HUMIDIFI_FEATURED_MARKETS;
+  const template = {
+    id: 'humidifi-vault-balance',
+    name: 'Override Vault Balance',
+    protocol: 'HumidiFi',
+    description: 'Change one HumidiFi vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'market', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="humidifi-market-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'humidifi',
+              actionId: template.id,
+              protocol: 'HumidiFi',
+              action: template.name,
+              account: { pubkey: '' },
+              overrides: {},
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`HumidiFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(await screen.findByRole('button', { name: `${sol.label} (${sol.quoteSymbol} vault)` }));
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter market...')).toHaveValue(sol.market));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+  const patch = await waitFor(() => {
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(call).toBeDefined();
+    return call!;
+  });
+  const override = JSON.parse(patch[1].body).overrides[0];
+  expect(override.account).toEqual({ pubkey: sol.quoteVault });
+  expect(override.values).toEqual({ market: sol.market });
 });
