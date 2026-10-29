@@ -163,7 +163,7 @@ describe('PmmFairValueDialog', () => {
     expect(marketNames()).toEqual([]);
   });
 
-  it('posts the fair value and freshness for the selected market', async () => {
+  it('posts the fair value for the selected market', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
@@ -176,22 +176,16 @@ describe('PmmFairValueDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     const [studioUrl, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
-    const [price, freshness] = scenario.overrides;
+    const [price] = scenario.overrides;
     expect(studioUrl).toBe('http://studio');
     expect(scenario.tags).toEqual(['humidifi', 'pmm', 'fair-value']);
-    expect(scenario.overrides).toHaveLength(2);
+    expect(scenario.overrides).toHaveLength(1);
     expect(price).toMatchObject({
       templateId: 'humidifi-price',
       account: { pubkey: JUP_USDC.market },
       fetchBeforeUse: true,
     });
     expect(String(price.values.fair_value)).toBe('98516241848729');
-    expect(freshness).toMatchObject({
-      templateId: 'humidifi-freshness',
-      account: { pubkey: JUP_USDC.market },
-      values: { last_update_slot: 0, max_staleness_slots: 200 },
-      fetchBeforeUse: true,
-    });
   });
 
   it('reads a typed market address the featured list does not offer, unmasking its mints', async () => {
@@ -216,10 +210,7 @@ describe('PmmFairValueDialog', () => {
     expect(scenario.name).toBe('HumidiFi 7vfCXTUX⋯b963voxs / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'humidifi-price', account: { pubkey: UNLISTED_MARKET } });
     expect(String(scenario.overrides[0].values.fair_value)).toBe('281474976710656');
-    expect(scenario.overrides[1]).toMatchObject({
-      templateId: 'humidifi-freshness',
-      account: { pubkey: UNLISTED_MARKET },
-    });
+    expect(scenario.overrides).toHaveLength(1);
   });
 
   it('offers a read typed market once, not again as a custom address', async () => {

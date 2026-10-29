@@ -34,6 +34,7 @@ import {
   customValueOption,
   findOptionByTypedValue,
   getFeaturedAccounts,
+  getHumidifiVaultMarket,
   resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
@@ -2561,7 +2562,23 @@ export default function ScenarioEditor({
                                                 ? currentValue !== ''
                                                 : modifiedFields.has(fieldPath);
                                               const onValueChange = prop.isAccountSelector
-                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
+                                                ? (pubkey: string) => {
+                                                    setSelectedAccountPubkey(pubkey);
+                                                    // A vault template keeps its market quoting through its
+                                                    // `market` input, which a featured vault fills in.
+                                                    const takesMarket = (
+                                                      selectedAction?.template?.properties ?? []
+                                                    ).some(
+                                                      (p: any) =>
+                                                        typeof p !== 'string' &&
+                                                        p.type === 'input' &&
+                                                        p.path === 'market'
+                                                    );
+                                                    const market = takesMarket
+                                                      ? getHumidifiVaultMarket(pubkey)
+                                                      : undefined;
+                                                    if (market) setValue('market', market);
+                                                  }
                                                 : (value: string) => setValue(fieldPath, value);
 
                                               // A live list (today only Phoenix markets) is always searchable and takes custom values;

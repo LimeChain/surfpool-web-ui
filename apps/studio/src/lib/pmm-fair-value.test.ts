@@ -24,15 +24,13 @@ describe('buildPmmFairValueScenario', () => {
 
     expect(scenario).toMatchObject({
       name: 'HumidiFi SOL / USDC fair value 208',
-      description: 'Set the HumidiFi SOL / USDC fair value to 208 and mark the quote fresh.',
+      description: 'Set the HumidiFi SOL / USDC fair value to 208.',
       tags: ['humidifi', 'pmm', 'fair-value'],
       overrides: [
         { ...shared, templateId: 'humidifi-price', values: { fair_value: toScenarioNumber('58546795155816') } },
-        { ...shared, templateId: 'humidifi-freshness', values: { last_update_slot: 0, max_staleness_slots: 200 } },
       ],
     });
-    expect(scenario.overrides).toHaveLength(2);
-    expect(new Set(scenario.overrides.map(({ id }) => id)).size).toBe(2);
+    expect(scenario.overrides).toHaveLength(1);
   });
 });
 

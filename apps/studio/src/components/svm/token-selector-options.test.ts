@@ -2,6 +2,7 @@ import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/humidifi-markets';
 import { describe, expect, it } from 'vitest';
 import {
   getFeaturedAccounts,
+  getHumidifiVaultMarket,
   resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
@@ -72,12 +73,17 @@ describe('getFeaturedAccounts', () => {
 
   it('offers each HumidiFi template the account it writes', () => {
     expect(values('humidifi-price')?.[0]).toBe(sol.market);
-    expect(values('humidifi-freshness')?.[0]).toBe(sol.market);
     expect(values('humidifi-spread')?.[0]).toBe(sol.market);
     expect(values('humidifi-vault-balance')?.slice(0, 2)).toEqual([sol.baseVault, sol.quoteVault]);
     expect(values('humidifi-vault-balance')).toHaveLength(2 * HUMIDIFI_FEATURED_MARKETS.length);
     expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();
     expect(getFeaturedAccounts('constructor')).toBeUndefined();
+  });
+
+  it('names the featured market a HumidiFi vault belongs to', () => {
+    expect(getHumidifiVaultMarket(sol.baseVault)).toBe(sol.market);
+    expect(getHumidifiVaultMarket(sol.quoteVault)).toBe(sol.market);
+    expect(getHumidifiVaultMarket('CustomVault111')).toBeUndefined();
   });
 
   it("saves the picked account for a featured template and keeps other templates' addresses", () => {

@@ -120,7 +120,7 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   return {
     id: crypto.randomUUID(),
     name: `${adapter.label} ${marketName} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice} and mark the quote fresh.`,
+    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice}.`,
     overrides,
     tags: [adapter.protocol, 'pmm', 'fair-value'],
   };
@@ -228,19 +228,13 @@ const humidifiAdapter: PmmFairValueAdapter = {
       readDecimals(market, 'base_decimals'),
       readDecimals(market, 'quote_decimals')
     );
-    const account = { pubkey: market.value };
+    // Surfpool keeps the quote current from the slot the price plays, so the price is all it takes.
     return [
       {
         templateId: 'humidifi-price',
         label: 'HumidiFi fair value',
-        account,
+        account: { pubkey: market.value },
         values: { fair_value: toScenarioNumber(fairValue.toString()) },
-      },
-      {
-        templateId: 'humidifi-freshness',
-        label: 'HumidiFi fresh quote',
-        account,
-        values: { last_update_slot: 0, max_staleness_slots: 200 },
       },
     ];
   },

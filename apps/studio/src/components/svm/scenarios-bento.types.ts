@@ -63,13 +63,6 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['humidifi'],
   },
   {
-    label: 'HumidiFi Stale Quote',
-    prompt:
-      'Make the quote of the HumidiFi SOL/USDC market stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.',
-    icon: '⏳',
-    protocols: ['humidifi'],
-  },
-  {
     label: 'HumidiFi Drained Vaults',
     prompt:
       'Empty both vaults of the HumidiFi SOL/USDC market, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.',

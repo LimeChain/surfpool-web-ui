@@ -96,7 +96,6 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
     expect(screen.getByText('HumidiFi Price Shock')).toBeInTheDocument();
-    expect(screen.getByText('HumidiFi Stale Quote')).toBeInTheDocument();
     expect(screen.getByText('HumidiFi Drained Vaults')).toBeInTheDocument();
   });
 

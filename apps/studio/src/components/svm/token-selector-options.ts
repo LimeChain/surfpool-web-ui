@@ -104,10 +104,13 @@ const humidifiAccounts = (kind: 'market' | 'vault'): FeaturedAccounts => ({
 // Templates that write a caller-selected account, with the accounts Studio offers for each.
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['humidifi-price', humidifiAccounts('market')],
-  ['humidifi-freshness', humidifiAccounts('market')],
   ['humidifi-spread', humidifiAccounts('market')],
   ['humidifi-vault-balance', humidifiAccounts('vault')],
 ]);
+
+// The featured market a HumidiFi vault belongs to, which keep-alive keeps quoting for a vault override.
+export const getHumidifiVaultMarket = (vault: string): string | undefined =>
+  HUMIDIFI_FEATURED_MARKETS.find((market) => market.baseVault === vault || market.quoteVault === vault)?.market;
 
 export const getFeaturedAccounts = (templateId: unknown) =>
   typeof templateId === 'string' ? FEATURED_ACCOUNTS.get(templateId) : undefined;
