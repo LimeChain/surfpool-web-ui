@@ -71,7 +71,7 @@ describe('getFeaturedAccounts', () => {
   const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);
 
   it('offers every Tessera template the featured markets it writes', () => {
-    for (const templateId of ['tessera-price', 'tessera-freshness', 'tessera-depth', 'tessera-curve', 'tessera-halt']) {
+    for (const templateId of ['tessera-price', 'tessera-depth', 'tessera-curve', 'tessera-halt']) {
       expect(values(templateId)).toEqual(TESSERA_FEATURED_MARKETS.map((market) => market.market));
     }
     expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();

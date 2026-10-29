@@ -88,7 +88,6 @@ const tesseraMarkets: FeaturedAccounts = {
 // Templates that write a caller-selected account, with the accounts Studio offers for each.
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['tessera-price', tesseraMarkets],
-  ['tessera-freshness', tesseraMarkets],
   ['tessera-depth', tesseraMarkets],
   ['tessera-curve', tesseraMarkets],
   ['tessera-halt', tesseraMarkets],

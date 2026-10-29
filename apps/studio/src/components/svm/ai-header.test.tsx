@@ -96,7 +96,6 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Tessera Price Shock')).toBeInTheDocument();
-    expect(screen.getByText('Tessera Stale Quote')).toBeInTheDocument();
     expect(screen.getByText('Tessera Halt')).toBeInTheDocument();
   });
 
@@ -143,17 +142,6 @@ describe('AIHeader', () => {
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_MARKET_SYMBOL_OR_ADDRESS>');
     expect(prompt).toContain('10%');
-  });
-
-  it('loads a goal-level Tessera stale-quote prompt without a hardcoded limit', () => {
-    renderWithConfig(<AIHeader />);
-
-    fireEvent.click(screen.getByText('Tessera Stale Quote'));
-
-    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
-    expect(prompt).toContain('do not build or execute a swap');
-    expect(prompt).not.toMatch(/builder|create_scenario|fetchBeforeUse|MCP|PASTE_/);
-    expect(prompt).not.toMatch(/\b(20|25)[- ]slot/);
   });
 
   it('renders the model selector button', () => {

@@ -129,7 +129,7 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   return {
     id: crypto.randomUUID(),
     name: `${adapter.label} ${marketName} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice} and mark the quote fresh.`,
+    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice}.`,
     overrides,
     tags: [adapter.protocol, 'pmm', 'fair-value'],
   };
@@ -215,22 +215,16 @@ const tesseraAdapter: PmmFairValueAdapter = {
       readDecimals(market, 'base_decimals'),
       readDecimals(market, 'quote_decimals')
     );
-    const account = { pubkey: market.value };
+    // Surfpool keeps the quote current from the slot the price plays, so the price is all it takes.
     return [
       {
         templateId: 'tessera-price',
         label: 'Tessera fair value',
-        account,
+        account: { pubkey: market.value },
         values: {
           quote_atoms_per_base_atom_x1e15: quoteAtomsPerBaseAtomX1e15.toString(),
           base_atoms_per_quote_atom_x1e15: baseAtomsPerQuoteAtomX1e15.toString(),
         },
-      },
-      {
-        templateId: 'tessera-freshness',
-        label: 'Tessera fresh quote',
-        account,
-        values: { last_update_slot: 0 },
       },
     ];
   },

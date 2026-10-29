@@ -152,7 +152,7 @@ describe('PmmFairValueDialog', () => {
     expect(marketNames()).toEqual([]);
   });
 
-  it('posts the price and freshness overrides for the selected market and its decimals', async () => {
+  it('posts only the price override for the selected market and its decimals', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
@@ -165,7 +165,7 @@ describe('PmmFairValueDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     const [studioUrl, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[] }];
-    const [price, freshness] = scenario.overrides;
+    const [price] = scenario.overrides;
     expect(studioUrl).toBe('http://studio');
     expect(price).toMatchObject({
       templateId: 'tessera-price',
@@ -174,12 +174,7 @@ describe('PmmFairValueDialog', () => {
     });
     expect(price.values.quote_atoms_per_base_atom_x1e15).toBe('1000000000000000000');
     expect(price.values.base_atoms_per_quote_atom_x1e15).toBe('1000000000000');
-    expect(freshness).toMatchObject({
-      templateId: 'tessera-freshness',
-      account: { pubkey: CBBTC_USDC.market },
-      values: { last_update_slot: 0 },
-      fetchBeforeUse: true,
-    });
+    expect(scenario.overrides).toHaveLength(1);
   });
 
   it('reads a typed market address the featured list does not offer and prices it with its decimals', async () => {

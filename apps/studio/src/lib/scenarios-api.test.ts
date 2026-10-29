@@ -496,7 +496,7 @@ describe('buildAiPrompt', () => {
   });
 
   it('adds the featured Tessera account addresses', () => {
-    const result = buildAiPrompt('set the SOL/USDC quote stale', new Set(['tessera']));
+    const result = buildAiPrompt('halt the SOL/USDC market', new Set(['tessera']));
 
     expect(result).toContain('market FLckHLGMJy5gEoXWwcE68Nprde1D4araK4TGLw4pQq2n');
   });
