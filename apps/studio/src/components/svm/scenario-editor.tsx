@@ -1022,6 +1022,8 @@ export default function ScenarioEditor({
     }
 
     if (firstSlot && !(await advanceOneSlot())) {
+      // The failed column still lands with the next slot, so the next Play registers it again with any edits
+      registeredColumnRef.current = null;
       return;
     }
     registeredColumnRef.current = null;

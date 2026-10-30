@@ -498,3 +498,30 @@ it('retries a step whose time travel failed without registering the column again
       .slice(4)
   ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
 });
+
+it('registers the first column again on the next Play after Play cannot advance', async () => {
+  let failTimeTravel = true;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failTimeTravel) {
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  renderEditor(stepAction(collateralTemplate));
+
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+  failTimeTravel = false;
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() =>
+    expect(
+      rpcCalls()
+        .map((call) => call.method)
+        .slice(4)
+    ).toEqual(['surfnet_registerScenario', 'surfnet_pauseClock', 'getEpochInfo', 'surfnet_timeTravel'])
+  );
+});
