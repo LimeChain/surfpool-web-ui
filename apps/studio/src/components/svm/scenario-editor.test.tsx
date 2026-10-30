@@ -1,6 +1,6 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
 
@@ -526,7 +526,7 @@ it('registers the first column again on the next Play after Play cannot advance'
   );
 });
 
-it('ignores a second Step while the first one is still registering its column', async () => {
+it('ignores a second Step and keeps Stop disabled while the first one is still registering its column', async () => {
   let finishRegistering!: () => void;
   let holdRegistration = false;
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -555,10 +555,15 @@ it('ignores a second Step while the first one is still registering its column', 
   fireEvent.click(await screen.findByTitle('Play scenario'));
   await waitFor(() => expect(rpcCalls()).toHaveLength(4));
 
+  const step = await screen.findByTitle('Step forward');
   holdRegistration = true;
-  fireEvent.click(await screen.findByTitle('Step forward'));
-  holdRegistration = false;
-  fireEvent.click(screen.getByTitle('Step forward'));
+  // Both clicks land before React renders again, so only a guard outside state can stop the second
+  act(() => {
+    step.click();
+    holdRegistration = false;
+    step.click();
+  });
+  expect(screen.getByTitle('Stop scenario')).toBeDisabled();
   finishRegistering();
   await waitFor(() => expect(rpcCalls()).toHaveLength(7));
 

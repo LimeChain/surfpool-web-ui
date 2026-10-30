@@ -174,6 +174,8 @@ export default function ScenarioEditor({
   const accountRequestRef = useRef(0);
   // The column already registered for the next slot, so a retried step only advances the clock
   const registeredColumnRef = useRef<number | null>(null);
+  // A ref, so a second click sees the Step in flight before the next render
+  const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
 
   // Reset first slots change flag when scenario changes
@@ -903,7 +905,8 @@ export default function ScenarioEditor({
 
   // A second Step before the first one finishes would register the same column and skip the next one
   const handleStepForward = async () => {
-    if (isStepping || currentPlaybackSlot >= slots.length - 1) return;
+    if (steppingRef.current || currentPlaybackSlot >= slots.length - 1) return;
+    steppingRef.current = true;
     setIsStepping(true);
     try {
       setIsExecuting(false);
@@ -924,6 +927,7 @@ export default function ScenarioEditor({
       // Start executing next slot after a brief delay
       setTimeout(() => setIsExecuting(true), 100);
     } finally {
+      steppingRef.current = false;
       setIsStepping(false);
     }
   };
@@ -2996,7 +3000,8 @@ export default function ScenarioEditor({
                       </button>
                       <button
                         onClick={handleStop}
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
+                        disabled={isStepping}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-black"
                         title="Stop scenario"
                       >
                         <StopIcon className="h-5 w-5" />
