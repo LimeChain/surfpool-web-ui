@@ -660,3 +660,34 @@ it('ignores a second Step while the first one is still registering its column', 
       .map((call) => call.params[0].name)
   ).toEqual(['Scenario · column 1/3', 'Scenario · column 2/3', 'Scenario · column 3/3']);
 });
+
+it('ignores a second Step with the running clock while the first one is still registering', async () => {
+  renderColumns(collateralTemplate, ['1', '2', '3']);
+  fireEvent.click(await screen.findByText('Play with running clock'));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario']));
+
+  let finishRegistering!: () => void;
+  let holdRegistration = true;
+  const answer = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (holdRegistration && url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'surfnet_registerScenario') {
+      await new Promise<void>((resolve) => {
+        finishRegistering = resolve;
+      });
+    }
+    return answer(url, init);
+  });
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  holdRegistration = false;
+  fireEvent.click(screen.getByTitle('Step forward'));
+  finishRegistering();
+  await waitFor(() => expect(rpcMethods()).toHaveLength(2));
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcMethods()).toHaveLength(3));
+  expect(rpcCalls().map((call) => call.params[0].overrides[0].values['traderState.quoteLotCollateral'])).toEqual([
+    '1',
+    '2',
+    '3',
+  ]);
+});
