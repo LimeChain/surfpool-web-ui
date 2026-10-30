@@ -166,6 +166,7 @@ export default function ScenarioEditor({
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
+  const [isStepping, setIsStepping] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
@@ -900,8 +901,11 @@ export default function ScenarioEditor({
     return false;
   };
 
+  // A second Step before the first one finishes would register the same column and skip the next one
   const handleStepForward = async () => {
-    if (currentPlaybackSlot < slots.length - 1) {
+    if (isStepping || currentPlaybackSlot >= slots.length - 1) return;
+    setIsStepping(true);
+    try {
       setIsExecuting(false);
       const next = currentPlaybackSlot + 1;
       const registered = registeredColumnRef.current === next || (await registerColumn(slots[next]));
@@ -919,6 +923,8 @@ export default function ScenarioEditor({
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
       setTimeout(() => setIsExecuting(true), 100);
+    } finally {
+      setIsStepping(false);
     }
   };
 
@@ -2985,7 +2991,9 @@ export default function ScenarioEditor({
                       {/* Playback in progress - show step forward and stop */}
                       <button
                         onClick={handleStepForward}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
+                        disabled={isStepping}
+                        aria-busy={isStepping}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-green-500"
                         title="Step forward"
                       >
                         <ForwardIcon className="h-6 w-6" />
