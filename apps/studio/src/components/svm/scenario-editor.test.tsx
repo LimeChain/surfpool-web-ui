@@ -590,10 +590,11 @@ it('plays to the slot after the processed one, which surfnet reads ahead of the 
   );
 });
 
-it('resumes the clock when a paused Play cannot move it to the next slot', async () => {
+it('resumes the clock when a paused Play cannot move it to the next slot and registers the column again on the next Play', async () => {
+  let failTimeTravel = true;
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
-    if (method === 'surfnet_timeTravel') {
+    if (method === 'surfnet_timeTravel' && failTimeTravel) {
       return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
     }
     return {
@@ -614,6 +615,17 @@ it('resumes the clock when a paused Play cannot move it to the next slot', async
     ])
   );
   expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+
+  failTimeTravel = false;
+  fireEvent.click(screen.getByText('Play with paused clock'));
+  await waitFor(() =>
+    expect(rpcMethods().slice(5)).toEqual([
+      'surfnet_registerScenario',
+      'surfnet_pauseClock',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
 });
 
 it('offers both clocks without a warning when no used template is clock-sensitive', async () => {

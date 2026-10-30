@@ -1051,6 +1051,8 @@ export default function ScenarioEditor({
       }
 
       if (firstSlot && !(await advanceOneSlot())) {
+        // The resumed clock lands the registered column, so the next Play registers it again
+        registeredColumnRef.current = null;
         await resumeClock();
         return;
       }
