@@ -615,3 +615,48 @@ it('offers both clocks and warns on the paused one when a used template is clock
   expect(screen.getByText('Play with running clock')).toBeInTheDocument();
   expect(screen.getByText(PAUSED_CLOCK_WARNING_TEXT)).toBeInTheDocument();
 });
+
+it('ignores a second Step while the first one is still registering its column', async () => {
+  let finishRegistering!: () => void;
+  let holdRegistration = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_registerScenario' && holdRegistration) {
+      await new Promise<void>((resolve) => {
+        finishRegistering = resolve;
+      });
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="double-step"
+      initialSteps={[1, 2, 3].map((height) => ({
+        id: `${height}`,
+        name: 'Slot',
+        type: 'slot',
+        actions: [stepAction(collateralTemplate)],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByText('Play with paused clock'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  holdRegistration = true;
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  holdRegistration = false;
+  fireEvent.click(screen.getByTitle('Step forward'));
+  finishRegistering();
+  await waitFor(() => expect(rpcCalls()).toHaveLength(7));
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(10));
+  expect(
+    rpcCalls()
+      .filter((call) => call.method === 'surfnet_registerScenario')
+      .map((call) => call.params[0].name)
+  ).toEqual(['Scenario · column 1/3', 'Scenario · column 2/3', 'Scenario · column 3/3']);
+});
