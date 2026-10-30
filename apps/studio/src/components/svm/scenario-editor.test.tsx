@@ -12,7 +12,11 @@ vi.mock('@surfpool/ui', async () => ({
   ComboboxLabel: ({ children }: any) => <span>{children}</span>,
   ComboboxOption: ({ children }: any) => <div>{children}</div>,
   Dropdown: ({ children }: any) => <div>{children}</div>,
-  DropdownButton: ({ children, title }: any) => <button title={title}>{children}</button>,
+  DropdownButton: ({ children, title, disabled }: any) => (
+    <button title={title} disabled={disabled}>
+      {children}
+    </button>
+  ),
   DropdownMenu: ({ children }: any) => <div>{children}</div>,
   DropdownItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
   DropdownLabel: ({ children }: any) => <span>{children}</span>,
@@ -559,6 +563,37 @@ it('resumes the clock when a paused Play cannot move it to the next slot and reg
   fireEvent.click(screen.getByText('Play with paused clock'));
   await waitFor(() =>
     expect(rpcMethods().slice(5)).toEqual([
+      'surfnet_registerScenario',
+      'surfnet_pauseClock',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+});
+
+it('ignores a second Play while the first one is still registering its column', async () => {
+  let finishRegistering!: () => void;
+  const registering = new Promise<void>((resolve) => {
+    finishRegistering = () => resolve();
+  });
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'surfnet_registerScenario') {
+      await registering;
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="double-play" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText('Play with paused clock'));
+  expect(await screen.findByTitle('Preparing scenario…')).toBeDisabled();
+  fireEvent.click(screen.getByText('Play with running clock'));
+  finishRegistering();
+
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual([
       'surfnet_registerScenario',
       'surfnet_pauseClock',
       'getEpochInfo',
