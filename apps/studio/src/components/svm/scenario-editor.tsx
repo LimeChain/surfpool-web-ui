@@ -999,10 +999,9 @@ export default function ScenarioEditor({
 
   const startPlay = async () => {
     const [firstSlot] = slots;
-    if (firstSlot && registeredColumnRef.current !== 0 && !(await registerColumn(firstSlot))) {
+    if (firstSlot && !(await registerColumn(firstSlot))) {
       return;
     }
-    registeredColumnRef.current = firstSlot ? 0 : null;
 
     try {
       const pauseResponse = await fetch(rpcUrl, {
@@ -1028,11 +1027,8 @@ export default function ScenarioEditor({
     }
 
     if (firstSlot && !(await advanceOneSlot())) {
-      // The failed column still lands with the next slot, so the next Play registers it again with any edits
-      registeredColumnRef.current = null;
       return;
     }
-    registeredColumnRef.current = null;
 
     setCurrentPlaybackSlot(0);
     setIsExecuting(true);
