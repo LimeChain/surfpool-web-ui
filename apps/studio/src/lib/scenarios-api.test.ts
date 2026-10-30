@@ -228,6 +228,13 @@ describe('Phoenix scenarios', () => {
     ]);
   });
 
+  it('posts fetchBeforeUse on every override when the caller turns it on', async () => {
+    mockPost('phoenix-market-move', jsonResponse({ id: 'phoenix-market' }));
+
+    await createPhoenixMarketMoveScenario('http://studio', 'SOL', '6000', true);
+    expect(postedScenario().overrides.map((override: any) => override.fetchBeforeUse)).toEqual([true, true]);
+  });
+
   it("posts one slot-0 scenario that sets each trader's effective collateral in USDC", async () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
