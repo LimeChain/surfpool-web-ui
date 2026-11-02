@@ -24,6 +24,7 @@ describe('PROTOCOL_ICONS', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
+    expect(PROTOCOL_ICONS['velocity']).toBe('/assets/velocity.png');
   });
 
   it('has the same number of entries as PROTOCOLS', () => {
