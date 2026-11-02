@@ -4,6 +4,7 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createdScenarioIdFromToolResult,
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
@@ -553,6 +554,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured Save account addresses', () => {
+    const result = buildAiPrompt('crash SOL to $50 on Save', new Set(['save']));
+
+    expect(result).toContain('reserve 8PbodeaosQP19SjYFx855UMqWxH2HynZLdBXmsrbac36');
+    expect(result).toContain('price account 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -561,6 +569,32 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=save-sol-crash&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('save-sol-crash');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
   });
 });
 
@@ -759,6 +793,14 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
     expect(big).toBeInstanceOf(LosslessNumber);
     expect(String(big)).toBe(EXACT);
     expect(typeof toScenarioNumber('42')).toBe('number');
+  });
+
+  it('toScenarioNumber sends an integer wider than 64 bits as a decimal string', () => {
+    expect(toScenarioNumber('5427949582765380709301894')).toBe('5427949582765380709301894');
+    expect(toScenarioNumber('-170141183460469231731687303715884105728')).toBe(
+      '-170141183460469231731687303715884105728'
+    );
+    expect(toScenarioNumber('18446744073709551615')).toBeInstanceOf(LosslessNumber);
   });
 
   it('flattenOverrideValues treats a LosslessNumber as a value, not a nested object', () => {
