@@ -1,6 +1,6 @@
 import { createMarketMoveScenario, fetchServedTemplates } from '@/lib/market-move';
 import { getAddressDecoder } from '@solana/kit';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MarketMoveDialog from './market-move-dialog';
 
@@ -137,6 +137,16 @@ describe('MarketMoveDialog', () => {
     expect(marketNames()).toEqual(['BTC / USDC']);
   });
 
+  it('keeps the markets when the selected protocol is picked again', async () => {
+    renderDialog();
+
+    await loaded();
+    fireEvent.change(screen.getByLabelText('Market move protocol'), { target: { value: 'fake' } });
+
+    expect(marketNames()).toEqual(['SOL / USDC', 'BTC / USDC']);
+    expect(adapter.listMarkets).toHaveBeenCalledTimes(1);
+  });
+
   it('creates the scenario the adapter builds for the selected market and move', async () => {
     const onCreated = vi.fn();
     renderDialog(onCreated);
@@ -176,6 +186,19 @@ describe('MarketMoveDialog', () => {
     await waitFor(() => expect(createScenarioMock).toHaveBeenCalled());
     expect(adapter.readMarket.mock.calls[1].slice(0, 2)).toEqual(['http://rpc', TYPED]);
     expect(adapter.buildOverrides.mock.calls[0][1]).toEqual({ label: 'JUP / USDC', value: TYPED, account: TYPED });
+  });
+
+  it('drops a typed market read that fails after the dialog closed', async () => {
+    let rejectRead!: (error: Error) => void;
+    adapter.readMarket.mockReturnValueOnce(new Promise((_, reject) => (rejectRead = reject)));
+    renderDialog();
+
+    await loaded();
+    pickTyped();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await act(async () => rejectRead(new Error(`${TYPED} is not a Fake market account`)));
+
+    expect(screen.queryByText(`${TYPED} is not a Fake market account`)).not.toBeInTheDocument();
   });
 
   it('shows the error and posts nothing when the adapter cannot build the move', async () => {

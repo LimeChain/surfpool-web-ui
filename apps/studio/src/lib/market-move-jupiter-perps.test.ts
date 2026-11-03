@@ -72,6 +72,19 @@ describe('jupiterPerpsMarketMove', () => {
     );
   });
 
+  it('refuses a JLP Pool whose name runs past its end', async () => {
+    const longName = account(PERPS, 84, [...pool.data]);
+    longName.view.setUint32(8, 255, true);
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: { value: [encoded(longName)] } }),
+    } as Response);
+
+    await expect(jupiterPerpsMarketMove.listMarkets('http://rpc', new Map())).rejects.toThrow(
+      'The JLP Pool is shorter than its custody list'
+    );
+  });
+
   it('moves the feed price, refusing an account that is not a feed', async () => {
     const market = { label: 'SOL', value: SOL_CUSTODY, account: SOL_FEED };
     await expect(jupiterPerpsMarketMove.buildOverrides('http://rpc', market, parseMarketMove('-20')!)).resolves.toEqual(

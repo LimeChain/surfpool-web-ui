@@ -37,9 +37,11 @@ const FEED: AccountKind = {
 
 // The Pool starts with its name as a Borsh string, then lists its custodies as a u32 count and pubkeys.
 function poolCustodies(pool: Uint8Array): string[] {
+  const tooShort = 'The JLP Pool is shorter than its custody list';
   const countOffset = 12 + dataView(pool).getUint32(8, true);
+  if (pool.length < countOffset + 4) throw new Error(tooShort);
   const count = dataView(pool).getUint32(countOffset, true);
-  if (pool.length < countOffset + 4 + count * 32) throw new Error('The JLP Pool is shorter than its custody list');
+  if (pool.length < countOffset + 4 + count * 32) throw new Error(tooShort);
   return Array.from({ length: count }, (_, index) => pubkeyAt(pool, countOffset + 4 + index * 32));
 }
 

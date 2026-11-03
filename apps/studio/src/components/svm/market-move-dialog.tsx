@@ -99,11 +99,13 @@ export default function MarketMoveDialog({ open, studioUrl, rpcUrl, onClose, onC
   // HANDLERS
   const handleClose = () => {
     if (isCreating) return;
+    marketRequestRef.current++;
     setError(null);
     onClose();
   };
 
   const handleProtocolSelect = (selectedProtocol: string) => {
+    if (selectedProtocol === adapter?.protocol) return;
     marketRequestRef.current++;
     setProtocol(selectedProtocol);
     setMarkets(null);
