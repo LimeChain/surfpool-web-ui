@@ -175,7 +175,7 @@ export default function PmmFairValueDialog({ open, studioUrl, rpcUrl, onClose, o
         <DialogTitle>Create PMM fair value</DialogTitle>
         <DialogDescription>
           Choose a PMM and market, then set the price of one base token in quote tokens. The scenario moves the
-          maker&apos;s quote to that price and marks it fresh. No swap is sent.
+          maker&apos;s quote to that price. No swap is sent.
         </DialogDescription>
         <div className="mt-5 space-y-4">
           <div>
