@@ -11,6 +11,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={onPumpGraduationSelect}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={vi.fn()}
+        onMarketMoveSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Pump graduation/i }));
@@ -26,6 +27,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={onPumpSwapPriceShockSelect}
         onPhoenixStateSelect={vi.fn()}
+        onMarketMoveSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /PumpSwap price shock/i }));
@@ -41,10 +43,27 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={onPhoenixStateSelect}
+        onMarketMoveSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Phoenix state/i }));
 
     expect(onPhoenixStateSelect).toHaveBeenCalledOnce();
+  });
+
+  it('opens the market move preset', () => {
+    const onMarketMoveSelect = vi.fn();
+
+    render(
+      <ScenarioPresets
+        onPumpGraduationSelect={vi.fn()}
+        onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={vi.fn()}
+        onMarketMoveSelect={onMarketMoveSelect}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Market move/i }));
+
+    expect(onMarketMoveSelect).toHaveBeenCalledOnce();
   });
 });
