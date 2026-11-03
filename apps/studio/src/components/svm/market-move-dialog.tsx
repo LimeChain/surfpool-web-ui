@@ -104,7 +104,9 @@ export default function MarketMoveDialog({ open, studioUrl, rpcUrl, onClose, onC
   };
 
   const handleProtocolSelect = (selectedProtocol: string) => {
+    marketRequestRef.current++;
     setProtocol(selectedProtocol);
+    setMarkets(null);
     setMarket('');
     setCustomMarket(null);
     setError(null);
