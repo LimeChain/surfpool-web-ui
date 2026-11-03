@@ -100,6 +100,6 @@ export const exampleScenarios: ExampleScenario[] = [
     label: 'Jupiter Perps Crash',
     prompt: 'SOL crashes 20% on Jupiter Perps',
     icon: '📉',
-    protocols: ['jupiter-perps', 'jupiter-perps-doves'],
+    protocols: ['jupiter-perps'],
   },
 ];
