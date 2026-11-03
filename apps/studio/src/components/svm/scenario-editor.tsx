@@ -34,6 +34,7 @@ import {
   customValueOption,
   findOptionByTypedValue,
   getFeaturedAccounts,
+  getGoonFiFeaturedOracle,
   resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
@@ -2576,7 +2577,19 @@ export default function ScenarioEditor({
                                                 ? currentValue !== ''
                                                 : modifiedFields.has(fieldPath);
                                               const onValueChange = prop.isAccountSelector
-                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
+                                                ? (pubkey: string) => {
+                                                    setSelectedAccountPubkey(pubkey);
+                                                    const takesOracle = rawProperties.some(
+                                                      (property: any) =>
+                                                        typeof property !== 'string' &&
+                                                        property.type === 'input' &&
+                                                        property.path === 'oracle'
+                                                    );
+                                                    const oracle = takesOracle
+                                                      ? getGoonFiFeaturedOracle(pubkey)
+                                                      : undefined;
+                                                    if (oracle) setValue('oracle', oracle);
+                                                  }
                                                 : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;

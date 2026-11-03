@@ -56,25 +56,11 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
-    label: 'GoonFi Price Shock',
+    label: 'PMM Arbitrage',
     prompt:
-      "Create an editable SOL/USDC scenario where GoonFi's price for SOL drops to $100 and the market keeps trading at that price instead of rejecting it, but GoonFi pays sellers no more than 25 USDC in total, so small sells still fill and larger ones fail.",
-    icon: '🎯',
-    protocols: ['goonfi'],
-  },
-  {
-    label: 'GoonFi Stale Quote',
-    prompt:
-      "Make GoonFi's SOL/USDC quote stale, so the market rejects swaps in both directions until a fresh quote arrives. Prepare state only; do not build or execute a swap.",
-    icon: '⏳',
-    protocols: ['goonfi'],
-  },
-  {
-    label: 'GoonFi Drained Vaults',
-    prompt:
-      "Empty both of GoonFi's SOL/USDC vaults, so the market cannot fill a swap in either direction while its price stays unchanged. Prepare state only; do not build or execute a swap.",
-    icon: '🏜️',
-    protocols: ['goonfi'],
+      'SOL drops 5% on the Orca Whirlpool SOL/USDC pool while GoonFi still prices it at the old level, so buying SOL on Whirlpool and selling it to GoonFi is profitable',
+    icon: '⚖️',
+    protocols: ['goonfi', 'whirlpool'],
   },
   {
     label: 'Triangular Arbitrage',

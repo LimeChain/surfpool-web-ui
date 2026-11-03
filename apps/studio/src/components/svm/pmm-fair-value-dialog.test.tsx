@@ -151,7 +151,7 @@ describe('PmmFairValueDialog', () => {
     expect(marketNames()).toEqual([]);
   });
 
-  it('posts the oracle quote, freshness and reference band for the selected market', async () => {
+  it('posts the oracle quote and the reference band, which keeps the oracle alive, for the selected market', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
@@ -164,7 +164,8 @@ describe('PmmFairValueDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     const [studioUrl, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
-    const [price, freshness, band] = scenario.overrides;
+    const [price, band] = scenario.overrides;
+    expect(scenario.overrides).toHaveLength(2);
     expect(studioUrl).toBe('http://studio');
     expect(scenario.tags).toEqual(['goonfi', 'pmm', 'fair-value']);
     expect(price).toMatchObject({
@@ -174,15 +175,10 @@ describe('PmmFairValueDialog', () => {
     });
     expect(String(price.values.bid_price_x1e6)).toBe('1000100');
     expect(String(price.values.ask_price_x1e6)).toBe('1000100');
-    expect(freshness).toMatchObject({
-      templateId: 'goonfi-freshness',
-      account: { pubkey: JUP_USDC.oracle },
-      values: { last_update_slot: 0 },
-      fetchBeforeUse: true,
-    });
     expect(band).toMatchObject({ templateId: 'goonfi-reference-band', account: { pubkey: JUP_USDC.market } });
     expect(String(band.values.reference_price_a_x1e6)).toBe('1000100');
     expect(String(band.values.reference_price_b_x1e6)).toBe('1000100');
+    expect(band.values.oracle).toBe(JUP_USDC.oracle);
   });
 
   it('reads a typed market address the featured list does not offer and targets its oracle', async () => {
@@ -202,9 +198,10 @@ describe('PmmFairValueDialog', () => {
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
     expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: UNLISTED_ORACLE } });
-    expect(scenario.overrides[2]).toMatchObject({
+    expect(scenario.overrides[1]).toMatchObject({
       templateId: 'goonfi-reference-band',
       account: { pubkey: UNLISTED_MARKET },
+      values: { oracle: UNLISTED_ORACLE },
     });
   });
 

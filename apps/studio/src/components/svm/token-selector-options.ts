@@ -106,9 +106,15 @@ const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>([
   ['goonfi-reference-band', goonfiAccounts('market')],
   ['goonfi-size-impact', goonfiAccounts('market')],
   ['goonfi-price', goonfiAccounts('oracle')],
-  ['goonfi-freshness', goonfiAccounts('oracle')],
   ['goonfi-vault-balance', goonfiAccounts('vault')],
 ]);
+
+// The oracle of the featured GoonFi market a market or vault account belongs to.
+export const getGoonFiFeaturedOracle = (accountPubkey: string): string | undefined =>
+  GOONFI_FEATURED_MARKETS.find(
+    (market) =>
+      market.market === accountPubkey || market.baseVault === accountPubkey || market.quoteVault === accountPubkey
+  )?.oracle;
 
 export const getFeaturedAccounts = (templateId: unknown) =>
   typeof templateId === 'string' ? FEATURED_ACCOUNTS.get(templateId) : undefined;

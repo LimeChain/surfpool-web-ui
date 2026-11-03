@@ -130,7 +130,7 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   return {
     id: crypto.randomUUID(),
     name: `${adapter.label} ${marketName} fair value ${normalizedPrice}`,
-    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice} and mark the quote fresh.`,
+    description: `Set the ${adapter.label} ${marketName} fair value to ${normalizedPrice}.`,
     overrides,
     tags: [adapter.protocol, 'pmm', 'fair-value'],
   };
@@ -196,25 +196,20 @@ const goonfiAdapter: PmmFairValueAdapter = {
   })),
   buildOverrides: (market, price) => {
     const priceX1e6 = toScenarioNumber(goonfiPriceX1e6(price).toString());
-    const oracle = { pubkey: readPubkey(market, 'oracle') };
+    const oracle = readPubkey(market, 'oracle');
+    // Surfpool keeps the quote current from the slot the price plays, so no freshness override is needed.
     return [
       {
         templateId: 'goonfi-price',
         label: 'GoonFi fair value',
-        account: oracle,
+        account: { pubkey: oracle },
         values: { bid_price_x1e6: priceX1e6, ask_price_x1e6: priceX1e6 },
-      },
-      {
-        templateId: 'goonfi-freshness',
-        label: 'GoonFi fresh quote',
-        account: oracle,
-        values: { last_update_slot: 0 },
       },
       {
         templateId: 'goonfi-reference-band',
         label: 'GoonFi reference band',
         account: { pubkey: market.value },
-        values: { reference_price_a_x1e6: priceX1e6, reference_price_b_x1e6: priceX1e6 },
+        values: { reference_price_a_x1e6: priceX1e6, reference_price_b_x1e6: priceX1e6, oracle },
       },
     ];
   },

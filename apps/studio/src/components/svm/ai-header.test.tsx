@@ -95,9 +95,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
-    expect(screen.getByText('GoonFi Price Shock')).toBeInTheDocument();
-    expect(screen.getByText('GoonFi Stale Quote')).toBeInTheDocument();
-    expect(screen.getByText('GoonFi Drained Vaults')).toBeInTheDocument();
+    expect(screen.getByText('PMM Arbitrage')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {

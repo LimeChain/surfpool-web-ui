@@ -2,6 +2,7 @@ import { GOONFI_FEATURED_MARKETS } from '@/lib/goonfi-markets';
 import { describe, expect, it } from 'vitest';
 import {
   getFeaturedAccounts,
+  getGoonFiFeaturedOracle,
   resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
@@ -74,7 +75,7 @@ describe('getFeaturedAccounts', () => {
     expect(values('goonfi-reference-band')?.[0]).toBe(sol.market);
     expect(values('goonfi-size-impact')?.[0]).toBe(sol.market);
     expect(values('goonfi-price')?.[0]).toBe(sol.oracle);
-    expect(values('goonfi-freshness')?.[0]).toBe(sol.oracle);
+    expect(getFeaturedAccounts('goonfi-freshness')).toBeUndefined();
     expect(values('goonfi-vault-balance')?.slice(0, 2)).toEqual([sol.baseVault, sol.quoteVault]);
     expect(getFeaturedAccounts('kamino-reserve-config')).toBeUndefined();
     expect(getFeaturedAccounts('constructor')).toBeUndefined();
@@ -85,5 +86,19 @@ describe('getFeaturedAccounts', () => {
     expect(resolveFeaturedAccount('goonfi-price', { pubkey: '' }, ` ${sol.oracle} `)).toEqual({ pubkey: sol.oracle });
     expect(resolveFeaturedAccount('goonfi-price', { pubkey: '' }, '   ')).toBeUndefined();
     expect(resolveFeaturedAccount('kamino-reserve-config', pda, '')).toBe(pda);
+  });
+});
+
+describe('getGoonFiFeaturedOracle', () => {
+  const [sol] = GOONFI_FEATURED_MARKETS;
+
+  it('names the oracle of the featured market a market or vault belongs to', () => {
+    for (const account of [sol.market, sol.baseVault, sol.quoteVault]) {
+      expect(getGoonFiFeaturedOracle(account)).toBe(sol.oracle);
+    }
+  });
+
+  it('knows no oracle for an account outside the featured markets', () => {
+    expect(getGoonFiFeaturedOracle('CustomMarket111')).toBeUndefined();
   });
 });
