@@ -1,5 +1,5 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
-import { TESSERA_FEATURED } from './tessera-markets';
+import { TESSERA_FEATURED } from './pmms/tessera';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */

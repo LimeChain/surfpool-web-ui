@@ -5,7 +5,7 @@ import {
   getProtocolAiContext,
   resolveFeaturedAccount,
 } from './featured-accounts';
-import { TESSERA_FEATURED_MARKETS } from './tessera-markets';
+import { TESSERA_FEATURED_MARKETS } from './pmms/tessera';
 
 const [sol] = TESSERA_FEATURED_MARKETS;
 const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);

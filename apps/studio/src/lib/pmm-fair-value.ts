@@ -1,13 +1,9 @@
-import { PublicKey } from '@solana/web3.js';
-import { truncateAddress } from './address-utils';
+import { TESSERA_FAIR_VALUE } from './pmms/tessera';
 import { serializeScenarioJson } from './scenarios-api';
-import { TESSERA_FEATURED_MARKETS } from './tessera-markets';
 
-export const PmmProtocols = {
-  Tessera: 'tessera',
-} as const;
+export { isValidPmmPrice } from './pmm-price';
 
-export type PmmProtocol = (typeof PmmProtocols)[keyof typeof PmmProtocols];
+export type PmmProtocol = string;
 
 export type PmmMarketOption = {
   label: string;
@@ -32,54 +28,6 @@ export type PmmFairValueAdapter = {
   buildOverrides: (market: PmmMarketOption, price: string) => PmmFairValueOverride[];
   /** Reads a typed market address the featured list does not offer, with the metadata its overrides need. */
   readMarket: (rpcUrl: string, address: string, listed: PmmMarketOption[]) => Promise<PmmMarketOption>;
-};
-
-const ZERO = BigInt(0);
-const TEN = BigInt(10);
-const PRICE_PATTERN = /^\d+(?:\.\d+)?$/;
-
-export function isValidPmmPrice(price: string): boolean {
-  const normalized = price.trim();
-  return PRICE_PATTERN.test(normalized) && /[1-9]/.test(normalized);
-}
-
-function parseDecimalPrice(price: string): { digits: bigint; scale: number } {
-  const normalized = price.trim();
-  if (!isValidPmmPrice(normalized)) throw new Error('Price must be a positive decimal number');
-  const [whole, fraction = ''] = normalized.split('.');
-  return { digits: BigInt(`${whole}${fraction}`), scale: fraction.length };
-}
-
-function scaleDecimal(price: string, exponent: number): bigint {
-  const { digits, scale } = parseDecimalPrice(price);
-  const shift = exponent - scale;
-  if (shift >= 0) return digits * TEN ** BigInt(shift);
-  const divisor = TEN ** BigInt(-shift);
-  if (digits % divisor !== ZERO) {
-    throw new Error(`Price has more decimals than this market supports, at most ${Math.max(exponent, 0)}`);
-  }
-  return digits / divisor;
-}
-
-async function rpcResult<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
-  if (!response.ok) throw new Error(`${method} failed: ${response.status}`);
-  const body = await response.json();
-  if (body.error) throw new Error(body.error.message ?? `${method} failed`);
-  return body.result as T;
-}
-
-const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
-  for (const { metadata } of listed) {
-    const [base, quote] = String(metadata?.pair ?? '').split('/');
-    if (metadata?.base_mint === mint && base) return base;
-    if (metadata?.quote_mint === mint && quote) return quote;
-  }
-  return truncateAddress(mint);
 };
 
 export type ServedTemplate = { id: string };
@@ -135,102 +83,7 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   };
 }
 
-const TEN_POW_30 = TEN ** BigInt(30);
-
-function readDecimals(market: PmmMarketOption, key: string): number {
-  const value = market.metadata?.[key];
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
-  }
-  return value;
-}
-
-export function tesseraPriceRatios(
-  price: string,
-  baseDecimals: number,
-  quoteDecimals: number
-): { quoteAtomsPerBaseAtomX1e15: bigint; baseAtomsPerQuoteAtomX1e15: bigint } {
-  const quoteAtomsPerBaseAtomX1e15 = scaleDecimal(price, quoteDecimals - baseDecimals + 15);
-  if (quoteAtomsPerBaseAtomX1e15 === ZERO) throw new Error("Price is too small for this market's decimals");
-
-  const baseAtomsPerQuoteAtomX1e15 = TEN_POW_30 / quoteAtomsPerBaseAtomX1e15;
-  if (baseAtomsPerQuoteAtomX1e15 === ZERO) throw new Error("Price is too large for this market's decimals");
-
-  return { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 };
-}
-
-const TESSERA_PROGRAM = 'TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH';
-const TESSERA_MARKET_SIZE = 1264;
-
-export async function readTesseraMarket(
-  rpcUrl: string,
-  address: string,
-  listed: PmmMarketOption[]
-): Promise<PmmMarketOption> {
-  const { value } = await rpcResult<{ value: { owner: string; data: [string, string] } | null }>(
-    rpcUrl,
-    'getAccountInfo',
-    [address, { encoding: 'base64' }]
-  );
-  const data = value ? Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) : null;
-  if (!value || !data || value.owner !== TESSERA_PROGRAM || data.length !== TESSERA_MARKET_SIZE || data[96] !== 5) {
-    throw new Error(`${address} is not a Tessera market account`);
-  }
-  const [base, quote] = [24, 56].map((offset) => new PublicKey(data.slice(offset, offset + 32)).toBase58());
-  const mints = await rpcResult<{ value: Array<{ data?: { parsed?: { info?: { decimals?: number } } } } | null> }>(
-    rpcUrl,
-    'getMultipleAccounts',
-    [[base, quote], { encoding: 'jsonParsed' }]
-  );
-  const [baseDecimals, quoteDecimals] = mints.value.map((mint) => mint?.data?.parsed?.info?.decimals);
-  if (baseDecimals === undefined || quoteDecimals === undefined) {
-    throw new Error(`The mints of ${address} have no decimals on this surfnet`);
-  }
-  const [baseSymbol, quoteSymbol] = [base, quote].map((mint) => listedSymbol(mint, listed));
-  return {
-    label: `${baseSymbol} / ${quoteSymbol}`,
-    value: address,
-    metadata: { base_decimals: baseDecimals, quote_decimals: quoteDecimals, pair: `${baseSymbol}/${quoteSymbol}` },
-  };
-}
-
-const tesseraAdapter: PmmFairValueAdapter = {
-  protocol: PmmProtocols.Tessera,
-  label: 'Tessera',
-  marketTemplateId: 'tessera-price',
-  markets: TESSERA_FEATURED_MARKETS.map((market) => ({
-    label: market.label,
-    value: market.market,
-    metadata: {
-      pair: `${market.baseSymbol}/${market.quoteSymbol}`,
-      base_mint: market.baseMint,
-      quote_mint: market.quoteMint,
-      base_decimals: market.baseDecimals,
-      quote_decimals: market.quoteDecimals,
-    },
-  })),
-  buildOverrides: (market, price) => {
-    const { quoteAtomsPerBaseAtomX1e15, baseAtomsPerQuoteAtomX1e15 } = tesseraPriceRatios(
-      price,
-      readDecimals(market, 'base_decimals'),
-      readDecimals(market, 'quote_decimals')
-    );
-    // Surfpool keeps the quote current from the slot the price plays, so the price is all it takes.
-    return [
-      {
-        templateId: 'tessera-price',
-        label: 'Tessera fair value',
-        account: { pubkey: market.value },
-        values: {
-          quote_atoms_per_base_atom_x1e15: quoteAtomsPerBaseAtomX1e15.toString(),
-          base_atoms_per_quote_atom_x1e15: baseAtomsPerQuoteAtomX1e15.toString(),
-        },
-      },
-    ];
-  },
-  readMarket: readTesseraMarket,
-};
-
+// Each PMM keeps its fair-value adapter in lib/pmms and is registered here.
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
-  [PmmProtocols.Tessera]: tesseraAdapter,
+  [TESSERA_FAIR_VALUE.protocol]: TESSERA_FAIR_VALUE,
 };

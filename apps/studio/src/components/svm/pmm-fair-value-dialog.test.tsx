@@ -1,5 +1,5 @@
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
-import { TESSERA_FEATURED_MARKETS } from '@/lib/tessera-markets';
+import { TESSERA_FEATURED_MARKETS } from '@/lib/pmms/tessera';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
