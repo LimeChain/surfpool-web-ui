@@ -1,4 +1,4 @@
-import type { FeaturedProtocol } from './featured-accounts';
+import type { FeaturedAccounts, FeaturedProtocol } from './featured-accounts';
 
 /** The BisonFi markets Studio offers as shortcuts; any other BisonFi v3 pool can be typed instead. */
 export const BISONFI_FEATURED_MARKETS = [
@@ -28,18 +28,23 @@ export const BISONFI_FEATURED_MARKETS = [
   },
 ] as const;
 
+const bisonfiMarkets: FeaturedAccounts = {
+  label: 'BisonFi market',
+  description: 'Pick a featured market or type any BisonFi v3 pool address.',
+  options: BISONFI_FEATURED_MARKETS.map((market) => ({
+    id: market.id,
+    label: market.label,
+    value: market.market,
+    description: market.accountName,
+  })),
+};
+
 export const BISONFI_FEATURED: FeaturedProtocol = {
   protocol: 'bisonfi',
-  templateIds: ['bisonfi-fair-value', 'bisonfi-depth', 'bisonfi-spread'],
-  accounts: {
-    label: 'BisonFi market',
-    description: 'Pick a featured market or type any BisonFi v3 pool address.',
-    options: BISONFI_FEATURED_MARKETS.map((market) => ({
-      id: market.id,
-      label: market.label,
-      value: market.market,
-      description: market.accountName,
-    })),
+  templates: {
+    'bisonfi-fair-value': bisonfiMarkets,
+    'bisonfi-depth': bisonfiMarkets,
+    'bisonfi-spread': bisonfiMarkets,
   },
   aiContext: () =>
     [
