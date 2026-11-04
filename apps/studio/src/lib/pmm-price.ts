@@ -59,3 +59,11 @@ export function readDecimals(market: PmmMarketOption, key: string): number {
   }
   return value;
 }
+
+export function readPubkey(market: PmmMarketOption, key: string): string {
+  const value = market.metadata?.[key];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
+  }
+  return value;
+}
