@@ -1,7 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 import type { FeaturedAccounts, FeaturedProtocol } from '../featured-accounts';
 import type { PmmFairValueAdapter, PmmMarketOption } from '../pmm-fair-value';
-import { listedSymbol, rpcResult, scaleDecimal } from '../pmm-price';
+import { listedSymbol, readPubkey, rpcResult, scaleDecimal } from '../pmm-price';
 
 /** The GoonFi markets Studio offers as shortcuts; any other GoonFi account can be typed instead. */
 export const GOONFI_FEATURED_MARKETS = [
@@ -127,14 +127,6 @@ export function goonfiPriceX1e6(price: string): bigint {
   const priceX1e6 = scaleDecimal(price, 6);
   if (priceX1e6 > U64_MAX) throw new Error('Price is too large for GoonFi');
   return priceX1e6;
-}
-
-function readPubkey(market: PmmMarketOption, key: string): string {
-  const value = market.metadata?.[key];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
-  }
-  return value;
 }
 
 const GOONFI_PROGRAM = 'goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE';

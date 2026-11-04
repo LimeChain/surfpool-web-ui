@@ -13,7 +13,7 @@ export function isValidPmmPrice(price: string): boolean {
   return PRICE_PATTERN.test(normalized) && /[1-9]/.test(normalized);
 }
 
-function parseDecimalPrice(price: string): { digits: bigint; scale: number } {
+export function parseDecimalPrice(price: string): { digits: bigint; scale: number } {
   const normalized = price.trim();
   if (!isValidPmmPrice(normalized)) throw new Error('Price must be a positive decimal number');
   const [whole, fraction = ''] = normalized.split('.');
@@ -55,6 +55,14 @@ export const listedSymbol = (mint: string, listed: PmmMarketOption[]) => {
 export function readDecimals(market: PmmMarketOption, key: string): number {
   const value = market.metadata?.[key];
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
+  }
+  return value;
+}
+
+export function readPubkey(market: PmmMarketOption, key: string): string {
+  const value = market.metadata?.[key];
+  if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`Market ${market.label} has no ${key} in its metadata`);
   }
   return value;
