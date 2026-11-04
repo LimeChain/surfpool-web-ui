@@ -56,6 +56,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'PMM Arbitrage',
+    prompt:
+      'SOL drops 5% on the Orca Whirlpool SOL/USDC pool while GoonFi still prices it at the old level, so buying SOL on Whirlpool and selling it to GoonFi is profitable',
+    icon: '⚖️',
+    protocols: ['goonfi', 'whirlpool'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',

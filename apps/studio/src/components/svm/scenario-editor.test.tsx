@@ -1,6 +1,7 @@
+import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
 
@@ -376,4 +377,57 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+it('fills the oracle input of a GoonFi vault override from the featured market and saves it', async () => {
+  const template = {
+    id: 'goonfi-vault-balance',
+    name: 'GoonFi vault balance',
+    protocol: 'GoonFi',
+    description: 'Limit a payout vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'oracle', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  const [sol] = GOONFI_FEATURED_MARKETS;
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  renderEditor({ ...stepAction(template, { pubkey: '' }), protocolId: 'goonfi', protocol: 'GoonFi' });
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`GoonFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(
+    within(await screen.findByLabelText('GoonFi vault results')).getByRole('button', {
+      name: /^SOL \/ USDC \(USDC vault\)/,
+    })
+  );
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter oracle...')).toHaveValue(sol.oracle));
+
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: sol.quoteVault });
+  expect(override.values).toEqual({ oracle: sol.oracle });
+});
+
+it('sends a typed u128 past u64 as a decimal string, the only form the backend reads exactly', async () => {
+  const template = {
+    id: 'raw-u128-field',
+    name: 'Override Wide Value',
+    protocol: 'Phoenix Eternal',
+    description: 'Set a 128-bit field',
+    address: { pubkey: '' },
+    rawLayout: true,
+    properties: [{ path: 'wide_value', offset: 0, encoding: 'u128' }],
+  };
+  await openEditor(template, {}, { pubkey: 'account' });
+  fireEvent.change(await screen.findByPlaceholderText('Enter wide_value...'), {
+    target: { value: '15474250491067253436239052800' },
+  });
+
+  expect((await savedOverride()).values).toEqual({ wide_value: '15474250491067253436239052800' });
 });
