@@ -1,5 +1,5 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
-import { BISONFI_FEATURED } from './bisonfi-markets';
+import { BISONFI_FEATURED } from './pmms/bisonfi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */

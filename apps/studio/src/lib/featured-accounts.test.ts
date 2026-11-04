@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BISONFI_FEATURED_MARKETS } from './bisonfi-markets';
 import {
   featuredAccountInputs,
   getFeaturedAccounts,
   getProtocolAiContext,
   resolveFeaturedAccount,
 } from './featured-accounts';
+import { BISONFI_FEATURED_MARKETS } from './pmms/bisonfi';
 
 describe('getFeaturedAccounts', () => {
   const [sol] = BISONFI_FEATURED_MARKETS;

@@ -435,3 +435,21 @@ it('keeps a saved BisonFi market and its values without loading the pool', async
     expect(override.values.base_reserve).toBe(5);
   });
 });
+
+it('sends a typed u128 past u64 as a decimal string, the only form the backend reads exactly', async () => {
+  const template = {
+    id: 'bisonfi-fair-value',
+    name: 'Override Fair Value',
+    protocol: 'Phoenix Eternal',
+    description: 'Set the mid',
+    address: { pubkey: '' },
+    rawLayout: true,
+    properties: [{ path: 'fair_value', offset: 832, encoding: 'u128' }],
+  };
+  await openEditor(template, {}, { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' });
+  fireEvent.change(await screen.findByPlaceholderText('Enter fair_value...'), {
+    target: { value: '15474250491067253436239052800' },
+  });
+
+  expect((await savedOverride()).values).toEqual({ fair_value: '15474250491067253436239052800' });
+});
