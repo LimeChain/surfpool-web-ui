@@ -75,7 +75,7 @@ const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const CBBTC_USDC = BISONFI_FEATURED_MARKETS[2];
-const FEATURED = ['SOL / USDC', 'deSECZ / USDC', 'cbBTC / USDC', 'SOL / USDT'];
+const FEATURED = ['SOL / USDC', 'whETH / USDC', 'cbBTC / USDC', 'SOL / USDT'];
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -102,9 +102,9 @@ afterEach(() => {
 });
 
 const BISONFI_PROGRAM = 'BiSoNHVpsVZW2F7rx2eQ59yQwKxzU5NvBcmKshCSUypi';
-// A live whETH/USDC pool Studio does not feature, and the mint at its base side.
-const UNLISTED_MARKET = 'AfaA4CE8C2DWSHANCqvU9RWrxRiXCV7KKVSw4cHi68Wn';
-const UNLISTED_BASE_MINT = '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs';
+// A live HYPE/USDC pool Studio does not feature, and the mint at its base side.
+const UNLISTED_MARKET = 'DSzgmzz1Ms4qshdeCpE2uWenXXyNbkikw3bzfJRAv7JF';
+const UNLISTED_BASE_MINT = '98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g';
 
 const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
@@ -186,14 +186,14 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 7vfCXTUX⋯b963voxs in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('BisonFi 7vfCXTUX⋯b963voxs / USDC fair value 100');
+    expect(scenario.name).toBe('BisonFi 98sMhvDw⋯MXFNMh5g / USDC fair value 100');
     expect(scenario.overrides[0]).toMatchObject({
       templateId: 'bisonfi-fair-value',
       account: { pubkey: UNLISTED_MARKET },
@@ -209,7 +209,7 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 7vfCXTUX⋯b963voxs in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
     expect(marketNames()).toEqual([`Custom · ${UNLISTED_MARKET}`]);
@@ -242,7 +242,7 @@ describe('PmmFairValueDialog', () => {
       fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: address } });
       fireEvent.click(screen.getByRole('button', { name: `Custom · ${address}` }));
     }
-    await screen.findByLabelText('Price of 7vfCXTUX⋯b963voxs in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     releaseFirstRead();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await new Promise((resolve) => setTimeout(resolve, 0));
