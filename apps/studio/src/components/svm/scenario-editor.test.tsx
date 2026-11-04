@@ -1,4 +1,4 @@
-import { GOONFI_FEATURED_MARKETS } from '@/lib/goonfi-markets';
+import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';

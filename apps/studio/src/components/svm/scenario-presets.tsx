@@ -1,5 +1,5 @@
 import { getProtocolIcon } from '@/lib/protocol-icons';
-import { ArrowRightIcon } from '@heroicons/react/24/solid';
+import { ArrowRightIcon, ScaleIcon } from '@heroicons/react/24/solid';
 import Image from 'next/image';
 
 interface ScenarioPresetsProps {
@@ -81,7 +81,8 @@ export default function ScenarioPresets({
           className="group flex items-center gap-4 rounded-2xl border border-zinc-700/50 bg-zinc-900/60 p-4 text-left shadow-lg shadow-black/10 transition-colors hover:border-fuchsia-500/40 hover:bg-zinc-900"
         >
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-800 ring-1 ring-zinc-700/70">
-            <Image src={getProtocolIcon('goonfi')} alt="" width={28} height={28} />
+            {/* The preset covers every PMM, so it shows the fair value it sets rather than one protocol's logo. */}
+            <ScaleIcon className="size-6 text-zinc-300 transition-colors group-hover:text-fuchsia-400" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-zinc-100">PMM fair value</span>

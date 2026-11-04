@@ -1,5 +1,5 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
-import { GOONFI_FEATURED } from './goonfi-markets';
+import { GOONFI_FEATURED } from './pmms/goonfi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */

@@ -1,22 +1,6 @@
 import { LosslessNumber } from 'lossless-json';
 import { describe, expect, it, vi } from 'vitest';
-import { createTemplateScenario, goonfiPriceX1e6 } from './pmm-fair-value';
-
-describe('goonfiPriceX1e6', () => {
-  it.each([
-    ['99.74', BigInt('99740000')],
-    ['1.0001', BigInt('1000100')],
-    ['150', BigInt('150000000')],
-  ])('scales %s to quote per base times 10^6', (price, expected) => {
-    expect(goonfiPriceX1e6(price)).toBe(expected);
-  });
-
-  it('accepts up to u64 max with 6 decimals and rejects anything beyond', () => {
-    expect(goonfiPriceX1e6('18446744073709.551615')).toBe(BigInt('18446744073709551615'));
-    expect(() => goonfiPriceX1e6('18446744073710')).toThrow('too large');
-    expect(() => goonfiPriceX1e6('1.0000001')).toThrow('at most 6');
-  });
-});
+import { buildPmmFairValueScenario, createTemplateScenario, type PmmFairValueAdapter } from './pmm-fair-value';
 
 describe('createTemplateScenario', () => {
   it('posts the scenario losslessly and returns its id', async () => {
@@ -30,5 +14,33 @@ describe('createTemplateScenario', () => {
     expect(url).toBe('http://studio/v1/scenarios');
     expect(init).toMatchObject({ method: 'POST', body: '{"id":"scenario-id","value":9975062344139650}' });
     vi.unstubAllGlobals();
+  });
+});
+
+describe('buildPmmFairValueScenario', () => {
+  it('keeps an integer an adapter gives as bigint exact and leaves other values as given', () => {
+    const adapter: PmmFairValueAdapter = {
+      protocol: 'test',
+      label: 'Test',
+      marketTemplateId: 'test-price',
+      markets: [],
+      readMarket: vi.fn(),
+      buildOverrides: () => [
+        {
+          templateId: 'test-price',
+          label: 'Test price',
+          account: { pubkey: 'market' },
+          values: { small: BigInt(42), large: BigInt('18446744073709551615'), ratio: '7', oracle: 'oracle' },
+        },
+      ],
+    };
+
+    const [override] = buildPmmFairValueScenario(adapter, { label: 'A / B', value: 'market' }, '1').overrides;
+    expect(override.values).toEqual({
+      small: 42,
+      large: new LosslessNumber('18446744073709551615'),
+      ratio: '7',
+      oracle: 'oracle',
+    });
   });
 });

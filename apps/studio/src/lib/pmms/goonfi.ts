@@ -1,4 +1,7 @@
-import type { FeaturedAccounts, FeaturedProtocol } from './featured-accounts';
+import { PublicKey } from '@solana/web3.js';
+import type { FeaturedAccounts, FeaturedProtocol } from '../featured-accounts';
+import type { PmmFairValueAdapter, PmmMarketOption } from '../pmm-fair-value';
+import { listedSymbol, rpcResult, scaleDecimal } from '../pmm-price';
 
 /** The GoonFi markets Studio offers as shortcuts; any other GoonFi account can be typed instead. */
 export const GOONFI_FEATURED_MARKETS = [
@@ -116,4 +119,86 @@ export const GOONFI_FEATURED: FeaturedProtocol = {
           `${market.quoteSymbol} vault ${market.quoteVault}.`
       ),
     ].join('\n'),
+};
+
+const U64_MAX = BigInt('18446744073709551615');
+
+export function goonfiPriceX1e6(price: string): bigint {
+  const priceX1e6 = scaleDecimal(price, 6);
+  if (priceX1e6 > U64_MAX) throw new Error('Price is too large for GoonFi');
+  return priceX1e6;
+}
+
+function readPubkey(market: PmmMarketOption, key: string): string {
+  const value = market.metadata?.[key];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Market ${market.label} has no ${key} in its metadata`);
+  }
+  return value;
+}
+
+const GOONFI_PROGRAM = 'goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE';
+const GOONFI_MARKET_SIZE = 2048;
+const GOONFI_MARKET_TAG = [48, 188, 47, 53, 52, 88, 50, 154];
+
+export async function readGoonfiMarket(
+  rpcUrl: string,
+  address: string,
+  listed: PmmMarketOption[]
+): Promise<PmmMarketOption> {
+  const { value } = await rpcResult<{ value: { owner: string; data: [string, string] } | null }>(
+    rpcUrl,
+    'getAccountInfo',
+    [address, { encoding: 'base64' }]
+  );
+  const data = value ? Uint8Array.from(atob(value.data[0]), (char) => char.charCodeAt(0)) : null;
+  const tagged = !!data && GOONFI_MARKET_TAG.every((byte, index) => data[index] === byte);
+  if (!value || !data || value.owner !== GOONFI_PROGRAM || data.length !== GOONFI_MARKET_SIZE || !tagged) {
+    throw new Error(`${address} is not a GoonFi market account`);
+  }
+  const [base, quote, oracle] = [80, 112, 208].map((offset) =>
+    new PublicKey(data.slice(offset, offset + 32)).toBase58()
+  );
+  const [baseSymbol, quoteSymbol] = [base, quote].map((mint) => listedSymbol(mint, listed));
+  return {
+    label: `${baseSymbol} / ${quoteSymbol}`,
+    value: address,
+    metadata: { oracle, pair: `${baseSymbol}/${quoteSymbol}` },
+  };
+}
+
+export const GOONFI_FAIR_VALUE: PmmFairValueAdapter = {
+  protocol: 'goonfi',
+  label: 'GoonFi',
+  marketTemplateId: 'goonfi-reference-band',
+  markets: GOONFI_FEATURED_MARKETS.map((market) => ({
+    label: market.label,
+    value: market.market,
+    metadata: {
+      oracle: market.oracle,
+      pair: `${market.baseSymbol}/${market.quoteSymbol}`,
+      base_mint: market.baseMint,
+      quote_mint: market.quoteMint,
+    },
+  })),
+  buildOverrides: (market, price) => {
+    const priceX1e6 = goonfiPriceX1e6(price);
+    const oracle = readPubkey(market, 'oracle');
+    // Surfpool keeps the quote current from the slot the price plays, so no freshness override is needed.
+    return [
+      {
+        templateId: 'goonfi-price',
+        label: 'GoonFi fair value',
+        account: { pubkey: oracle },
+        values: { bid_price_x1e6: priceX1e6, ask_price_x1e6: priceX1e6 },
+      },
+      {
+        templateId: 'goonfi-reference-band',
+        label: 'GoonFi reference band',
+        account: { pubkey: market.value },
+        values: { reference_price_a_x1e6: priceX1e6, reference_price_b_x1e6: priceX1e6, oracle },
+      },
+    ];
+  },
+  readMarket: readGoonfiMarket,
 };

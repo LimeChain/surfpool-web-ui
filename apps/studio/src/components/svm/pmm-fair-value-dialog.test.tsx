@@ -1,5 +1,5 @@
-import { GOONFI_FEATURED_MARKETS } from '@/lib/goonfi-markets';
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
+import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

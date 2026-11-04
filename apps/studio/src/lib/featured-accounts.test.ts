@@ -5,7 +5,7 @@ import {
   getProtocolAiContext,
   resolveFeaturedAccount,
 } from './featured-accounts';
-import { GOONFI_FEATURED_MARKETS } from './goonfi-markets';
+import { GOONFI_FEATURED_MARKETS } from './pmms/goonfi';
 
 const [sol, hype] = GOONFI_FEATURED_MARKETS;
 const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);
