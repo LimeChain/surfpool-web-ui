@@ -1,3 +1,5 @@
+import type { FeaturedAccounts, FeaturedProtocol } from './featured-accounts';
+
 /** The HumidiFi markets Studio offers as shortcuts; any other HumidiFi account can be typed instead. */
 export const HUMIDIFI_FEATURED_MARKETS = [
   {
@@ -53,3 +55,55 @@ export const HUMIDIFI_FEATURED_MARKETS = [
     quoteVault: 'Cad4XrQrtXdKEhZKtWX5YAkwumUvphZKw1cqpYXYnZDr',
   },
 ] as const;
+
+const humidifiMarkets: FeaturedAccounts = {
+  label: 'HumidiFi market',
+  description: 'Pick a featured market or type any HumidiFi market address.',
+  options: HUMIDIFI_FEATURED_MARKETS.map((market) => ({
+    id: market.id,
+    label: market.label,
+    value: market.market,
+    description: 'Market account',
+  })),
+};
+
+// A vault override keeps its market quoting through its `market` input, which a featured vault fills.
+const humidifiVaults: FeaturedAccounts = {
+  label: 'HumidiFi vault',
+  description: 'Pick a featured payout vault or type any HumidiFi vault address.',
+  options: HUMIDIFI_FEATURED_MARKETS.flatMap((market) => [
+    {
+      id: `${market.id}-base`,
+      label: `${market.label} (${market.baseSymbol} vault)`,
+      value: market.baseVault,
+      description: 'Base payout vault',
+      inputs: { market: market.market },
+    },
+    {
+      id: `${market.id}-quote`,
+      label: `${market.label} (${market.quoteSymbol} vault)`,
+      value: market.quoteVault,
+      description: 'Quote payout vault',
+      inputs: { market: market.market },
+    },
+  ]),
+};
+
+export const HUMIDIFI_FEATURED: FeaturedProtocol = {
+  protocol: 'humidifi',
+  templates: {
+    'humidifi-price': humidifiMarkets,
+    'humidifi-spread': humidifiMarkets,
+    'humidifi-vault-balance': humidifiVaults,
+  },
+  aiContext: () =>
+    [
+      'Featured HumidiFi accounts available in Studio:',
+      ...HUMIDIFI_FEATURED_MARKETS.map(
+        (market) =>
+          `- ${market.label}: market ${market.market}; ` +
+          `${market.baseSymbol} vault ${market.baseVault}; ` +
+          `${market.quoteSymbol} vault ${market.quoteVault}.`
+      ),
+    ].join('\n'),
+};

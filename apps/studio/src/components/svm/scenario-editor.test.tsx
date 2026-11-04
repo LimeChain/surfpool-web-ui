@@ -422,9 +422,15 @@ it('fills the market input of a HumidiFi vault override from the featured market
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   fireEvent.click(await screen.findByTitle(`HumidiFi: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
+  const vault = { name: `${sol.label} (${sol.quoteSymbol} vault)` };
+  await screen.findByRole('button', vault);
 
-  fireEvent.click(await screen.findByRole('button', { name: `${sol.label} (${sol.quoteSymbol} vault)` }));
-  await waitFor(() => expect(screen.getByPlaceholderText('Enter market...')).toHaveValue(sol.market));
+  // The picker remounts on every render, so an option found before a render is detached and ignores the
+  // click. Query it fresh each attempt until the pick fills the market.
+  await waitFor(() => {
+    fireEvent.click(screen.getByRole('button', vault));
+    expect(screen.getByPlaceholderText('Enter market...')).toHaveValue(sol.market);
+  });
 
   fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
   const patch = await waitFor(() => {
