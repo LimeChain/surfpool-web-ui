@@ -378,7 +378,7 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
   });
 });
 
-it('keeps restored SolFi values when the saved account is re-selected after its fetch found nothing', async () => {
+it('keeps a saved SolFi account and its values without loading the account', async () => {
   const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
   const template = {
     id: 'solfi-price',
@@ -391,7 +391,7 @@ it('keeps restored SolFi values when the saved account is re-selected after its 
   };
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
-    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+    json: async () => (url.endsWith('/templates') ? [template] : {}),
   }));
   render(
     <ScenarioEditor
@@ -418,14 +418,15 @@ it('keeps restored SolFi values when the saved account is re-selected after its 
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
-  const coefficient = () => screen.getByPlaceholderText('Enter price_coefficient...');
-  await waitFor(() => expect(coefficient()).toHaveValue(500));
 
-  fireEvent.click(within(screen.getByLabelText('SolFi oracle results')).getByRole('button', { name: /^SOL \/ USDC/ }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  const coefficient = await screen.findByPlaceholderText('Enter price_coefficient...');
+  await waitFor(() => expect(coefficient).toHaveValue(500));
+  expect(rpcParams()).toEqual([]);
 
-  expect(rpcParams().map(([account]) => account)).toEqual([oracle]);
-  expect(coefficient()).toHaveValue(500);
+  fireEvent.change(coefficient, { target: { value: '600' } });
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: oracle });
+  expect(override.values.price_coefficient).toBe(600);
 });
 
 it('fills the oracle input of a SolFi vault override from the featured market and saves it', async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { featuredAccountInputs, getFeaturedAccounts, resolveFeaturedAccount } from '@/lib/featured-accounts';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
@@ -25,7 +26,7 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
@@ -33,11 +34,9 @@ import { getFieldsFromRawLayout } from './raw-layout-fields';
 import {
   customValueOption,
   findOptionByTypedValue,
-  getSolFiAccountOptions,
-  getSolFiCustomAccountKind,
-  getSolFiFeaturedOracle,
-  resolveSolFiAccount,
   resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+  typedAccountOption,
 } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
@@ -160,7 +159,6 @@ export default function ScenarioEditor({
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
   const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
-  const [usesCustomDirectAccountAddress, setUsesCustomDirectAccountAddress] = useState(false);
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -174,6 +172,8 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const featuredAccounts = getFeaturedAccounts(selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(featuredAccounts && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
@@ -182,10 +182,6 @@ export default function ScenarioEditor({
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
   const accountRequestRef = useRef(0);
-  const activeSolFiAccountAddressRef = useRef('');
-  const pendingSolFiAccountAddressRef = useRef('');
-  const solfiAccountKind = getSolFiCustomAccountKind(selectedAction?.template?.protocol, selectedAction?.template?.id);
-  const isAddressSelectionMissing = Boolean(solfiAccountKind && selectedAccountPubkey.trim() === '');
   const isFirstSlotsChangeRef = useRef(true);
 
   // Reset first slots change flag when scenario changes
@@ -629,71 +625,40 @@ export default function ScenarioEditor({
     return result;
   };
 
-  // Select an action and load its current account state. The request id prevents a slower response
-  // for a previously selected SolFi account from replacing the active account's values.
-  const handleActionSelect = async (action: Action, savedAccount?: any) => {
+  // Register IDL and fetch account data when an action is selected
+  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
     const requestId = ++accountRequestRef.current;
-    setLoadingAccountData(false);
     setSelectedAction(action);
     setAccountData({});
-    const savedPubkey =
-      typeof savedAccount === 'string'
-        ? savedAccount
-        : typeof savedAccount?.pubkey === 'string'
-          ? savedAccount.pubkey
-          : '';
-    const actionSolFiAccountKind = getSolFiCustomAccountKind(action.template?.protocol, action.template?.id);
-    const selectedPubkey = actionSolFiAccountKind ? savedPubkey : '';
-    activeSolFiAccountAddressRef.current = '';
-    pendingSolFiAccountAddressRef.current = '';
-    setSelectedAccountPubkey(selectedPubkey);
-    setUsesCustomDirectAccountAddress(
-      Boolean(
-        actionSolFiAccountKind &&
-          savedPubkey &&
-          !getSolFiAccountOptions(actionSolFiAccountKind).some((option) => String(option.value) === savedPubkey)
-      )
-    );
+    setSelectedAccountPubkey(getFeaturedAccounts(action.template?.id) ? (accountPubkey ?? '') : '');
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
 
-    if (!action.template?.address) {
-      console.warn('Action template missing address');
-      return requestId === accountRequestRef.current;
+    if (!action.template?.idl || !action.template?.address) {
+      console.warn('Action template missing IDL or address');
+      setLoadingAccountData(false);
+      return;
     }
-
-    if (actionSolFiAccountKind && !selectedPubkey) return requestId === accountRequestRef.current;
-
-    // A SolFi market or vault template keeps its market's oracle alive through its `oracle` input,
-    // which a featured account fills in.
-    const takesOracle = (action.template.properties ?? []).some(
-      (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === 'oracle'
-    );
-    const featuredOracle = takesOracle ? getSolFiFeaturedOracle(selectedPubkey) : undefined;
-    if (featuredOracle) {
-      setAccountData({ oracle: featuredOracle });
-      setModifiedFields(new Set(['oracle']));
-    }
-
-    let addressString: string | undefined;
-    if (actionSolFiAccountKind) {
-      addressString = selectedPubkey;
-    } else if (typeof action.template.address === 'string') {
-      addressString = action.template.address;
-    } else if (action.template.address && typeof action.template.address === 'object') {
-      addressString =
-        action.template.address.pubkey || action.template.address.address || action.template.address.value;
-    }
-    // A PDA template, or one that leaves the account to the override, reads the saved account.
-    if (savedPubkey && !addressString) addressString = savedPubkey;
-
-    if (!addressString) return requestId === accountRequestRef.current;
-    if (actionSolFiAccountKind) pendingSolFiAccountAddressRef.current = addressString;
 
     setLoadingAccountData(true);
 
     try {
+      // Step 1: Register the IDL using slot 1
+      logger.log('📝 Registering IDL for', action.template.address);
+
+      // Extract address string
+      let addressString;
+      if (typeof action.template.address === 'string') {
+        addressString = action.template.address;
+      } else if (action.template.address && typeof action.template.address === 'object') {
+        addressString =
+          action.template.address.pubkey || action.template.address.address || action.template.address.value;
+      }
+      // A PDA template, or one that leaves the account to the override, reads the saved account.
+      if (accountPubkey && !addressString) addressString = accountPubkey;
+
+      // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
       // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
@@ -714,7 +679,7 @@ export default function ScenarioEditor({
           addressString,
           inputsOnly
             ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
-            : { commitment: 'confirmed', encoding: action.template.rawLayout ? 'base64' : 'jsonParsed' },
+            : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
       };
 
@@ -728,32 +693,50 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
-      if (requestId !== accountRequestRef.current) return false;
+      if (requestId !== accountRequestRef.current) return;
 
-      // SolFi raw-layout values are entered explicitly, so only parsed (IDL) accounts seed the form;
-      // fetching a SolFi account still verifies and caches it in the surfnet.
-      const responseData = accountInfoData.result?.value?.data;
-      if (responseData?.parsed) {
-        const parsed = responseData.parsed;
+      if (accountInfoData.result?.value?.data?.parsed) {
+        // Populate accountData with the parsed data
+        const parsed = accountInfoData.result.value.data.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
 
-      return true;
+      setLoadingAccountData(false);
     } catch (error) {
-      if (requestId === accountRequestRef.current) console.error('Error loading account data:', error);
-      return requestId === accountRequestRef.current;
-    } finally {
-      if (requestId === accountRequestRef.current) {
-        if (pendingSolFiAccountAddressRef.current === addressString) {
-          pendingSolFiAccountAddressRef.current = '';
-        }
-        // Mark the SolFi account as loaded even when the fetch failed or found nothing, so
-        // re-selecting it does not reload and wipe override values restored from a saved scenario.
-        if (actionSolFiAccountKind) activeSolFiAccountAddressRef.current = addressString;
-        setLoadingAccountData(false);
-      }
+      console.error('Error loading account data:', error);
+      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
+  };
+
+  // Picks the account a featured-account template writes, and fills the inputs the template declares
+  // from the picked account, such as the oracle that keeps a market alive.
+  const changeFeaturedAccount = (pubkey: string) => {
+    setSelectedAccountPubkey(pubkey);
+    const template = selectedAction?.template;
+    const declaresInput = (path: string) =>
+      (template?.properties ?? []).some(
+        (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === path
+      );
+    const fills = Object.entries(featuredAccountInputs(template?.id, pubkey)).filter(([path]) => declaresInput(path));
+    if (fills.length === 0) return;
+
+    setAccountData((previous) => {
+      const next = { ...previous };
+      for (const [path, value] of fills) {
+        if (value === undefined) delete next[path];
+        else next[path] = value;
+      }
+      return next;
+    });
+    setModifiedFields((previous) => {
+      const next = new Set(previous);
+      for (const [path, value] of fills) {
+        if (value === undefined) next.delete(path);
+        else next.add(path);
+      }
+      return next;
+    });
   };
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
@@ -835,7 +818,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: resolveSolFiAccount(action.id, action.template?.address, selectedAccountPubkey),
+                account: resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -877,14 +860,15 @@ export default function ScenarioEditor({
                     fetchBeforeUse: fetchBeforeUse,
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account.
-                    account: getSolFiCustomAccountKind(action.template?.protocol, action.id)
-                      ? resolveSolFiAccount(action.id, action.template?.address, selectedAccountPubkey)
-                      : leavesAccountToOverride(action.template?.address) &&
-                          existingAction.actionId === action.id &&
-                          existingAction.account?.pubkey
+                    // fields such as a token or fee tier pick the new account. A featured-account template
+                    // saves the account picked in the editor.
+                    account:
+                      !getFeaturedAccounts(action.template?.id) &&
+                      leavesAccountToOverride(action.template?.address) &&
+                      existingAction.actionId === action.id &&
+                      existingAction.account?.pubkey
                         ? existingAction.account
-                        : action.template?.address,
+                        : resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
                   }
                 : existingAction
             ),
@@ -1391,11 +1375,13 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    const selectionIsCurrent = await handleActionSelect(
+                                                    const loading = handleActionSelect(
                                                       foundAction,
-                                                      action.account
+                                                      action.account?.pubkey
                                                     );
-                                                    if (!selectionIsCurrent) return;
+                                                    const requestId = accountRequestRef.current;
+                                                    await loading;
+                                                    if (requestId !== accountRequestRef.current) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1962,104 +1948,6 @@ export default function ScenarioEditor({
                                     updates, and dynamic balances.
                                   </p>
                                 </div>
-                                {solfiAccountKind &&
-                                  (() => {
-                                    const accountOptions = getSolFiAccountOptions(solfiAccountKind);
-                                    const selectedOption = accountOptions.find(
-                                      (option) => String(option.value) === selectedAccountPubkey
-                                    );
-                                    const customOption = {
-                                      id: `custom-solfi-${solfiAccountKind}`,
-                                      label: `Custom ${solfiAccountKind} address`,
-                                      value: '__custom__',
-                                      description: `Enter a SolFi ${solfiAccountKind} address`,
-                                    };
-
-                                    const changeAccount = (pubkey: string, custom = false) => {
-                                      const address = pubkey.trim();
-                                      if (
-                                        address === selectedAccountPubkey.trim() &&
-                                        custom === usesCustomDirectAccountAddress
-                                      ) {
-                                        return;
-                                      }
-                                      ++accountRequestRef.current;
-                                      setSelectedAccountPubkey(address);
-                                      setUsesCustomDirectAccountAddress(custom);
-                                      setAccountData({});
-                                      activeSolFiAccountAddressRef.current = '';
-                                      pendingSolFiAccountAddressRef.current = '';
-                                      setModifiedFields(new Set());
-                                      setLoadingAccountData(false);
-                                    };
-
-                                    const loadAccount = (pubkey: string) => {
-                                      const address = pubkey.trim();
-                                      if (
-                                        !address ||
-                                        address === activeSolFiAccountAddressRef.current ||
-                                        address === pendingSolFiAccountAddressRef.current
-                                      )
-                                        return;
-                                      void handleActionSelect(selectedAction, { pubkey: address });
-                                    };
-
-                                    return (
-                                      <div className="mb-6 space-y-3 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
-                                        <div>
-                                          <label className="block text-sm font-medium capitalize text-zinc-300">
-                                            {solfiAccountKind}
-                                          </label>
-                                          <p className="mt-1 text-xs text-zinc-500">
-                                            Choose a featured SolFi account or enter another address.
-                                          </p>
-                                        </div>
-                                        <Combobox
-                                          aria-label={`SolFi ${solfiAccountKind}`}
-                                          value={
-                                            usesCustomDirectAccountAddress ? customOption : (selectedOption ?? null)
-                                          }
-                                          onChange={(option: any) => {
-                                            if (!option) return;
-                                            const custom = option.value === '__custom__';
-                                            const pubkey = custom ? '' : String(option.value);
-                                            changeAccount(pubkey, custom);
-                                            if (!custom) loadAccount(pubkey);
-                                          }}
-                                          options={[customOption, ...accountOptions]}
-                                          displayValue={(option: any) => option?.label || ''}
-                                          filter={(option: any, query: string) =>
-                                            [option.label, option.description, option.value]
-                                              .filter(Boolean)
-                                              .join(' ')
-                                              .toLowerCase()
-                                              .includes(query.toLowerCase())
-                                          }
-                                          placeholder={`Search SolFi ${solfiAccountKind}s...`}
-                                        >
-                                          {(option: any) => (
-                                            <ComboboxOption key={option.id} value={option}>
-                                              <ComboboxLabel>
-                                                <span className="font-medium">{option.label}</span>
-                                                {option.description && (
-                                                  <span className="ml-2 text-zinc-400">{option.description}</span>
-                                                )}
-                                              </ComboboxLabel>
-                                            </ComboboxOption>
-                                          )}
-                                        </Combobox>
-                                        {usesCustomDirectAccountAddress && (
-                                          <Input
-                                            aria-label={`Custom SolFi ${solfiAccountKind} address`}
-                                            value={selectedAccountPubkey}
-                                            onChange={(event) => changeAccount(event.target.value, true)}
-                                            onBlur={() => loadAccount(selectedAccountPubkey)}
-                                            placeholder={`Enter a SolFi ${solfiAccountKind} address...`}
-                                          />
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
                                     <div className="flex flex-col items-center gap-3">
@@ -2554,7 +2442,7 @@ export default function ScenarioEditor({
                                       const renderConstantRefFields = () => {
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
-                                        const constantRefProps = rawProperties
+                                        const propertyConstantRefs = rawProperties
                                           .filter((prop: any) => {
                                             if (typeof prop === 'string') return false;
                                             if (prop.type === 'constant_ref')
@@ -2585,6 +2473,12 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
+                                        const constantRefProps = [
+                                          ...(featuredAccounts
+                                            ? [{ name: '__account__', type: 'constant_ref', isAccountSelector: true }]
+                                            : []),
+                                          ...propertyConstantRefs,
+                                        ];
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2595,12 +2489,16 @@ export default function ScenarioEditor({
                                           currentValue,
                                           isModified,
                                           takesCustomValues,
+                                          onValueChange,
+                                          acceptsTypedAddress,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                           takesCustomValues: boolean;
+                                          onValueChange: (value: string) => void;
+                                          acceptsTypedAddress: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2616,7 +2514,7 @@ export default function ScenarioEditor({
                                               value={selectedOption}
                                               onChange={(option: any) => {
                                                 if (option) {
-                                                  setValue(fieldPath, option.value);
+                                                  onValueChange(String(option.value));
                                                 }
                                               }}
                                               options={options}
@@ -2644,7 +2542,13 @@ export default function ScenarioEditor({
                                                   value.includes(q)
                                                 );
                                               }}
-                                              customOption={takesCustomValues ? customOptionFor : undefined}
+                                              customOption={
+                                                acceptsTypedAddress
+                                                  ? (query: string) => typedAccountOption(query, options)
+                                                  : takesCustomValues
+                                                    ? customOptionFor
+                                                    : undefined
+                                              }
                                               immediate={takesCustomValues}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                               aria-label={constantDef.label}
@@ -2685,20 +2589,34 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              PDA Configuration
+                                              {featuredAccounts ? 'Account selection' : 'PDA Configuration'}
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = prop.constantDef;
+                                              const constantDef = prop.isAccountSelector
+                                                ? featuredAccounts
+                                                : prop.constantDef;
                                               const fieldPath = prop.name;
-                                              const rawValue = getValue(fieldPath);
+                                              const rawValue = prop.isAccountSelector
+                                                ? selectedAccountPubkey
+                                                : getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
-                                              const isModified = modifiedFields.has(fieldPath);
+                                              const isModified = prop.isAccountSelector
+                                                ? currentValue !== ''
+                                                : modifiedFields.has(fieldPath);
+                                              const onValueChange = prop.isAccountSelector
+                                                ? changeFeaturedAccount
+                                                : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
-                                              const useCombobox = isLiveList || constantDef.options.length > 20;
+                                              const useCombobox =
+                                                isLiveList ||
+                                                shouldUseConstantCombobox(
+                                                  constantDef.options.length,
+                                                  Boolean(prop.isAccountSelector)
+                                                );
                                               // A saved value the catalog lacks stays selectable as its custom option.
                                               const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
@@ -2728,12 +2646,14 @@ export default function ScenarioEditor({
                                                       currentValue={currentValue}
                                                       isModified={isModified}
                                                       takesCustomValues={isLiveList}
+                                                      onValueChange={onValueChange}
+                                                      acceptsTypedAddress={Boolean(prop.isAccountSelector)}
                                                     />
                                                   ) : (
                                                     <Select
                                                       value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
-                                                        setValue(fieldPath, e.target.value);
+                                                        onValueChange(e.target.value);
                                                       }}
                                                       className={
                                                         isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
@@ -2838,7 +2758,6 @@ export default function ScenarioEditor({
                                           setSelectedAction(null);
                                           setAccountData({});
                                           setSelectedAccountPubkey('');
-                                          setUsesCustomDirectAccountAddress(false);
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
