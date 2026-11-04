@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { featuredAccountInputs, getFeaturedAccounts, resolveFeaturedAccount } from '@/lib/featured-accounts';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
@@ -33,8 +34,6 @@ import { getFieldsFromRawLayout } from './raw-layout-fields';
 import {
   customValueOption,
   findOptionByTypedValue,
-  getFeaturedAccounts,
-  resolveFeaturedAccount,
   resolveTokenSelectorOptions,
   shouldUseConstantCombobox,
   typedAccountOption,
@@ -708,6 +707,36 @@ export default function ScenarioEditor({
       console.error('Error loading account data:', error);
       if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
+  };
+
+  // Picks the account a featured-account template writes, and fills the inputs the template declares
+  // from the picked account, such as the oracle that keeps a market alive.
+  const changeFeaturedAccount = (pubkey: string) => {
+    setSelectedAccountPubkey(pubkey);
+    const template = selectedAction?.template;
+    const declaresInput = (path: string) =>
+      (template?.properties ?? []).some(
+        (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === path
+      );
+    const fills = Object.entries(featuredAccountInputs(template?.id, pubkey)).filter(([path]) => declaresInput(path));
+    if (fills.length === 0) return;
+
+    setAccountData((previous) => {
+      const next = { ...previous };
+      for (const [path, value] of fills) {
+        if (value === undefined) delete next[path];
+        else next[path] = value;
+      }
+      return next;
+    });
+    setModifiedFields((previous) => {
+      const next = new Set(previous);
+      for (const [path, value] of fills) {
+        if (value === undefined) next.delete(path);
+        else next.add(path);
+      }
+      return next;
+    });
   };
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
@@ -2583,7 +2612,7 @@ export default function ScenarioEditor({
                                                 ? currentValue !== ''
                                                 : modifiedFields.has(fieldPath);
                                               const onValueChange = prop.isAccountSelector
-                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
+                                                ? changeFeaturedAccount
                                                 : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;

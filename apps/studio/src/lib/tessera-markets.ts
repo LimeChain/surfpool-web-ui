@@ -1,3 +1,5 @@
+import type { FeaturedAccounts, FeaturedProtocol } from './featured-accounts';
+
 /** The Tessera markets Studio offers as shortcuts; any other Tessera market can be typed instead. */
 export const TESSERA_FEATURED_MARKETS = [
   {
@@ -45,3 +47,29 @@ export const TESSERA_FEATURED_MARKETS = [
     quoteDecimals: 6,
   },
 ] as const;
+
+const tesseraMarkets: FeaturedAccounts = {
+  label: 'Tessera market',
+  description: 'Pick a featured market or type any Tessera market address.',
+  options: TESSERA_FEATURED_MARKETS.map((market) => ({
+    id: market.id,
+    label: market.label,
+    value: market.market,
+    description: 'Market account',
+  })),
+};
+
+export const TESSERA_FEATURED: FeaturedProtocol = {
+  protocol: 'tessera',
+  templates: {
+    'tessera-price': tesseraMarkets,
+    'tessera-depth': tesseraMarkets,
+    'tessera-curve': tesseraMarkets,
+    'tessera-halt': tesseraMarkets,
+  },
+  aiContext: () =>
+    [
+      'Featured Tessera markets available in Studio:',
+      ...TESSERA_FEATURED_MARKETS.map((market) => `- ${market.label}: market ${market.market}.`),
+    ].join('\n'),
+};
