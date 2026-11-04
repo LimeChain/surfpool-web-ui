@@ -1,3 +1,5 @@
+import type { FeaturedAccounts, FeaturedProtocol } from './featured-accounts';
+
 /** The GoonFi markets Studio offers as shortcuts; any other GoonFi account can be typed instead. */
 export const GOONFI_FEATURED_MARKETS = [
   {
@@ -49,3 +51,69 @@ export const GOONFI_FEATURED_MARKETS = [
     quoteVault: '8iR3pQ7MSZidfu2mP2NtYmSq9prdz3u6mhbRmRbJcx6h',
   },
 ] as const;
+
+// A market or vault override keeps its market's oracle alive through its `oracle` input, which a featured
+// market or vault fills.
+const goonfiMarkets: FeaturedAccounts = {
+  label: 'GoonFi market',
+  description: 'Pick a featured market or type any GoonFi market address.',
+  options: GOONFI_FEATURED_MARKETS.map((market) => ({
+    id: market.id,
+    label: market.label,
+    value: market.market,
+    description: 'Market account',
+    inputs: { oracle: market.oracle },
+  })),
+};
+
+const goonfiOracles: FeaturedAccounts = {
+  label: 'GoonFi oracle',
+  description: 'Pick a featured oracle or type any GoonFi oracle address.',
+  options: GOONFI_FEATURED_MARKETS.map((market) => ({
+    id: market.id,
+    label: market.label,
+    value: market.oracle,
+    description: 'Oracle account',
+  })),
+};
+
+const goonfiVaults: FeaturedAccounts = {
+  label: 'GoonFi vault',
+  description: 'Pick a featured payout vault or type any GoonFi vault address.',
+  options: GOONFI_FEATURED_MARKETS.flatMap((market) => [
+    {
+      id: `${market.id}-base`,
+      label: `${market.label} (${market.baseSymbol} vault)`,
+      value: market.baseVault,
+      description: 'Base payout vault',
+      inputs: { oracle: market.oracle },
+    },
+    {
+      id: `${market.id}-quote`,
+      label: `${market.label} (${market.quoteSymbol} vault)`,
+      value: market.quoteVault,
+      description: 'Quote payout vault',
+      inputs: { oracle: market.oracle },
+    },
+  ]),
+};
+
+export const GOONFI_FEATURED: FeaturedProtocol = {
+  protocol: 'goonfi',
+  templates: {
+    'goonfi-price': goonfiOracles,
+    'goonfi-reference-band': goonfiMarkets,
+    'goonfi-size-impact': goonfiMarkets,
+    'goonfi-vault-balance': goonfiVaults,
+  },
+  aiContext: () =>
+    [
+      'Featured GoonFi accounts available in Studio:',
+      ...GOONFI_FEATURED_MARKETS.map(
+        (market) =>
+          `- ${market.label}: market ${market.market}; oracle ${market.oracle}; ` +
+          `${market.baseSymbol} vault ${market.baseVault}; ` +
+          `${market.quoteSymbol} vault ${market.quoteVault}.`
+      ),
+    ].join('\n'),
+};
