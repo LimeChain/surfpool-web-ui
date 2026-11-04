@@ -1,4 +1,4 @@
-import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/humidifi-markets';
+import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/pmms/humidifi';
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';

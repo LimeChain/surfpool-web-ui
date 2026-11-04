@@ -5,7 +5,7 @@ import {
   getProtocolAiContext,
   resolveFeaturedAccount,
 } from './featured-accounts';
-import { HUMIDIFI_FEATURED_MARKETS } from './humidifi-markets';
+import { HUMIDIFI_FEATURED_MARKETS } from './pmms/humidifi';
 
 const [sol] = HUMIDIFI_FEATURED_MARKETS;
 const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);

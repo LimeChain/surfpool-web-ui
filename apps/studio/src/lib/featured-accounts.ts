@@ -1,5 +1,5 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
-import { HUMIDIFI_FEATURED } from './humidifi-markets';
+import { HUMIDIFI_FEATURED } from './pmms/humidifi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */

@@ -1,5 +1,5 @@
-import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/humidifi-markets';
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
+import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/pmms/humidifi';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PmmFairValueDialog from './pmm-fair-value-dialog';
