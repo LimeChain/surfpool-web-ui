@@ -1,5 +1,5 @@
 import { TESSERA_FAIR_VALUE } from './pmms/tessera';
-import { serializeScenarioJson } from './scenarios-api';
+import { serializeScenarioJson, toScenarioNumber } from './scenarios-api';
 
 export { isValidPmmPrice } from './pmm-price';
 
@@ -69,6 +69,13 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
   const overrides = adapter.buildOverrides(market, normalizedPrice).map((override) => ({
     id: crypto.randomUUID(),
     ...override,
+    // An adapter gives integers as bigint; the scenario keeps them exact as numbers.
+    values: Object.fromEntries(
+      Object.entries(override.values).map(([path, value]) => [
+        path,
+        typeof value === 'bigint' ? toScenarioNumber(value.toString()) : value,
+      ])
+    ),
     scenarioRelativeSlot: 0,
     enabled: true,
     fetchBeforeUse: true,
