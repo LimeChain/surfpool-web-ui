@@ -438,18 +438,18 @@ it('keeps a saved BisonFi market and its values without loading the pool', async
 
 it('sends a typed u128 past u64 as a decimal string, the only form the backend reads exactly', async () => {
   const template = {
-    id: 'bisonfi-fair-value',
-    name: 'Override Fair Value',
+    id: 'raw-u128-field',
+    name: 'Override Wide Value',
     protocol: 'Phoenix Eternal',
-    description: 'Set the mid',
+    description: 'Set a 128-bit field',
     address: { pubkey: '' },
     rawLayout: true,
-    properties: [{ path: 'fair_value', offset: 832, encoding: 'u128' }],
+    properties: [{ path: 'wide_value', offset: 0, encoding: 'u128' }],
   };
-  await openEditor(template, {}, { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' });
-  fireEvent.change(await screen.findByPlaceholderText('Enter fair_value...'), {
+  await openEditor(template, {}, { pubkey: 'account' });
+  fireEvent.change(await screen.findByPlaceholderText('Enter wide_value...'), {
     target: { value: '15474250491067253436239052800' },
   });
 
-  expect((await savedOverride()).values).toEqual({ fair_value: '15474250491067253436239052800' });
+  expect((await savedOverride()).values).toEqual({ wide_value: '15474250491067253436239052800' });
 });
