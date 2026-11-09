@@ -25,6 +25,7 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
+import { PublicKey } from '@solana/web3.js';
 import { logger } from '@surfpool/shared';
 import {
   Combobox,
@@ -152,6 +153,15 @@ const PAUSED_CLOCK_WARNING =
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
 
+const isSolanaAddress = (value: string) => {
+  try {
+    new PublicKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
@@ -173,6 +183,7 @@ export default function ScenarioEditor({
   // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
+  const [typedAccount, setTypedAccount] = useState('');
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -188,6 +199,10 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
+
+  const needsTypedAccount = leavesAccountToOverride(selectedAction?.template?.address);
+  const typedAccountPubkey = typedAccount.trim();
+  const hasTypedAccount = isSolanaAddress(typedAccountPubkey);
 
   const accountRequestRef = useRef(0);
   // A ref, so a second click sees the Step in flight before the next render
@@ -649,6 +664,7 @@ export default function ScenarioEditor({
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
+    setTypedAccount(accountPubkey ?? '');
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
@@ -672,6 +688,10 @@ export default function ScenarioEditor({
       }
       // A PDA template, or one that leaves the account to the override, reads the saved account.
       if (accountPubkey && !addressString) addressString = accountPubkey;
+      if (!addressString && leavesAccountToOverride(action.template.address)) {
+        setLoadingAccountData(false);
+        return;
+      }
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
@@ -721,6 +741,15 @@ export default function ScenarioEditor({
     } catch (error) {
       console.error('Error loading account data:', error);
       if (requestId === accountRequestRef.current) setLoadingAccountData(false);
+    }
+  };
+
+  // The read fills the fields and pulls the account into the local VM, without which Play skips it
+  const handleTypedAccountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const pubkey = event.target.value.trim();
+    setTypedAccount(event.target.value);
+    if (selectedAction && pubkey !== typedAccountPubkey && isSolanaAddress(pubkey)) {
+      handleActionSelect(selectedAction, pubkey);
     }
   };
 
@@ -803,7 +832,9 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: leavesAccountToOverride(action.template?.address)
+                  ? { pubkey: typedAccountPubkey }
+                  : action.template?.address,
               },
             ],
           };
@@ -843,15 +874,12 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A template with no address keeps the account the override was saved for, such as a trader
-                    // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account.
-                    account:
-                      leavesAccountToOverride(action.template?.address) &&
-                      existingAction.actionId === action.id &&
-                      existingAction.account?.pubkey
-                        ? existingAction.account
-                        : action.template?.address,
+                    // A template with no address takes the typed account, which reopening fills with the one the
+                    // override was saved for, such as a trader given to a preset. Any other address, a PDA included,
+                    // comes from the template, so edited seed fields such as a token or fee tier pick the new account.
+                    account: leavesAccountToOverride(action.template?.address)
+                      ? { pubkey: typedAccountPubkey }
+                      : action.template?.address,
                   }
                 : existingAction
             ),
@@ -1937,6 +1965,32 @@ export default function ScenarioEditor({
                           <div className="flex flex-1 flex-col overflow-y-auto p-6">
                             {selectedAction ? (
                               <>
+                                {needsTypedAccount && (
+                                  <div className="mb-4">
+                                    <label
+                                      htmlFor="override-account"
+                                      className="mb-1.5 block text-sm font-medium text-zinc-300"
+                                    >
+                                      Account
+                                    </label>
+                                    <input
+                                      id="override-account"
+                                      type="text"
+                                      required
+                                      value={typedAccount}
+                                      onChange={handleTypedAccountChange}
+                                      placeholder="Address of the account this override changes"
+                                      spellCheck={false}
+                                      autoComplete="off"
+                                      className="block w-full rounded-lg border border-zinc-500 bg-zinc-500/5 px-4 py-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-500/50"
+                                    />
+                                    {!!typedAccountPubkey && !hasTypedAccount && (
+                                      <p role="status" className="mt-1.5 text-xs text-red-400">
+                                        Not a valid Solana address.
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="mb-4">
                                   <div className="flex items-center justify-between">
                                     <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
@@ -2724,9 +2778,12 @@ export default function ScenarioEditor({
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
+                                          setTypedAccount('');
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={
+                                        !selectedSlotId || !selectedAction || (needsTypedAccount && !hasTypedAccount)
+                                      }
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
