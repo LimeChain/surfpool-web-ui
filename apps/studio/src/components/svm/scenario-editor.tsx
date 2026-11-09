@@ -36,6 +36,7 @@ import {
   DropdownItem,
   DropdownLabel,
   DropdownMenu,
+  Input,
   Select,
   Switch,
 } from '@surfpool/ui';
@@ -203,6 +204,7 @@ export default function ScenarioEditor({
   const needsTypedAccount = leavesAccountToOverride(selectedAction?.template?.address);
   const typedAccountPubkey = typedAccount.trim();
   const hasTypedAccount = isSolanaAddress(typedAccountPubkey);
+  const isTypedAccountInvalid = !!typedAccountPubkey && !hasTypedAccount;
 
   const accountRequestRef = useRef(0);
   // A ref, so a second click sees the Step in flight before the next render
@@ -1966,26 +1968,26 @@ export default function ScenarioEditor({
                             {selectedAction ? (
                               <>
                                 {needsTypedAccount && (
-                                  <div className="mb-4">
+                                  <div className="mb-6 space-y-2 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                     <label
                                       htmlFor="override-account"
-                                      className="mb-1.5 block text-sm font-medium text-zinc-300"
+                                      className="block text-sm font-semibold uppercase tracking-wide text-zinc-400"
                                     >
                                       Account
                                     </label>
-                                    <input
+                                    <p className="text-xs text-zinc-500">The account this override changes.</p>
+                                    <Input
                                       id="override-account"
-                                      type="text"
-                                      required
                                       value={typedAccount}
                                       onChange={handleTypedAccountChange}
-                                      placeholder="Address of the account this override changes"
+                                      invalid={isTypedAccountInvalid}
+                                      placeholder="Account address"
                                       spellCheck={false}
                                       autoComplete="off"
-                                      className="block w-full rounded-lg border border-zinc-500 bg-zinc-500/5 px-4 py-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-500/50"
+                                      className="font-mono"
                                     />
-                                    {!!typedAccountPubkey && !hasTypedAccount && (
-                                      <p role="status" className="mt-1.5 text-xs text-red-400">
+                                    {isTypedAccountInvalid && (
+                                      <p role="status" className="text-sm text-red-400">
                                         Not a valid Solana address.
                                       </p>
                                     )}

@@ -21,6 +21,7 @@ vi.mock('@surfpool/ui', async () => ({
   DropdownItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
   DropdownLabel: ({ children }: any) => <span>{children}</span>,
   DropdownDescription: ({ children }: any) => <span>{children}</span>,
+  Input: ({ invalid, ...props }: any) => <input aria-invalid={invalid} {...props} />,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
   Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
 }));
