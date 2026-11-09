@@ -118,18 +118,44 @@ const ENABLED_PROTOCOLS = [
   // Whirlpool: the Kamino liquidation-arbitrage scenario overrides its pools
   'Whirlpool',
   'Phoenix Eternal',
+  'jupiter-perps',
+  'jupiter-perps-doves',
 ];
 
-// Kamino ships six programs. Collapse them behind one icon and let the panel
-// ask which product first. Order is the order they appear in the picker.
-const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[] = [
-  { protocol: 'kamino', title: 'Lend & Borrow', description: 'Reserves, obligations and markets' },
-  { protocol: 'kamino-vault', title: 'Earn', description: 'Yield vaults and their allocations' },
-  { protocol: 'kamino-liquidity', title: 'Liquidity', description: 'Concentrated liquidity strategies' },
-  { protocol: 'kamino-swap', title: 'Swap', description: 'Limit orders' },
-  { protocol: 'kamino-scope', title: 'Scope Oracle', description: 'Prices every other product reads' },
-  { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
+// Protocols that ship several programs. Each collapses behind one icon and the panel asks which
+// product first. Order is the order they appear in the picker.
+const PRODUCT_GROUPS: {
+  id: string;
+  title: string;
+  description: string;
+  products: { protocol: string; title: string; description: string }[];
+}[] = [
+  {
+    id: 'kamino',
+    title: 'Kamino',
+    description: 'Lending, yield, liquidity and prices',
+    products: [
+      { protocol: 'kamino', title: 'Lend & Borrow', description: 'Reserves, obligations and markets' },
+      { protocol: 'kamino-vault', title: 'Earn', description: 'Yield vaults and their allocations' },
+      { protocol: 'kamino-liquidity', title: 'Liquidity', description: 'Concentrated liquidity strategies' },
+      { protocol: 'kamino-swap', title: 'Swap', description: 'Limit orders' },
+      { protocol: 'kamino-scope', title: 'Scope Oracle', description: 'Prices every other product reads' },
+      { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
+    ],
+  },
+  {
+    id: 'jupiter-perps',
+    title: 'Jupiter Perps',
+    description: 'Perpetuals, the JLP pool and their prices',
+    products: [
+      { protocol: 'jupiter-perps', title: 'Perps', description: 'Custodies and the JLP pool' },
+      { protocol: 'jupiter-perps-doves', title: 'Doves Oracle', description: 'Prices every Perps market reads' },
+    ],
+  },
 ];
+
+const isGroupedProtocol = (protocolName: string) =>
+  PRODUCT_GROUPS.some((group) => group.products.some((product) => product.protocol === protocolName));
 
 // A pubkey address the template leaves empty names no account; the override carries the one it targets.
 const leavesAccountToOverride = (address: any) =>
@@ -419,10 +445,10 @@ export default function ScenarioEditor({
             template: template, // Store full template data including IDL
           }));
 
-        // Transform into Protocol objects, skipping the Kamino programs so they
+        // Transform into Protocol objects, skipping the programs of a product group so they
         // can be merged into a single entry below.
         const transformedProtocols: Protocol[] = Object.entries(protocolGroups)
-          .filter(([protocolName]) => !KAMINO_PRODUCTS.some((p) => p.protocol === protocolName))
+          .filter(([protocolName]) => !isGroupedProtocol(protocolName))
           .map(([protocolName, templates]) => {
             const protocolId = protocolName.toLowerCase().replace(/\s+/g, '-');
 
@@ -435,24 +461,24 @@ export default function ScenarioEditor({
             };
           });
 
-        const kaminoProducts: Product[] = KAMINO_PRODUCTS.filter(
-          (p) => (protocolGroups[p.protocol]?.length ?? 0) > 0
-        ).map((p) => ({
-          id: p.protocol,
-          title: p.title,
-          description: p.description,
-          actions: toActions(protocolGroups[p.protocol]),
-        }));
-
-        if (kaminoProducts.length > 0) {
+        for (const group of PRODUCT_GROUPS) {
+          const products: Product[] = group.products
+            .filter((p) => (protocolGroups[p.protocol]?.length ?? 0) > 0)
+            .map((p) => ({
+              id: p.protocol,
+              title: p.title,
+              description: p.description,
+              actions: toActions(protocolGroups[p.protocol]),
+            }));
+          if (products.length === 0) continue;
           transformedProtocols.push({
-            id: 'kamino',
-            title: 'Kamino',
-            description: 'Lending, yield, liquidity and prices',
+            id: group.id,
+            title: group.title,
+            description: group.description,
             icon_url: '',
             // Flattened so lookups by actionId keep working regardless of product.
-            actions: kaminoProducts.flatMap((p) => p.actions),
-            products: kaminoProducts,
+            actions: products.flatMap((p) => p.actions),
+            products,
           });
         }
 
@@ -1782,7 +1808,7 @@ export default function ScenarioEditor({
                                 setArrayEntryIndex({});
                                 setFetchBeforeUse(false);
                               }}
-                              title="Back to Kamino products"
+                              title={`Back to ${selectedProtocol.title} products`}
                               className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
                             >
                               <ArrowUturnLeftIcon className="h-4 w-4" />
