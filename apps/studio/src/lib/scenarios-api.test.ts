@@ -419,7 +419,7 @@ describe('buildUpdatePayload', () => {
             action: 'SOL/USD = $85',
             fetchBeforeUse: true,
             overrides: { 'price_message.price': 8500000000, feed_id: '0xef0d' },
-            modifiedFields: ['price_message.price'],
+            modifiedFields: ['price_message.price', 'feed_id'],
             account: { pda: { programId: 'pyth', seeds: [] } },
           },
         ],
@@ -693,10 +693,11 @@ describe('scenarioDownloadFile', () => {
 });
 
 describe('flattenOverrideValues', () => {
-  // The account-shaped editing state: values edited in the UI sit nested under
-  // price_message, while feed_id (constant_ref) and posted_slot live at the top level.
+  // The account-shaped editing state: the account as the editor read it, with the
+  // feed_id selection and the edited fields written into it.
   const editedAccountData = {
     feed_id: '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
+    write_authority: 'G6EoTTTgpkNBtVXo96EQp2m6uwwVh2Kt6YidjkmQqoha',
     posted_slot: 111111111,
     price_message: {
       price: 5000000000,
@@ -713,7 +714,6 @@ describe('flattenOverrideValues', () => {
       'price_message.publish_time',
     ]);
     expect(result).toEqual({
-      feed_id: '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
       posted_slot: 111111111,
       'price_message.price': 5000000000,
       'price_message.conf': 500000000,
@@ -721,10 +721,51 @@ describe('flattenOverrideValues', () => {
     });
   });
 
-  it('keeps top-level values that are not in modifiedFields, like constant_ref selections', () => {
-    const result = flattenOverrideValues(editedAccountData, ['price_message.price']);
-    expect(result.feed_id).toBe(editedAccountData.feed_id);
-    expect(result.posted_slot).toBe(111111111);
+  it('sends only a nested edited field, not the top-level fields of the account read', () => {
+    expect(flattenOverrideValues(editedAccountData, ['price_message.price'])).toEqual({
+      'price_message.price': 5000000000,
+    });
+  });
+
+  it('sends a selected constant_ref value together with the edited fields', () => {
+    expect(flattenOverrideValues(editedAccountData, ['feed_id', 'price_message.price'])).toEqual({
+      feed_id: editedAccountData.feed_id,
+      'price_message.price': 5000000000,
+    });
+  });
+
+  it('sends only the one edited top-level field of an account snapshot', () => {
+    const pool = {
+      name: 'Pool',
+      bump: 252,
+      aum_usd: 1234567890,
+      aum_usd_updated_at: 1762700000,
+      custodies: ['custody-sol', 'custody-usdc'],
+      max_lp_token_price_change_bps: 25,
+      limit: { max_aum_usd: 1 },
+    };
+    expect(flattenOverrideValues(pool, ['max_lp_token_price_change_bps'])).toEqual({
+      max_lp_token_price_change_bps: 25,
+    });
+  });
+
+  it('sends no value of an account snapshot when nothing was edited', () => {
+    expect(flattenOverrideValues(editedAccountData, [])).toEqual({});
+  });
+
+  it('resolves an edited path through an array entry', () => {
+    const scope = { prices: [{ price: { value: 1 } }, { price: { value: 2 } }], tokens: 512 };
+    expect(flattenOverrideValues(scope, ['prices.1.price.value'])).toEqual({ 'prices.1.price.value': 2 });
+  });
+
+  it('keeps every value of a loaded override, which owns all its keys', () => {
+    const values = {
+      'price_message.price': 123,
+      posted_slot: 7,
+      feed_id: '0xef0d',
+      'prices.3.price.value': new LosslessNumber('10103697788335729001'),
+    };
+    expect(flattenOverrideValues(values, Object.keys(values))).toEqual(values);
   });
 
   it('passes through values already flat from the backend without modifiedFields', () => {
@@ -749,7 +790,7 @@ describe('flattenOverrideValues', () => {
   });
 
   it('keeps arrays as values', () => {
-    const result = flattenOverrideValues({ feed_id: [1, 2, 3] }, []);
+    const result = flattenOverrideValues({ feed_id: [1, 2, 3] }, ['feed_id']);
     expect(result.feed_id).toEqual([1, 2, 3]);
   });
 
@@ -785,7 +826,10 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
   });
 
   it('flattenOverrideValues treats a LosslessNumber as a value, not a nested object', () => {
-    const flat = flattenOverrideValues({ sqrt_price: new LosslessNumber(EXACT), nested: { a: 1 } }, []);
+    const flat = flattenOverrideValues({ sqrt_price: new LosslessNumber(EXACT), nested: { a: 1 } }, [
+      'sqrt_price',
+      'nested',
+    ]);
     expect(String(flat.sqrt_price)).toBe(EXACT);
     expect(flat.nested).toBeUndefined();
   });
@@ -795,7 +839,8 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
       `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
       `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
-    const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
+    const { values } = scenarios[0].overrides[0];
+    const flat = flattenOverrideValues(values, Object.keys(values));
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
     expect(patchBody).toContain(EXACT);
   });

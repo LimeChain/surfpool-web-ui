@@ -1603,7 +1603,10 @@ export default function ScenarioEditor({
                                                     setAccountData(restoredData);
 
                                                     // Combine action.modifiedFields with any restored constant_ref fields
-                                                    const allModifiedFields = new Set(action.modifiedFields || []);
+                                                    // An action that names no modified fields owns every value it carries
+                                                    const allModifiedFields = new Set(
+                                                      action.modifiedFields ?? Object.keys(action.overrides ?? {})
+                                                    );
                                                     // Add all keys from restoredData that came from PDA seeds
                                                     Object.keys(restoredData).forEach((key) => {
                                                       if (restoredData[key] !== undefined && restoredData[key] !== '') {
