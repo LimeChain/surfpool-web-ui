@@ -5,6 +5,7 @@ export type ScenarioAction = {
   action: string;
   overrideId?: string;
   fetchBeforeUse?: boolean;
+  keepAlive?: boolean;
   overrides?: Record<string, unknown>;
   modifiedFields?: string[];
   account?: any; // Account address (Pubkey or PDA)
@@ -43,6 +44,7 @@ export type ApiOverride = {
   label?: string;
   account?: unknown;
   fetchBeforeUse?: boolean;
+  keepAlive?: boolean;
   values?: Record<string, unknown>;
 };
 
@@ -111,6 +113,7 @@ export function scenarioFromApiData(
         action: override.label || 'Unknown Action',
         account: override.account,
         fetchBeforeUse: override.fetchBeforeUse || false,
+        keepAlive: override.keepAlive ?? true,
         overrides: override.values || {},
         modifiedFields: Object.keys(override.values || {}),
       });

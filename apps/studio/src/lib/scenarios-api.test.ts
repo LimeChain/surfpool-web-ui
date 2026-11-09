@@ -472,6 +472,13 @@ describe('buildUpdatePayload', () => {
     expect(override.account).toEqual({ pda: { programId: 'pyth', seeds: [] } });
   });
 
+  it('defaults keepAlive to true and keeps keepAlive: false', () => {
+    expect(buildUpdatePayload(baseScenario).overrides[0].keepAlive).toBe(true);
+    const action = { ...loadedScenario.steps![0].actions![0], keepAlive: false };
+    const scenario = { ...loadedScenario, steps: [{ ...loadedScenario.steps![0], actions: [action] }] };
+    expect(buildUpdatePayload(scenario).overrides[0].keepAlive).toBe(false);
+  });
+
   it('preserves the scenario tags', () => {
     expect(buildUpdatePayload(loadedScenario).tags).toEqual(['pyth', 'oracle']);
     expect(buildUpdatePayload(baseScenario).tags).toEqual([]);

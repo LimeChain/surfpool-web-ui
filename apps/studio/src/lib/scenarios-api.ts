@@ -560,6 +560,7 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
+  keepAlive: boolean;
   account?: unknown;
   [passthrough: string]: unknown;
 };
@@ -568,7 +569,7 @@ export type OverridePayload = {
  * Convert a scenario's steps/actions into the backend "overrides" format
  * and return the full PATCH payload. Mirrors the scenario editor's sync
  * payload: everything loaded from the backend (override ids, values, account,
- * fetchBeforeUse, enabled, tags) is carried through, so a metadata-only
+ * fetchBeforeUse, keepAlive, enabled, tags) is carried through, so a metadata-only
  * update cannot strip a scenario of its data.
  */
 export function buildUpdatePayload(scenario: Scenario) {
@@ -585,6 +586,7 @@ export function buildUpdatePayload(scenario: Scenario) {
         label: action.action,
         enabled: original.enabled ?? true,
         fetchBeforeUse: action.fetchBeforeUse || false,
+        keepAlive: action.keepAlive ?? true,
       };
       if (action.account) {
         override.account = action.account;
