@@ -1730,7 +1730,7 @@ export default function ScenarioEditor({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-none fixed left-1/2 z-50 w-full max-w-[1120px] -translate-x-1/2"
+            className="pointer-events-none fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-[1120px] -translate-x-1/2"
             style={{ bottom: '16px' }}
           >
             <div className="pointer-events-auto flex flex-col gap-4">
@@ -1761,7 +1761,7 @@ export default function ScenarioEditor({
                 </div>
 
                 {/* Protocol Icons - one row, scrolled sideways when it is wider than the toolbox */}
-                <div className="overflow-x-auto pb-2">
+                <div className="overflow-x-auto py-2">
                   <div className="mx-auto flex w-max gap-6 px-2">
                     {protocolsLoading ? (
                       <div className="text-sm text-zinc-500">Loading protocols...</div>
