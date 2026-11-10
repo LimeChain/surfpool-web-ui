@@ -1,5 +1,4 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
-import { getProtocolAiContext } from '@/components/svm/token-selector-options';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
@@ -174,7 +173,8 @@ function findScenarioTemplate(templates: ScenarioTemplate[], templateId: string)
 export async function createPumpSwapPriceShockScenario(
   studioUrl: string,
   tokenMint: string,
-  virtualQuoteReserves: string
+  virtualQuoteReserves: string,
+  fetchBeforeUse: boolean
 ): Promise<PumpSwapPriceShockScenarioResult> {
   const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!templatesResponse.ok) {
@@ -203,7 +203,7 @@ export async function createPumpSwapPriceShockScenario(
         scenarioRelativeSlot: 1,
         label: 'PumpSwap virtual quote reserve shock',
         enabled: true,
-        fetchBeforeUse: true,
+        fetchBeforeUse,
         account: template.address,
       },
     ],
@@ -331,7 +331,10 @@ async function createPhoenixScenario(
   name: string,
   description: string,
   tags: string[],
-  overrides: PhoenixOverride[]
+  overrides: PhoenixOverride[],
+  // Off unless asked: a refetch would reset this account apart from the market's other accounts, and the
+  // dialog's lists already load it into the surfnet.
+  fetchBeforeUse = false
 ): Promise<PhoenixScenarioResult> {
   const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
   if (!templatesResponse.ok) {
@@ -355,9 +358,7 @@ async function createPhoenixScenario(
         scenarioRelativeSlot: slot,
         label,
         enabled: true,
-        // A refetch would reset this account apart from the market's other accounts, and the
-        // dialog's lists already load it into the surfnet.
-        fetchBeforeUse: false,
+        fetchBeforeUse,
         account: account ? { pubkey: account } : template.address,
       };
     }),
@@ -396,21 +397,24 @@ const marketMoveOverrides = (symbol: string, targetTicks: string, slot = 0): Pho
 export async function createPhoenixMarketMoveScenario(
   studioUrl: string,
   symbol: string,
-  targetTicks: string
+  targetTicks: string,
+  fetchBeforeUse = false
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
     `Phoenix ${symbol.trim()} Market Move`,
     'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
     ['phoenix-eternal', 'market-move', 'risk'],
-    marketMoveOverrides(symbol.trim(), targetTicks.trim())
+    marketMoveOverrides(symbol.trim(), targetTicks.trim()),
+    fetchBeforeUse
   );
 }
 
 export async function createPhoenixOraclePriceScenario(
   studioUrl: string,
   symbol: string,
-  targetTicks: string
+  targetTicks: string,
+  fetchBeforeUse = false
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -423,7 +427,8 @@ export async function createPhoenixOraclePriceScenario(
         label: `Phoenix ${symbol.trim()} oracle price`,
         values: { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
       },
-    ]
+    ],
+    fetchBeforeUse
   );
 }
 
@@ -447,7 +452,8 @@ const usdcFromQuoteLots = (quoteLots: string) => {
 export async function createPhoenixCollateralLiquidationScenario(
   studioUrl: string,
   traders: { trader: string; collateral: string }[],
-  moves: PhoenixMarketMove[] = []
+  moves: PhoenixMarketMove[] = [],
+  fetchBeforeUse = false
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -471,7 +477,8 @@ export async function createPhoenixCollateralLiquidationScenario(
         },
       ]),
       ...moves.flatMap(({ symbol, targetTicks }) => marketMoveOverrides(symbol, targetTicks, 1)),
-    ]
+    ],
+    fetchBeforeUse
   );
 }
 
@@ -516,7 +523,8 @@ export async function fetchPhoenixTraderPositions(
 export async function createPhoenixMaintenanceMarginScenario(
   studioUrl: string,
   symbol: string,
-  riskFactor: string
+  riskFactor: string,
+  fetchBeforeUse = false
 ): Promise<PhoenixScenarioResult> {
   return createPhoenixScenario(
     studioUrl,
@@ -529,7 +537,8 @@ export async function createPhoenixMaintenanceMarginScenario(
         label: `Phoenix ${symbol.trim()} maintenance margin factor`,
         values: { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() },
       },
-    ]
+    ],
+    fetchBeforeUse
   );
 }
 
@@ -680,14 +689,7 @@ export function buildAiPrompt(basePrompt: string, selectedProtocolIds: Set<strin
     return trimmed;
   }
 
-  const protocolContext = [...selectedProtocolIds]
-    .map(getProtocolAiContext)
-    .filter((context): context is string => Boolean(context))
-    .join('\n\n');
-
-  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.${
-    protocolContext ? `\n\n${protocolContext}` : ''
-  }`;
+  return `${trimmed}\n\nUse only these protocols: ${selectedProtocolNames.join(', ')}.`;
 }
 
 /** Extract the created scenario id from the MCP result returned by create_scenario. */

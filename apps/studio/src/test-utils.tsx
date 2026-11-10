@@ -101,19 +101,31 @@ export function MockCombobox({
   displayValue,
   filter,
   customOption,
+  onQueryChange,
   onChange,
   disabled,
   placeholder,
   children,
 }: any) {
   const [query, setQuery] = React.useState<string | null>(null);
-  const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value);
-  const matches = query ? options.filter((option: any) => filter(option, query)) : options;
+  const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(event.target.value);
+    onQueryChange?.(event.target.value);
+    if (event.target.value === '') onChange(null);
+  };
+  const matchesQuery = (option: any) =>
+    filter ? filter(option, query) : displayValue(option)?.toLowerCase().includes(query!.toLowerCase());
+  const handleSelect = (option: any) => {
+    setQuery(null);
+    onQueryChange?.('');
+    onChange(option);
+  };
+  const matches = query ? options.filter(matchesQuery) : options;
   const typedOption = customOption && query?.trim() ? customOption(query.trim()) : null;
   const shown = typedOption === null ? matches : [...matches, typedOption];
   const renderOption = (option: any) => (
     <li key={option?.id ?? option}>
-      <MockComboboxOption option={option} onSelect={onChange}>
+      <MockComboboxOption option={option} onSelect={handleSelect}>
         {displayValue(option)}
       </MockComboboxOption>
       {children(option)}
