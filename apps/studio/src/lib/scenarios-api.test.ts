@@ -68,7 +68,7 @@ const baseScenario: Scenario = {
 };
 
 afterEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -118,9 +118,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ')).resolves.toEqual(
-      { id: '11111111-1111-4111-8111-111111111111' }
-    );
+    await expect(
+      createPumpSwapPriceShockScenario('http://studio', ' mint ', ' 15000000000000 ', true)
+    ).resolves.toEqual({ id: '11111111-1111-4111-8111-111111111111' });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://studio/v1/scenarios/templates');
 
     const postRequest = fetchMock.mock.calls[1];
@@ -155,10 +155,24 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
-    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615');
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '18446744073709551615', true);
 
     const init = fetchMock.mock.calls[1][1] as RequestInit;
     expect(init.body).toContain('"virtual_quote_reserves":18446744073709551615');
+  });
+
+  it('posts fetchBeforeUse off when the caller turns it off', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
+
+    await createPumpSwapPriceShockScenario('http://studio', 'mint', '1', false);
+
+    const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+    expect(override.fetchBeforeUse).toBe(false);
   });
 
   it('surfaces generic scenario API failures', async () => {
@@ -169,7 +183,9 @@ describe('createPumpSwapPriceShockScenario', () => {
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 
-    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
+    await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1', true)).rejects.toThrow(
+      'Scenario store unavailable'
+    );
   });
 });
 
@@ -211,6 +227,13 @@ describe('Phoenix scenarios', () => {
       { ...shared, templateId: 'phoenix-market-move', values: { symbol: 'SOL', target_ticks: '6000' } },
       { ...shared, templateId: 'phoenix-market-uncross', values: { symbol: 'SOL' } },
     ]);
+  });
+
+  it('posts fetchBeforeUse on every override when the caller turns it on', async () => {
+    mockPost('phoenix-market-move', jsonResponse({ id: 'phoenix-market' }));
+
+    await createPhoenixMarketMoveScenario('http://studio', 'SOL', '6000', true);
+    expect(postedScenario().overrides.map((override: any) => override.fetchBeforeUse)).toEqual([true, true]);
   });
 
   it("posts one slot-0 scenario that sets each trader's effective collateral in USDC", async () => {
@@ -552,13 +575,6 @@ describe('buildAiPrompt', () => {
   it('appends protocol names when protocols selected', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth', 'raydium']));
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
-  });
-
-  it('adds the featured Project 0 account addresses', () => {
-    const result = buildAiPrompt('crash SOL to $20 on Project 0', new Set(['project-0']));
-
-    expect(result).toContain('bank CCKtUs6Cgwo4aaQUmBPmyoApH2gUDErxNZCAntD6LYGh');
-    expect(result).toContain('price account 7AviUf9nL62mcxNbQGKm4nKDQnPjswo6c5MX4D57HmyE');
   });
 
   it('preserves base prompt before protocol line', () => {

@@ -9,6 +9,7 @@ export function Combobox<T>({
   displayValue,
   filter,
   customOption,
+  onQueryChange,
   anchor = 'bottom',
   className,
   placeholder,
@@ -22,6 +23,8 @@ export function Combobox<T>({
   filter?: (value: T, query: string) => boolean
   // Offers the typed text as a last option, for values the list does not have; null offers nothing.
   customOption?: (query: string) => T | null
+  // Reports the typed text, and '' once the list closes and the input shows the value again.
+  onQueryChange?: (query: string) => void
   className?: string
   placeholder?: string
   autoFocus?: boolean
@@ -29,6 +32,10 @@ export function Combobox<T>({
   children: (value: NonNullable<T>) => React.ReactElement
 } & Omit<Headless.ComboboxProps<T, false>, 'as' | 'multiple' | 'children'> & { anchor?: 'top' | 'bottom' }) {
   const [query, setQuery] = useState('')
+  const changeQuery = (typed: string) => {
+    setQuery(typed)
+    onQueryChange?.(typed)
+  }
 
   const filteredOptions =
     query === ''
@@ -40,7 +47,7 @@ export function Combobox<T>({
   const visibleOptions = typedOption === null ? filteredOptions : [...filteredOptions, typedOption]
 
   return (
-    <Headless.Combobox {...props} multiple={false} virtual={{ options: visibleOptions }} onClose={() => setQuery('')}>
+    <Headless.Combobox {...props} multiple={false} virtual={{ options: visibleOptions }} onClose={() => changeQuery('')}>
       <span
         data-slot="control"
         className={clsx([
@@ -64,7 +71,7 @@ export function Combobox<T>({
           data-slot="control"
           aria-label={ariaLabel}
           displayValue={(option: T) => displayValue(option) ?? ''}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => changeQuery(event.target.value)}
           placeholder={placeholder}
           className={clsx([
             className,

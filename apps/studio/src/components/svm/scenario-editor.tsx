@@ -13,6 +13,7 @@ import {
   type DynamicRefOption,
   type OverridePayload,
 } from '@/lib/scenarios-api';
+import { setSurfnetClockPaused } from '@/lib/surfnet-clock';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -24,8 +25,20 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
+import { PublicKey } from '@solana/web3.js';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import {
+  Combobox,
+  ComboboxLabel,
+  ComboboxOption,
+  Dropdown,
+  DropdownButton,
+  DropdownItem,
+  DropdownLabel,
+  DropdownMenu,
+  Select,
+  Switch,
+} from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
@@ -33,11 +46,8 @@ import { getFieldsFromRawLayout } from './raw-layout-fields';
 import {
   customValueOption,
   findOptionByTypedValue,
-  getFeaturedAccounts,
-  resolveFeaturedAccount,
   resolveTokenSelectorOptions,
-  shouldUseConstantCombobox,
-  typedAccountOption,
+  type TokenSelectorOption,
 } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
@@ -140,9 +150,25 @@ const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[
   { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
 ];
 
+type PlayClock = 'paused' | 'running';
+
+const PAUSED_CLOCK_WARNING =
+  'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
+
 // A pubkey address the template leaves empty names no account; the override carries the one it targets.
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
+
+type TypedAccountIssue = 'missing' | 'foreign' | null;
+
+const isSolanaAddress = (value: string) => {
+  try {
+    new PublicKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export default function ScenarioEditor({
   scenarioId = 'default',
@@ -159,13 +185,15 @@ export default function ScenarioEditor({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
-  const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
   // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
+  const [typedAccount, setTypedAccount] = useState('');
+  const [accountQuery, setAccountQuery] = useState('');
+  const [typedAccountIssue, setTypedAccountIssue] = useState<TypedAccountIssue>(null);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -173,16 +201,25 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const featuredAccounts = getFeaturedAccounts(selectedAction?.template?.id);
-  const isAddressSelectionMissing = Boolean(featuredAccounts && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
+  const [playClock, setPlayClock] = useState<PlayClock>('running');
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
+  const [isStepping, setIsStepping] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
+  const needsTypedAccount = leavesAccountToOverride(selectedAction?.template?.address);
+  const hasTypedAccount = isSolanaAddress(typedAccount);
+  const isAccountQueryInvalid = !!accountQuery.trim() && !isSolanaAddress(accountQuery.trim());
+  const hasUsableTypedAccount = hasTypedAccount && !typedAccountIssue;
+  const accountSelection = resolveTokenSelectorOptions([], typedAccount);
+
   const accountRequestRef = useRef(0);
+  const loadedTypedAccountRef = useRef('');
+  // A ref, so a second click sees the Step in flight before the next render
+  const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
 
   // Reset first slots change flag when scenario changes
@@ -399,6 +436,7 @@ export default function ScenarioEditor({
   // Fetch protocols dynamically from API
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [protocolsLoading, setProtocolsLoading] = useState(true);
+  const [templateTags, setTemplateTags] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -408,6 +446,7 @@ export default function ScenarioEditor({
           throw new Error('Failed to fetch protocols');
         }
         const templates = await response.json();
+        setTemplateTags(Object.fromEntries(templates.map((template: any) => [template.id, template.tags ?? []])));
 
         // Group templates by protocol
         const protocolGroups: Record<string, any[]> = {};
@@ -479,6 +518,10 @@ export default function ScenarioEditor({
 
     fetchProtocols();
   }, [studioUrl]);
+
+  const isClockSensitive = slots.some((slot) =>
+    slot.actions.some((action) => templateTags[action.actionId]?.includes('clock-sensitive'))
+  );
 
   const filteredProtocols = protocols.filter((protocol) => {
     const query = searchQuery.toLowerCase();
@@ -629,12 +672,15 @@ export default function ScenarioEditor({
   // Register IDL and fetch account data when an action is selected
   const handleActionSelect = async (action: Action, accountPubkey?: string) => {
     const requestId = ++accountRequestRef.current;
+    loadedTypedAccountRef.current = accountPubkey ?? '';
     setSelectedAction(action);
     setAccountData({});
-    setSelectedAccountPubkey(getFeaturedAccounts(action.template?.id) ? (accountPubkey ?? '') : '');
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
+    setTypedAccount(accountPubkey ?? '');
+    setAccountQuery('');
+    setTypedAccountIssue(null);
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
@@ -658,6 +704,10 @@ export default function ScenarioEditor({
       }
       // A PDA template, or one that leaves the account to the override, reads the saved account.
       if (accountPubkey && !addressString) addressString = accountPubkey;
+      if (!addressString && leavesAccountToOverride(action.template.address)) {
+        setLoadingAccountData(false);
+        return;
+      }
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
@@ -696,9 +746,18 @@ export default function ScenarioEditor({
       logger.log('✅ Account info received:', accountInfoData);
       if (requestId !== accountRequestRef.current) return;
 
-      if (accountInfoData.result?.value?.data?.parsed) {
+      const account = accountInfoData.result?.value;
+      let issue: TypedAccountIssue = null;
+      if (accountPubkey && leavesAccountToOverride(action.template.address)) {
+        const programId = action.template.idl.address;
+        if (!account) issue = 'missing';
+        else if (programId && account.owner !== programId) issue = 'foreign';
+      }
+      setTypedAccountIssue(issue);
+
+      if (!issue && account?.data?.parsed) {
         // Populate accountData with the parsed data
-        const parsed = accountInfoData.result.value.data.parsed;
+        const parsed = account.data.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
@@ -710,10 +769,40 @@ export default function ScenarioEditor({
     }
   };
 
-  // Reading the picked account fills its fields and pulls it into the local VM, as a saved one does
-  const handleAccountPick = (pubkey: string) => {
-    if (selectedAction) handleActionSelect(selectedAction, pubkey);
+  // The read fills the fields and pulls the account into the local VM, without which Play skips it
+  const handleTypedAccountChange = (option: TokenSelectorOption | null) => {
+    const pubkey = option?.value != null ? String(option.value) : '';
+    setTypedAccount(pubkey);
+    if (!selectedAction) return;
+    if (pubkey) {
+      if (pubkey !== loadedTypedAccountRef.current) handleActionSelect(selectedAction, pubkey);
+      return;
+    }
+    // A finished read stays, so choosing its address again keeps the edits; a read in flight must not fill the fields
+    if (loadingAccountData) {
+      accountRequestRef.current++;
+      loadedTypedAccountRef.current = '';
+      setAccountData({});
+      setLoadingAccountData(false);
+    }
   };
+
+  const isTypedAccountReady = (action: Action) =>
+    !leavesAccountToOverride(action.template?.address) ||
+    (hasUsableTypedAccount && typedAccount === loadedTypedAccountRef.current);
+
+  const typedAccountOption = (query: string) =>
+    isSolanaAddress(query) && !findOptionByTypedValue(accountSelection.options, query)
+      ? customValueOption(query)
+      : null;
+
+  const displayAccount = (option: TokenSelectorOption | null) => (option?.value != null ? String(option.value) : '');
+
+  const renderAccountOption = (option: TokenSelectorOption) => (
+    <ComboboxOption key={option.id} value={option}>
+      <ComboboxLabel>{option.metadata?.symbol}</ComboboxLabel>
+    </ComboboxOption>
+  );
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
@@ -794,7 +883,9 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
+                account: leavesAccountToOverride(action.template?.address)
+                  ? { pubkey: typedAccount }
+                  : action.template?.address,
               },
             ],
           };
@@ -834,17 +925,12 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A template with no address keeps the account the override was saved for, such as a trader
-                    // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account. A featured-account template
-                    // saves the account picked in the editor.
-                    account:
-                      leavesAccountToOverride(action.template?.address) &&
-                      !getFeaturedAccounts(action.template?.id) &&
-                      existingAction.actionId === action.id &&
-                      existingAction.account?.pubkey
-                        ? existingAction.account
-                        : resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
+                    // A template with no address takes the typed account, which reopening fills with the one the
+                    // override was saved for, such as a trader given to a preset. Any other address, a PDA included,
+                    // comes from the template, so edited seed fields such as a token or fee tier pick the new account.
+                    account: leavesAccountToOverride(action.template?.address)
+                      ? { pubkey: typedAccount }
+                      : action.template?.address,
                   }
                 : existingAction
             ),
@@ -864,62 +950,83 @@ export default function ScenarioEditor({
     setMouseX(null);
   };
 
-  const handleStepForward = async () => {
-    if (currentPlaybackSlot < slots.length - 1) {
-      setIsExecuting(false);
+  // A time travel of one slot makes the surfnet produce it and apply the column scheduled for it
+  const advanceOneSlot = async () => {
+    try {
+      // Get current absolute slot from getEpochInfo
+      const epochResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getEpochInfo',
+          params: [{ commitment: 'processed' }],
+        }),
+      });
 
-      try {
-        // Get current absolute slot from getEpochInfo
-        const epochResponse = await fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getEpochInfo',
-            params: [{ commitment: 'processed' }],
-          }),
-        });
+      if (epochResponse.ok) {
+        const epochData = await epochResponse.json();
+        if (epochData.result) {
+          const currentAbsoluteSlot = epochData.result.absoluteSlot;
+          const nextSlot = currentAbsoluteSlot + 1;
 
-        if (epochResponse.ok) {
-          const epochData = await epochResponse.json();
-          if (epochData.result) {
-            const currentAbsoluteSlot = epochData.result.absoluteSlot;
-            const nextSlot = currentAbsoluteSlot + 1;
+          logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
 
-            logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
+          // Call surfnet_timeTravel with next absolute slot
+          const timeTravelResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'surfnet_timeTravel',
+              params: [{ absoluteSlot: nextSlot }],
+            }),
+          });
 
-            // Call surfnet_timeTravel with next absolute slot
-            const timeTravelResponse = await fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'surfnet_timeTravel',
-                params: [{ absoluteSlot: nextSlot }],
-              }),
-            });
-
-            if (timeTravelResponse.ok) {
-              const timeTravelData = await timeTravelResponse.json();
-              logger.log('✅ Time travel successful:', timeTravelData.result);
-            } else {
-              console.error('❌ Time travel failed:', timeTravelResponse.status);
-            }
+          if (!timeTravelResponse.ok) {
+            console.error('❌ Time travel failed:', timeTravelResponse.status);
+            return false;
           }
+          const timeTravelData = await timeTravelResponse.json();
+          if (timeTravelData.error) {
+            console.error('❌ Time travel failed:', timeTravelData.error);
+            return false;
+          }
+          logger.log('✅ Time travel successful:', timeTravelData.result);
+          return true;
         }
-      } catch (error) {
-        console.error('❌ Error stepping forward:', error);
+      }
+    } catch (error) {
+      console.error('❌ Error stepping forward:', error);
+    }
+    return false;
+  };
+
+  // A second Step before the first one finishes would move the clock twice and skip a column
+  const handleStepForward = async () => {
+    if (steppingRef.current || currentPlaybackSlot >= slots.length - 1) return;
+    steppingRef.current = true;
+    setIsStepping(true);
+    try {
+      setIsExecuting(false);
+      if (!(await advanceOneSlot())) {
+        setIsExecuting(true);
+        return;
       }
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
       setTimeout(() => setIsExecuting(true), 100);
+    } finally {
+      steppingRef.current = false;
+      setIsStepping(false);
     }
   };
 
-  const startPlay = async () => {
+  // The surfnet lands column N on the Nth slot it produces after the registration
+  const registerScenario = async () => {
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
@@ -959,32 +1066,6 @@ export default function ScenarioEditor({
       tags: [],
     };
 
-    // IMPORTANT: Pause the clock BEFORE registering the scenario to prevent race conditions
-    // Otherwise, clock ticks between registration and pause can apply overrides prematurely
-    try {
-      const pauseResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
-
-      if (pauseResponse.ok) {
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
-        logger.log('🎬 Clock paused before scenario registration');
-      }
-    } catch (error) {
-      console.error('Error pausing clock:', error);
-    }
-
-    // Register scenario with surfnet (clock is now paused, no race condition)
     try {
       logger.log('📤 Registering scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
@@ -998,62 +1079,88 @@ export default function ScenarioEditor({
         }),
       });
 
-      if (registerResponse.ok) {
-        const registerData = await registerResponse.json();
-        logger.log('✅ Scenario registered:', registerData);
-      } else {
+      if (!registerResponse.ok) {
         console.error('❌ Failed to register scenario:', await registerResponse.text());
+        return false;
       }
+      const registerData = await registerResponse.json();
+      if (registerData.error) {
+        console.error('❌ Failed to register scenario:', registerData.error);
+        return false;
+      }
+      logger.log('✅ Scenario registered:', registerData);
+      return true;
     } catch (error) {
       console.error('❌ Error registering scenario:', error);
+      return false;
+    }
+  };
+
+  // A paused clock lands one column per step; a running one produces the plan's slots by itself
+  const startPlay = async (clock: PlayClock) => {
+    if (clock === 'paused') {
+      // Paused before the registration, so no column lands before its step
+      if (!(await setSurfnetClockPaused(rpcUrl, true))) {
+        console.error('Error pausing clock');
+        return;
+      }
+      if (!(await registerScenario()) || (slots.length > 0 && !(await advanceOneSlot()))) {
+        await resumeClock();
+        return;
+      }
+      setCurrentPlaybackSlot(0);
+    } else {
+      // A clock paused from the header would never produce the plan's slots
+      if (!(await setSurfnetClockPaused(rpcUrl, false))) {
+        console.error('Error resuming clock');
+        return;
+      }
+      if (!(await registerScenario())) {
+        return;
+      }
+      setCurrentPlaybackSlot(Math.max(slots.length - 1, 0));
     }
 
-    setCurrentPlaybackSlot(0);
+    setPlayClock(clock);
     setIsExecuting(true);
     setMode('play');
   };
 
   // Registering waits for surfnet to prepare the scenario, which takes seconds for large ones.
-  const handlePlay = async () => {
+  const handlePlay = async (clock: PlayClock) => {
     if (isStartingPlay) return;
     setIsStartingPlay(true);
     try {
-      await startPlay();
+      await startPlay(clock);
     } finally {
       setIsStartingPlay(false);
     }
   };
 
-  const handleStop = () => {
+  const handlePlayPaused = () => handlePlay('paused');
+
+  const handlePlayRunning = () => handlePlay('running');
+
+  const handleStop = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
+    }
     setMode('read');
     setIsExecuting(false);
     setCurrentPlaybackSlot(0);
   };
 
-  const handleComplete = async () => {
-    // Resume the clock when completing scenario playback
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_resumeClock',
-        }),
-      });
+  const resumeClock = async () => {
+    if (await setSurfnetClockPaused(rpcUrl, false)) {
+      logger.log('▶️ Clock resumed after scenario playback');
+    } else {
+      console.error('Error resuming clock');
+    }
+  };
 
-      if (response.ok) {
-        // Dispatch event so header widget and other components sync
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: false },
-          })
-        );
-        logger.log('▶️ Clock resumed after scenario completion');
-      }
-    } catch (error) {
-      console.error('Error resuming clock:', error);
+  const handleComplete = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
     }
 
     setMode('read');
@@ -1909,6 +2016,48 @@ export default function ScenarioEditor({
                           <div className="flex flex-1 flex-col overflow-y-auto p-6">
                             {selectedAction ? (
                               <>
+                                {needsTypedAccount && (
+                                  <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                    <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                      Account selection
+                                    </h5>
+                                    <div className="space-y-2">
+                                      <label className="block text-sm font-medium text-zinc-300">Account</label>
+                                      <p className="text-xs text-zinc-500">
+                                        The account this override changes. Paste its address.
+                                      </p>
+                                      <Combobox<TokenSelectorOption | null>
+                                        value={accountSelection.selectedOption}
+                                        onChange={handleTypedAccountChange}
+                                        options={accountSelection.options}
+                                        displayValue={displayAccount}
+                                        customOption={typedAccountOption}
+                                        onQueryChange={setAccountQuery}
+                                        invalid={isAccountQueryInvalid}
+                                        immediate
+                                        placeholder="Paste an account address..."
+                                        aria-label="Account"
+                                      >
+                                        {renderAccountOption}
+                                      </Combobox>
+                                      {isAccountQueryInvalid && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a valid Solana address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'missing' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          No account at this address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'foreign' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a {selectedProtocol?.title} account.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="mb-4">
                                   <div className="flex items-center justify-between">
                                     <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
@@ -2418,7 +2567,7 @@ export default function ScenarioEditor({
                                       const renderConstantRefFields = () => {
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
-                                        const propertyConstantRefs = rawProperties
+                                        const constantRefProps = rawProperties
                                           .filter((prop: any) => {
                                             if (typeof prop === 'string') return false;
                                             if (prop.type === 'constant_ref')
@@ -2449,12 +2598,6 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
-                                        const constantRefProps = [
-                                          ...(featuredAccounts
-                                            ? [{ name: '__account__', type: 'constant_ref', isAccountSelector: true }]
-                                            : []),
-                                          ...propertyConstantRefs,
-                                        ];
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2465,16 +2608,12 @@ export default function ScenarioEditor({
                                           currentValue,
                                           isModified,
                                           takesCustomValues,
-                                          onValueChange,
-                                          acceptsTypedAddress,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                           takesCustomValues: boolean;
-                                          onValueChange: (value: string) => void;
-                                          acceptsTypedAddress: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2490,15 +2629,14 @@ export default function ScenarioEditor({
                                               value={selectedOption}
                                               onChange={(option: any) => {
                                                 if (option) {
-                                                  onValueChange(String(option.value));
+                                                  setValue(fieldPath, option.value);
                                                 }
                                               }}
                                               options={options}
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
-                                                const symbol =
-                                                  option.metadata?.symbol || option.label || option.id?.toUpperCase();
+                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
                                                 return symbol;
                                               }}
                                               filter={(option: any, query: string) => {
@@ -2518,13 +2656,7 @@ export default function ScenarioEditor({
                                                   value.includes(q)
                                                 );
                                               }}
-                                              customOption={
-                                                acceptsTypedAddress
-                                                  ? (query: string) => typedAccountOption(query, options)
-                                                  : takesCustomValues
-                                                    ? customOptionFor
-                                                    : undefined
-                                              }
+                                              customOption={takesCustomValues ? customOptionFor : undefined}
                                               immediate={takesCustomValues}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                               aria-label={constantDef.label}
@@ -2547,9 +2679,7 @@ export default function ScenarioEditor({
                                                     )}
                                                     <ComboboxLabel>
                                                       <span className="font-medium">
-                                                        {option.metadata?.symbol ||
-                                                          option.label ||
-                                                          option.id?.toUpperCase()}
+                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
                                                       </span>
                                                       {option.description && (
                                                         <span className="ml-2 text-zinc-400">{option.description}</span>
@@ -2565,34 +2695,20 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              {featuredAccounts ? 'Account selection' : 'PDA Configuration'}
+                                              PDA Configuration
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = prop.isAccountSelector
-                                                ? featuredAccounts
-                                                : prop.constantDef;
+                                              const constantDef = prop.constantDef;
                                               const fieldPath = prop.name;
-                                              const rawValue = prop.isAccountSelector
-                                                ? selectedAccountPubkey
-                                                : getValue(fieldPath);
+                                              const rawValue = getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
-                                              const isModified = prop.isAccountSelector
-                                                ? currentValue !== ''
-                                                : modifiedFields.has(fieldPath);
-                                              const onValueChange = prop.isAccountSelector
-                                                ? handleAccountPick
-                                                : (value: string) => setValue(fieldPath, value);
+                                              const isModified = modifiedFields.has(fieldPath);
 
                                               // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
-                                              const useCombobox =
-                                                isLiveList ||
-                                                shouldUseConstantCombobox(
-                                                  constantDef.options.length,
-                                                  Boolean(prop.isAccountSelector)
-                                                );
+                                              const useCombobox = isLiveList || constantDef.options.length > 20;
                                               // A saved value the catalog lacks stays selectable as its custom option.
                                               const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
@@ -2622,14 +2738,12 @@ export default function ScenarioEditor({
                                                       currentValue={currentValue}
                                                       isModified={isModified}
                                                       takesCustomValues={isLiveList}
-                                                      onValueChange={onValueChange}
-                                                      acceptsTypedAddress={Boolean(prop.isAccountSelector)}
                                                     />
                                                   ) : (
                                                     <Select
                                                       value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
-                                                        onValueChange(e.target.value);
+                                                        setValue(fieldPath, e.target.value);
                                                       }}
                                                       className={
                                                         isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
@@ -2707,15 +2821,15 @@ export default function ScenarioEditor({
 
                                 {/* Add/Update Action Button - Right Aligned */}
                                 {!loadingAccountData && (
-                                  <div className="flex flex-col items-end gap-2">
-                                    {isAddressSelectionMissing && (
-                                      <p className="text-right text-sm text-amber-400">
-                                        Select a target account above before adding this override.
-                                      </p>
-                                    )}
+                                  <div className="flex justify-end">
                                     <button
                                       onClick={() => {
-                                        if (selectedSlotId && selectedProtocol && selectedAction) {
+                                        if (
+                                          selectedSlotId &&
+                                          selectedProtocol &&
+                                          selectedAction &&
+                                          isTypedAccountReady(selectedAction)
+                                        ) {
                                           if (editingAction) {
                                             // Update existing action
                                             updateActionInSlot(
@@ -2733,13 +2847,17 @@ export default function ScenarioEditor({
                                           setSelectedProduct(null);
                                           setSelectedAction(null);
                                           setAccountData({});
-                                          setSelectedAccountPubkey('');
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
+                                          setTypedAccount('');
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction || isAddressSelectionMissing}
+                                      disabled={
+                                        !selectedSlotId ||
+                                        !selectedAction ||
+                                        (needsTypedAccount && !hasUsableTypedAccount)
+                                      }
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
@@ -2961,19 +3079,29 @@ export default function ScenarioEditor({
                 <div className="flex items-center gap-3 pl-8">
                   {mode === 'read' ? (
                     <>
-                      <button
-                        onClick={handlePlay}
-                        disabled={isStartingPlay}
-                        aria-busy={isStartingPlay}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
-                        title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
-                      >
-                        {isStartingPlay ? (
-                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                        ) : (
-                          <PlayIcon className="h-6 w-6" />
-                        )}
-                      </button>
+                      <Dropdown>
+                        <DropdownButton
+                          as="button"
+                          className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
+                          disabled={isStartingPlay}
+                          aria-busy={isStartingPlay}
+                          title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
+                        >
+                          {isStartingPlay ? (
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                          ) : (
+                            <PlayIcon className="h-6 w-6" />
+                          )}
+                        </DropdownButton>
+                        <DropdownMenu anchor="top end">
+                          <DropdownItem onClick={handlePlayPaused}>
+                            <DropdownLabel>Pause clock and step through slots</DropdownLabel>
+                          </DropdownItem>
+                          <DropdownItem onClick={handlePlayRunning}>
+                            <DropdownLabel>Run clock and play all slots</DropdownLabel>
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
                       <button
                         onClick={downloadScenario}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
@@ -3005,14 +3133,17 @@ export default function ScenarioEditor({
                       {/* Playback in progress - show step forward and stop */}
                       <button
                         onClick={handleStepForward}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
+                        disabled={isStepping}
+                        aria-busy={isStepping}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-green-500"
                         title="Step forward"
                       >
                         <ForwardIcon className="h-6 w-6" />
                       </button>
                       <button
                         onClick={handleStop}
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
+                        disabled={isStepping}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-black"
                         title="Stop scenario"
                       >
                         <StopIcon className="h-5 w-5" />
@@ -3022,6 +3153,11 @@ export default function ScenarioEditor({
                 </div>
               </div>
             </div>
+            {!!isClockSensitive && mode === 'read' && (
+              <div className="absolute inset-x-0 top-full mt-2 text-center text-xs text-amber-300">
+                {PAUSED_CLOCK_WARNING}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
