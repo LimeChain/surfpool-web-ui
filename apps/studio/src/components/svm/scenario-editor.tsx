@@ -158,7 +158,7 @@ const PAUSED_CLOCK_WARNING =
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
 
-type TypedAccountIssue = 'missing' | 'foreign' | null;
+type TypedAccountIssue = 'missing' | 'foreign' | 'unverified' | null;
 
 const isSolanaAddress = (value: string) => {
   try {
@@ -681,7 +681,10 @@ export default function ScenarioEditor({
     setAccountQuery('');
     setTypedAccountIssue(null);
 
-    if (!action.template?.idl || !action.template?.address) {
+    // Without an IDL, as on raw-layout templates, only a given account is read: nothing is decoded,
+    // but the read checks that the account exists.
+    const hasIdl = !!action.template?.idl;
+    if (!action.template?.address || (!hasIdl && !accountPubkey)) {
       console.warn('Action template missing IDL or address');
       setLoadingAccountData(false);
       return;
@@ -727,7 +730,7 @@ export default function ScenarioEditor({
         method: 'getAccountInfo',
         params: [
           addressString,
-          inputsOnly
+          inputsOnly || !hasIdl
             ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
             : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
@@ -748,10 +751,13 @@ export default function ScenarioEditor({
       const account = accountInfoData.result?.value;
       let issue: TypedAccountIssue = null;
       if (accountPubkey && leavesAccountToOverride(action.template.address)) {
-        const programId = action.template.idl.address;
-        if (!account) issue = 'missing';
+        const programId = action.template.idl?.address;
+        if (accountInfoData.error) issue = 'unverified';
+        else if (!account) issue = 'missing';
         else if (programId && account.owner !== programId) issue = 'foreign';
       }
+      // A read that failed is no read: choosing the same address again retries it.
+      if (issue === 'unverified') loadedTypedAccountRef.current = '';
       setTypedAccountIssue(issue);
 
       if (!issue && account?.data?.parsed) {
@@ -764,7 +770,12 @@ export default function ScenarioEditor({
       setLoadingAccountData(false);
     } catch (error) {
       console.error('Error loading account data:', error);
-      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
+      if (requestId !== accountRequestRef.current) return;
+      if (accountPubkey && leavesAccountToOverride(action.template?.address)) {
+        loadedTypedAccountRef.current = '';
+        setTypedAccountIssue('unverified');
+      }
+      setLoadingAccountData(false);
     }
   };
 
@@ -2052,6 +2063,11 @@ export default function ScenarioEditor({
                                       {hasTypedAccount && typedAccountIssue === 'foreign' && (
                                         <p role="status" className="text-sm text-red-400">
                                           Not a {selectedProtocol?.title} account.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'unverified' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Could not read this account. Pick it again to retry.
                                         </p>
                                       )}
                                     </div>
