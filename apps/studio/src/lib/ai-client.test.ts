@@ -10,6 +10,8 @@ import {
   getProviderById,
   setApiKey,
   streamClaudeResponse,
+  streamGroqResponse,
+  streamOllamaResponse,
   streamOpenAIResponse,
 } from './ai-client';
 
@@ -53,10 +55,10 @@ describe('DEFAULT_MODEL_ID', () => {
 
 describe('getModelById', () => {
   it('finds a known static model', () => {
-    const model = getModelById('groq-llama-8b');
+    const model = getModelById('groq-gpt-oss-20b');
     expect(model).toBeDefined();
     expect(model?.provider).toBe('groq');
-    expect(model?.model).toBe('llama-3.1-8b-instant');
+    expect(model?.model).toBe('openai/gpt-oss-20b');
   });
 
   it('finds claude models', () => {
@@ -65,9 +67,9 @@ describe('getModelById', () => {
     expect(model?.provider).toBe('claude');
   });
 
-  it('drops Haiku 4.5 and offers Fable 5', () => {
+  it('drops Haiku 4.5 and offers Fable 5.2', () => {
     expect(getModelById('claude-haiku')).toBeUndefined();
-    expect(getModelById('claude-fable')?.model).toBe('claude-fable-5');
+    expect(getModelById('claude-fable')?.model).toBe('claude-fable-5-2');
   });
 
   it('returns undefined for unknown model', () => {
@@ -213,7 +215,7 @@ const mockAnthropicRounds = (rounds: SSEEvent[][]) => {
 
 const runTurn = async () => {
   const events: { type: string; content: any }[] = [];
-  for await (const event of streamClaudeResponse('crash SOL', TOOLS, 'test-key', 'http://mcp', null, 'claude-opus-5')) {
+  for await (const event of streamClaudeResponse('crash SOL', TOOLS, 'test-key', 'http://mcp', null, 'claude-opus-5-5')) {
     events.push(event);
   }
   return events;
@@ -439,7 +441,7 @@ const runOpenAITurn = async (opts: { thinkingEnabled?: boolean; model?: string }
     'key',
     'http://mcp',
     null,
-    opts.model ?? 'gpt-5.6-terra',
+    opts.model ?? 'gpt-6.1-terra',
     opts.thinkingEnabled ?? true
   );
   for await (const event of gen) events.push(event);
@@ -477,6 +479,12 @@ describe('streamOpenAIResponse (Responses API)', () => {
     const { requests } = mockOpenAIRounds([OA_FINAL]);
     await runOpenAITurn({ thinkingEnabled: false });
     expect(requests[0].reasoning).toEqual({ effort: 'none' });
+  });
+
+  it('keeps the model effort for GPT-6.1 Sol, which has no none level', async () => {
+    const { requests } = mockOpenAIRounds([OA_FINAL]);
+    await runOpenAITurn({ model: 'gpt-6.1-sol', thinkingEnabled: false });
+    expect(requests[0].reasoning).toEqual({ effort: 'medium' });
   });
 
   it('reads several function calls from response.output_item.done events', async () => {
@@ -550,10 +558,10 @@ describe('streamOpenAIResponse (Responses API)', () => {
 
   it('stops after MAX_ITERATIONS tool rounds without a final answer', async () => {
     const toolRound = OA_TOOLCALL('call_x', '{}', 'resp_x');
-    const { requests } = mockOpenAIRounds(Array.from({ length: 9 }, () => toolRound));
+    const { requests } = mockOpenAIRounds(Array.from({ length: 13 }, () => toolRound));
     const events = await runOpenAITurn();
-    expect(requests).toHaveLength(8);
-    expect(events.find((e) => e.type === 'error')?.content).toContain('Stopped after 8 tool rounds');
+    expect(requests).toHaveLength(12);
+    expect(events.find((e) => e.type === 'error')?.content).toContain('Stopped after 12 tool rounds');
     expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });
@@ -571,21 +579,21 @@ describe('streamClaudeResponse thinking toggle', () => {
     vi.unstubAllGlobals();
   });
 
-  it('disables thinking for Sonnet/Opus when the toggle is off', async () => {
+  it('turns thinking off for Sonnet 5.5 with between_tools when the toggle is off', async () => {
     const requests = mockAnthropicRounds([FINAL_ROUND]);
-    await runClaudeTurn('claude-sonnet-5', false);
-    expect(requests[0].thinking).toEqual({ type: 'disabled' });
+    await runClaudeTurn('claude-sonnet-5-5', false);
+    expect(requests[0].thinking).toEqual({ type: 'between_tools' });
   });
 
   it('omits the thinking field when thinking is on', async () => {
     const requests = mockAnthropicRounds([FINAL_ROUND]);
-    await runClaudeTurn('claude-opus-5', true);
+    await runClaudeTurn('claude-sonnet-5-5', true);
     expect(requests[0].thinking).toBeUndefined();
   });
 
-  it('never disables thinking for Fable 5, even when the toggle is off', async () => {
+  it.each(['claude-opus-5-5', 'claude-fable-5-2'])('never turns thinking off for %s', async (model) => {
     const requests = mockAnthropicRounds([FINAL_ROUND]);
-    await runClaudeTurn('claude-fable-5', false);
+    await runClaudeTurn(model, false);
     expect(requests[0].thinking).toBeUndefined();
   });
 
@@ -598,8 +606,67 @@ describe('streamClaudeResponse thinking toggle', () => {
         { type: 'message_delta', delta: { stop_reason: 'model_context_window_exceeded' } },
       ],
     ]);
-    const events = await runClaudeTurn('claude-opus-5', true);
+    const events = await runClaudeTurn('claude-opus-5-5', true);
     expect(events.find((e) => e.type === 'error')?.content).toContain('context window');
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+});
+
+const CHAT_TOOLCALL: SSEEvent[] = [
+  {
+    choices: [
+      {
+        delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'create_scenario', arguments: '{}' } }] },
+        finish_reason: 'tool_calls',
+      },
+    ],
+  },
+];
+
+const CHAT_FINAL: SSEEvent[] = [{ choices: [{ delta: { content: 'Scenario created.' }, finish_reason: 'stop' }] }];
+
+const mockChatRounds = (rounds: SSEEvent[][]) => {
+  const requests: any[] = [];
+  const fetchMock = vi.fn(async (url: unknown, init: any) => {
+    if (String(url).includes('/v1/chat/completions')) {
+      requests.push(JSON.parse(init.body));
+      return { ok: true, body: sseBody(rounds[requests.length - 1] ?? []) };
+    }
+    return mcpToolResult();
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return { requests };
+};
+
+describe.each([
+  ['Groq', streamGroqResponse, 'openai/gpt-oss-20b'],
+  ['Ollama', streamOllamaResponse, 'llama3'],
+])('%s tool round limit', (_name, stream, model) => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const runTurn = async () => {
+    const events: { type: string; content: any }[] = [];
+    for await (const event of stream('crash SOL', TOOLS, 'http://provider', 'http://mcp', null, model)) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  it('ends with done when the model answers without a tool call', async () => {
+    const { requests } = mockChatRounds([CHAT_TOOLCALL, CHAT_FINAL]);
+    const events = await runTurn();
+    expect(requests).toHaveLength(2);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('stops after MAX_ITERATIONS tool rounds without a final answer', async () => {
+    const { requests } = mockChatRounds(Array.from({ length: 13 }, () => CHAT_TOOLCALL));
+    const events = await runTurn();
+    expect(requests).toHaveLength(12);
+    expect(events.find((e) => e.type === 'error')?.content).toContain('Stopped after 12 tool rounds');
     expect(events.some((e) => e.type === 'done')).toBe(false);
   });
 });

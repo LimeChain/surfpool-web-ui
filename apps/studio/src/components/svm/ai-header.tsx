@@ -160,8 +160,8 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
     AI_PROVIDERS[0].models[0];
   const selectedProvider = getProviderById(selectedModel.provider) || AI_PROVIDERS[0];
   const thinkingToggleable =
-    selectedModel.provider === 'openai' || selectedModelId === 'claude-sonnet' || selectedModelId === 'claude-opus';
-  const thinkingChecked = thinkingToggleable ? thinkingEnabled : selectedModelId === 'claude-fable';
+    (selectedModel.provider === 'openai' || selectedModel.provider === 'claude') && !selectedModel.alwaysThinks;
+  const thinkingChecked = thinkingToggleable ? thinkingEnabled : !!selectedModel.alwaysThinks;
   const handleThinkingChange = (value: boolean) => {
     setThinkingEnabled(value);
     if (typeof window !== 'undefined') localStorage.setItem('surfpool:thinking-enabled', String(value));
