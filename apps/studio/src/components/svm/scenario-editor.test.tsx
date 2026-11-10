@@ -81,6 +81,11 @@ async function openEditor(
   fireEvent.click(await screen.findByText(template.name));
 }
 
+const rpcReads = () =>
+  fetchMock.mock.calls
+    .filter(([url, init]) => url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'getAccountInfo')
+    .map(([, init]) => JSON.parse(`${init?.body}`).params[0]);
+
 const savedOverride = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
   const patch = await waitFor(() => {
@@ -376,4 +381,26 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+it('reads the account picked for a featured-account template and fills its fields', async () => {
+  const reserve = '8PbodeaosQP19SjYFx855UMqWxH2HynZLdBXmsrbac36';
+  const reserveTemplate = {
+    ...collateralTemplate,
+    id: 'save-reserve-risk',
+    name: 'Reserve risk',
+    address: { pubkey: null },
+  };
+  await openEditor(reserveTemplate, {}, { pubkey: null });
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const params = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params : [];
+    const parsed = { traderState: { quoteLotCollateral: 42 } };
+    return { ok: true, json: async () => ({ result: { value: params[0] === reserve ? { data: { parsed } } : null } }) };
+  });
+  fireEvent.click(await screen.findByRole('heading', { name: reserveTemplate.name }));
+
+  fireEvent.click((await screen.findAllByRole('button', { name: 'SOL reserve' }))[0]);
+
+  await waitFor(() => expect(rpcReads()).toContain(reserve));
+  expect(await screen.findByDisplayValue('42')).toBeInTheDocument();
 });

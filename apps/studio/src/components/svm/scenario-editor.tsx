@@ -710,6 +710,11 @@ export default function ScenarioEditor({
     }
   };
 
+  // Reading the picked account fills its fields and pulls it into the local VM, as a saved one does
+  const handleAccountPick = (pubkey: string) => {
+    if (selectedAction) handleActionSelect(selectedAction, pubkey);
+  };
+
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
     (selectedProduct ?? selectedProtocol)?.actions.filter((action) => {
@@ -2576,7 +2581,7 @@ export default function ScenarioEditor({
                                                 ? currentValue !== ''
                                                 : modifiedFields.has(fieldPath);
                                               const onValueChange = prop.isAccountSelector
-                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
+                                                ? handleAccountPick
                                                 : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;
