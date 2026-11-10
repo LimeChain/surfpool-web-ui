@@ -1626,7 +1626,11 @@ export default function ScenarioEditor({
                                                     if (action.fetchBeforeUse !== undefined) {
                                                       setFetchBeforeUse(action.fetchBeforeUse);
                                                     }
-                                                    if (action.keepAlive !== undefined) {
+                                                    // A template without a keep-alive list hides the switch, so a saved off is not kept
+                                                    if (
+                                                      action.keepAlive !== undefined &&
+                                                      (foundAction.template?.keepAlive?.length ?? 0) > 0
+                                                    ) {
                                                       setKeepAlive(action.keepAlive);
                                                     }
                                                   }

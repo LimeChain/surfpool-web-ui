@@ -76,7 +76,7 @@ const stepAction = (template: any, account: unknown = template.address, override
   overrides,
 });
 
-const renderEditor = (...actions: ReturnType<typeof stepAction>[]) =>
+const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: boolean }>) =>
   render(
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
@@ -206,6 +206,35 @@ it.each(marketTemplates)('edits and saves $name using input template fields', as
 
 const rpcParams = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params);
+
+const keepAliveTemplate = {
+  ...collateralTemplate,
+  id: 'trader-collateral-keep-alive',
+  name: 'Kept-alive collateral',
+  keepAlive: [{ template: 'fresh', address: { type: 'override' }, values: { slot: '$slot' } }],
+};
+
+it.each([
+  { templateKind: 'without a keep-alive list', template: collateralTemplate, saved: true },
+  { templateKind: 'with a keep-alive list', template: keepAliveTemplate, saved: false },
+])(
+  'saves keep alive $saved for a reopened keep-alive-off override of a template $templateKind',
+  async ({ template, saved }) => {
+    fetchMock.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+    }));
+    renderEditor({
+      ...stepAction(template, template.address, { 'traderState.quoteLotCollateral': 5 }),
+      keepAlive: false,
+    });
+    fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
+    fireEvent.click(await screen.findByText(template.name));
+    await waitFor(() => expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(5));
+
+    expect((await savedOverride()).keepAlive).toBe(saved);
+  }
+);
 
 it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
   await openEditor(collateralTemplate, {}, { pubkey: 'saved-trader' });
