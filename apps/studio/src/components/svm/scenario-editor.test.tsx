@@ -527,6 +527,55 @@ it('keeps an override off a typed account that does not exist or that another pr
   expect(save()).toBeEnabled();
 });
 
+const UNREADABLE = 'Could not read this account. Pick it again to retry.';
+
+it('keeps an override off a typed account the RPC could not read, until a read of it works', async () => {
+  await pickTypedAccountTemplate(ownedTypedAccountTemplate);
+  const save = () => screen.getByRole('button', { name: 'Add to Selected Slot' });
+  const reply = fetchMock.getMockImplementation()!;
+  let failedReads = 0;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const pubkey = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params[0] : undefined;
+    if (pubkey === TRADER && failedReads < 2) {
+      failedReads += 1;
+      if (failedReads === 1) return { ok: true, json: async () => ({ error: { code: -32000, message: 'rate limited' } }) };
+      throw new Error('network down');
+    }
+    return reply(url, init);
+  });
+
+  chooseAccount(TRADER);
+  expect(await screen.findByText(UNREADABLE)).toBeInTheDocument();
+  expect(save()).toBeDisabled();
+
+  chooseAccount(TRADER);
+  await waitFor(() => expect(failedReads).toBe(2));
+  expect(await screen.findByText(UNREADABLE)).toBeInTheDocument();
+  expect(save()).toBeDisabled();
+
+  chooseAccount(TRADER);
+  await waitFor(() => expect(collateral()).toHaveValue(42));
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(save()).toBeEnabled();
+});
+
+it('checks that a typed account of a template without an IDL exists, without decoding it', async () => {
+  await pickTypedAccountTemplate({ ...typedAccountTemplate, id: 'raw-collateral', name: 'Raw collateral', idl: null });
+  const save = () => screen.getByRole('button', { name: 'Add to Selected Slot' });
+
+  chooseAccount(MISSING_ACCOUNT);
+  expect(await screen.findByText('No account at this address.')).toBeInTheDocument();
+  expect(save()).toBeDisabled();
+
+  chooseAccount(TRADER);
+  await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  expect(save()).toBeEnabled();
+  expect(rpcParams().at(-1)).toEqual([
+    TRADER,
+    { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
+  ]);
+});
+
 it('steps forward to the slot after the processed one, which surfnet reads ahead of the finalized default', async () => {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
