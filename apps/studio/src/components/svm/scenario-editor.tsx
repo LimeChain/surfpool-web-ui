@@ -25,6 +25,7 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
+import { PublicKey } from '@solana/web3.js';
 import { logger } from '@surfpool/shared';
 import {
   Combobox,
@@ -42,7 +43,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { customValueOption, findOptionByTypedValue, resolveTokenSelectorOptions } from './token-selector-options';
+import {
+  customValueOption,
+  findOptionByTypedValue,
+  resolveTokenSelectorOptions,
+  type TokenSelectorOption,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -152,6 +158,17 @@ const PAUSED_CLOCK_WARNING =
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
 
+type TypedAccountIssue = 'missing' | 'foreign' | 'unverified' | null;
+
+const isSolanaAddress = (value: string) => {
+  try {
+    new PublicKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
@@ -173,6 +190,9 @@ export default function ScenarioEditor({
   // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
+  const [typedAccount, setTypedAccount] = useState('');
+  const [accountQuery, setAccountQuery] = useState('');
+  const [typedAccountIssue, setTypedAccountIssue] = useState<TypedAccountIssue>(null);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -189,7 +209,14 @@ export default function ScenarioEditor({
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
+  const needsTypedAccount = leavesAccountToOverride(selectedAction?.template?.address);
+  const hasTypedAccount = isSolanaAddress(typedAccount);
+  const isAccountQueryInvalid = !!accountQuery.trim() && !isSolanaAddress(accountQuery.trim());
+  const hasUsableTypedAccount = hasTypedAccount && !typedAccountIssue;
+  const accountSelection = resolveTokenSelectorOptions([], typedAccount);
+
   const accountRequestRef = useRef(0);
+  const loadedTypedAccountRef = useRef('');
   // A ref, so a second click sees the Step in flight before the next render
   const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
@@ -644,13 +671,20 @@ export default function ScenarioEditor({
   // Register IDL and fetch account data when an action is selected
   const handleActionSelect = async (action: Action, accountPubkey?: string) => {
     const requestId = ++accountRequestRef.current;
+    loadedTypedAccountRef.current = accountPubkey ?? '';
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
+    setTypedAccount(accountPubkey ?? '');
+    setAccountQuery('');
+    setTypedAccountIssue(null);
 
-    if (!action.template?.idl || !action.template?.address) {
+    // Without an IDL, as on raw-layout templates, only a given account is read: nothing is decoded,
+    // but the read checks that the account exists.
+    const hasIdl = !!action.template?.idl;
+    if (!action.template?.address || (!hasIdl && !accountPubkey)) {
       console.warn('Action template missing IDL or address');
       setLoadingAccountData(false);
       return;
@@ -672,6 +706,10 @@ export default function ScenarioEditor({
       }
       // A PDA template, or one that leaves the account to the override, reads the saved account.
       if (accountPubkey && !addressString) addressString = accountPubkey;
+      if (!addressString && leavesAccountToOverride(action.template.address)) {
+        setLoadingAccountData(false);
+        return;
+      }
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
@@ -692,7 +730,7 @@ export default function ScenarioEditor({
         method: 'getAccountInfo',
         params: [
           addressString,
-          inputsOnly
+          inputsOnly || !hasIdl
             ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
             : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
@@ -710,9 +748,21 @@ export default function ScenarioEditor({
       logger.log('✅ Account info received:', accountInfoData);
       if (requestId !== accountRequestRef.current) return;
 
-      if (accountInfoData.result?.value?.data?.parsed) {
+      const account = accountInfoData.result?.value;
+      let issue: TypedAccountIssue = null;
+      if (accountPubkey && leavesAccountToOverride(action.template.address)) {
+        const programId = action.template.idl?.address;
+        if (accountInfoData.error) issue = 'unverified';
+        else if (!account) issue = 'missing';
+        else if (programId && account.owner !== programId) issue = 'foreign';
+      }
+      // A read that failed is no read: choosing the same address again retries it.
+      if (issue === 'unverified') loadedTypedAccountRef.current = '';
+      setTypedAccountIssue(issue);
+
+      if (!issue && account?.data?.parsed) {
         // Populate accountData with the parsed data
-        const parsed = accountInfoData.result.value.data.parsed;
+        const parsed = account.data.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
@@ -720,9 +770,49 @@ export default function ScenarioEditor({
       setLoadingAccountData(false);
     } catch (error) {
       console.error('Error loading account data:', error);
-      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
+      if (requestId !== accountRequestRef.current) return;
+      if (accountPubkey && leavesAccountToOverride(action.template?.address)) {
+        loadedTypedAccountRef.current = '';
+        setTypedAccountIssue('unverified');
+      }
+      setLoadingAccountData(false);
     }
   };
+
+  // The read fills the fields and pulls the account into the local VM, without which Play skips it
+  const handleTypedAccountChange = (option: TokenSelectorOption | null) => {
+    const pubkey = option?.value != null ? String(option.value) : '';
+    setTypedAccount(pubkey);
+    if (!selectedAction) return;
+    if (pubkey) {
+      if (pubkey !== loadedTypedAccountRef.current) handleActionSelect(selectedAction, pubkey);
+      return;
+    }
+    // A finished read stays, so choosing its address again keeps the edits; a read in flight must not fill the fields
+    if (loadingAccountData) {
+      accountRequestRef.current++;
+      loadedTypedAccountRef.current = '';
+      setAccountData({});
+      setLoadingAccountData(false);
+    }
+  };
+
+  const isTypedAccountReady = (action: Action) =>
+    !leavesAccountToOverride(action.template?.address) ||
+    (hasUsableTypedAccount && typedAccount === loadedTypedAccountRef.current);
+
+  const typedAccountOption = (query: string) =>
+    isSolanaAddress(query) && !findOptionByTypedValue(accountSelection.options, query)
+      ? customValueOption(query)
+      : null;
+
+  const displayAccount = (option: TokenSelectorOption | null) => (option?.value != null ? String(option.value) : '');
+
+  const renderAccountOption = (option: TokenSelectorOption) => (
+    <ComboboxOption key={option.id} value={option}>
+      <ComboboxLabel>{option.metadata?.symbol}</ComboboxLabel>
+    </ComboboxOption>
+  );
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
@@ -803,7 +893,9 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: leavesAccountToOverride(action.template?.address)
+                  ? { pubkey: typedAccount }
+                  : action.template?.address,
               },
             ],
           };
@@ -843,15 +935,12 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A template with no address keeps the account the override was saved for, such as a trader
-                    // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account.
-                    account:
-                      leavesAccountToOverride(action.template?.address) &&
-                      existingAction.actionId === action.id &&
-                      existingAction.account?.pubkey
-                        ? existingAction.account
-                        : action.template?.address,
+                    // A template with no address takes the typed account, which reopening fills with the one the
+                    // override was saved for, such as a trader given to a preset. Any other address, a PDA included,
+                    // comes from the template, so edited seed fields such as a token or fee tier pick the new account.
+                    account: leavesAccountToOverride(action.template?.address)
+                      ? { pubkey: typedAccount }
+                      : action.template?.address,
                   }
                 : existingAction
             ),
@@ -1937,6 +2026,53 @@ export default function ScenarioEditor({
                           <div className="flex flex-1 flex-col overflow-y-auto p-6">
                             {selectedAction ? (
                               <>
+                                {needsTypedAccount && (
+                                  <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                    <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                      Account selection
+                                    </h5>
+                                    <div className="space-y-2">
+                                      <label className="block text-sm font-medium text-zinc-300">Account</label>
+                                      <p className="text-xs text-zinc-500">
+                                        The account this override changes. Paste its address.
+                                      </p>
+                                      <Combobox<TokenSelectorOption | null>
+                                        value={accountSelection.selectedOption}
+                                        onChange={handleTypedAccountChange}
+                                        options={accountSelection.options}
+                                        displayValue={displayAccount}
+                                        customOption={typedAccountOption}
+                                        onQueryChange={setAccountQuery}
+                                        invalid={isAccountQueryInvalid}
+                                        immediate
+                                        placeholder="Paste an account address..."
+                                        aria-label="Account"
+                                      >
+                                        {renderAccountOption}
+                                      </Combobox>
+                                      {isAccountQueryInvalid && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a valid Solana address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'missing' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          No account at this address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'foreign' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a {selectedProtocol?.title} account.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'unverified' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Could not read this account. Pick it again to retry.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="mb-4">
                                   <div className="flex items-center justify-between">
                                     <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
@@ -2703,7 +2839,12 @@ export default function ScenarioEditor({
                                   <div className="flex justify-end">
                                     <button
                                       onClick={() => {
-                                        if (selectedSlotId && selectedProtocol && selectedAction) {
+                                        if (
+                                          selectedSlotId &&
+                                          selectedProtocol &&
+                                          selectedAction &&
+                                          isTypedAccountReady(selectedAction)
+                                        ) {
                                           if (editingAction) {
                                             // Update existing action
                                             updateActionInSlot(
@@ -2724,9 +2865,14 @@ export default function ScenarioEditor({
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
+                                          setTypedAccount('');
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={
+                                        !selectedSlotId ||
+                                        !selectedAction ||
+                                        (needsTypedAccount && !hasUsableTypedAccount)
+                                      }
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
