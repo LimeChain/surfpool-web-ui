@@ -11,6 +11,7 @@ export interface AIModel {
   name: string;
   description: string;
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | (string & {});
+  alwaysThinks?: boolean;
 }
 
 export interface AIProviderConfig {
@@ -30,20 +31,19 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     requiresKey: true,
     models: [
       {
-        id: 'groq-llama-8b',
+        id: 'groq-gpt-oss-20b',
         provider: 'groq',
-        model: 'llama-3.1-8b-instant',
-        name: 'Llama 8B',
+        model: 'openai/gpt-oss-20b',
+        name: 'GPT-OSS 20B',
         description: 'Cheapest',
       },
       {
-        id: 'groq-llama-70b',
+        id: 'groq-gpt-oss-120b',
         provider: 'groq',
-        model: 'llama-3.3-70b-versatile',
-        name: 'Llama 70B',
-        description: 'Balanced',
+        model: 'openai/gpt-oss-120b',
+        name: 'GPT-OSS 120B',
+        description: 'Best',
       },
-      { id: 'groq-mixtral', provider: 'groq', model: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', description: 'Best' },
     ],
   },
   {
@@ -60,28 +60,29 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     requiresKey: true,
     models: [
       {
-        id: 'openai-gpt5.6-luna',
+        id: 'openai-gpt6-luna',
         provider: 'openai',
-        model: 'gpt-5.6-luna',
-        name: 'GPT-5.6 Luna',
+        model: 'gpt-6-luna',
+        name: 'GPT-6 Luna',
         description: 'Cheapest',
         reasoningEffort: 'medium',
       },
       {
-        id: 'openai-gpt5.6-terra',
+        id: 'openai-gpt6.1-terra',
         provider: 'openai',
-        model: 'gpt-5.6-terra',
-        name: 'GPT-5.6 Terra',
+        model: 'gpt-6.1-terra',
+        name: 'GPT-6.1 Terra',
         description: 'Balanced',
         reasoningEffort: 'medium',
       },
       {
-        id: 'openai-gpt5.6-sol',
+        id: 'openai-gpt6.1-sol',
         provider: 'openai',
-        model: 'gpt-5.6-sol',
-        name: 'GPT-5.6 Sol',
+        model: 'gpt-6.1-sol',
+        name: 'GPT-6.1 Sol',
         description: 'Best',
         reasoningEffort: 'medium',
+        alwaysThinks: true,
       },
     ],
   },
@@ -94,18 +95,26 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
       {
         id: 'claude-sonnet',
         provider: 'claude',
-        model: 'claude-sonnet-5',
-        name: 'Sonnet 5',
+        model: 'claude-sonnet-5-5',
+        name: 'Sonnet 5.5',
         description: 'Cheapest',
       },
       {
         id: 'claude-opus',
         provider: 'claude',
-        model: 'claude-opus-5',
-        name: 'Opus 5',
+        model: 'claude-opus-5-5',
+        name: 'Opus 5.5',
         description: 'Balanced',
+        alwaysThinks: true,
       },
-      { id: 'claude-fable', provider: 'claude', model: 'claude-fable-5', name: 'Fable 5', description: 'Best' },
+      {
+        id: 'claude-fable',
+        provider: 'claude',
+        model: 'claude-fable-5-2',
+        name: 'Fable 5.2',
+        description: 'Best',
+        alwaysThinks: true,
+      },
     ],
   },
   {
@@ -114,13 +123,13 @@ export const AI_PROVIDERS: AIProviderConfig[] = [
     icon: '/assets/gemini.svg',
     requiresKey: true,
     models: [
-      { id: 'gemini-flash', provider: 'gemini', model: 'gemini-2.5-flash', name: 'Flash', description: 'Cheapest' },
-      { id: 'gemini-pro', provider: 'gemini', model: 'gemini-2.5-pro', name: 'Pro', description: 'Balanced' },
+      { id: 'gemini-flash', provider: 'gemini', model: 'gemini-3.8-flash', name: 'Flash', description: 'Cheapest' },
+      { id: 'gemini-pro', provider: 'gemini', model: 'gemini-3.1-pro-preview', name: 'Pro', description: 'Balanced' },
     ],
   },
 ];
 
-export const DEFAULT_MODEL_ID = 'groq-llama-8b';
+export const DEFAULT_MODEL_ID = 'groq-gpt-oss-20b';
 
 export function getModelById(id: string): AIModel | undefined {
   for (const provider of AI_PROVIDERS) {
@@ -496,11 +505,13 @@ export async function* streamClaudeResponse(
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const anthropicTools = mcpToolsToAnthropicTools(tools);
-  const disableThinking = model !== 'claude-fable-5' && !thinkingEnabled;
+  const modelConfig = AI_PROVIDERS.find((p) => p.id === 'claude')?.models.find((m) => m.model === model);
+  // A Claude model that can run without thinking takes between_tools, not disabled.
+  const disableThinking = !modelConfig?.alwaysThinks && !thinkingEnabled;
 
   let messages: any[] = [{ role: 'user', content: prompt }];
-  // Room for the 4-round drill-down plus a retriable tool error, without allowing a real runaway.
-  const MAX_ITERATIONS = 8;
+  // A pair lookup takes about 7 rounds. 12 leaves room for retried tool errors without allowing a real runaway.
+  const MAX_ITERATIONS = 12;
   let iterations = 0;
   let finished = false;
 
@@ -524,7 +535,7 @@ export async function* streamClaudeResponse(
         tools: anthropicTools,
         messages,
         stream: true,
-        ...(disableThinking ? { thinking: { type: 'disabled' } } : {}),
+        ...(disableThinking ? { thinking: { type: 'between_tools' } } : {}),
       }),
       signal,
     });
@@ -710,12 +721,12 @@ export async function* streamOpenAIResponse(
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const responsesTools = mcpToolsToResponsesTools(tools);
-  const reasoningEffort =
-    AI_PROVIDERS.find((p) => p.id === 'openai')?.models.find((m) => m.model === model)?.reasoningEffort ?? 'medium';
-  // GPT-5.6 defaults to medium when reasoning is omitted, so OFF must send an explicit 'none'.
-  const effort = thinkingEnabled ? reasoningEffort : 'none';
+  const modelConfig = AI_PROVIDERS.find((p) => p.id === 'openai')?.models.find((m) => m.model === model);
+  const reasoningEffort = modelConfig?.reasoningEffort ?? 'medium';
+  // GPT-6 defaults to medium when reasoning is omitted, so OFF must send an explicit 'none'.
+  const effort = thinkingEnabled || modelConfig?.alwaysThinks ? reasoningEffort : 'none';
 
-  const MAX_ITERATIONS = 8;
+  const MAX_ITERATIONS = 12;
   let previousResponseId: string | null = null;
   // First round sends the prompt; later rounds carry only the tool outputs via previous_response_id.
   let input: any[] = [{ role: 'user', content: prompt }];
@@ -877,7 +888,7 @@ export async function* streamGroqResponse(
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: prompt },
   ];
-  const MAX_ITERATIONS = 5;
+  const MAX_ITERATIONS = 12;
   let iterations = 0;
 
   while (iterations < MAX_ITERATIONS) {
@@ -988,12 +999,15 @@ export async function* streamGroqResponse(
       messages.push({ role: 'assistant', tool_calls: assistantToolCalls });
       messages.push(...toolResults);
     } else {
-      // No more tool calls - exit loop
-      break;
+      yield { type: 'done', content: null };
+      return;
     }
   }
 
-  yield { type: 'done', content: null };
+  yield {
+    type: 'error',
+    content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
+  };
 }
 
 // Stream response from Gemini
@@ -1100,7 +1114,7 @@ export async function* streamOllamaResponse(
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: prompt },
   ];
-  const MAX_ITERATIONS = 5;
+  const MAX_ITERATIONS = 12;
   let iterations = 0;
   let useTools = openaiTools.length > 0;
 
@@ -1217,12 +1231,15 @@ export async function* streamOllamaResponse(
       messages.push({ role: 'assistant', tool_calls: assistantToolCalls });
       messages.push(...toolResults);
     } else {
-      // No more tool calls - exit loop
-      break;
+      yield { type: 'done', content: null };
+      return;
     }
   }
 
-  yield { type: 'done', content: null };
+  yield {
+    type: 'error',
+    content: `Stopped after ${MAX_ITERATIONS} tool rounds without a final answer. Try a more specific request.`,
+  };
 }
 
 // Main streaming function
