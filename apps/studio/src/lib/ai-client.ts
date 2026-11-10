@@ -505,11 +505,12 @@ export async function* streamClaudeResponse(
   signal?: AbortSignal
 ): AsyncGenerator<{ type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error'; content: any }> {
   const anthropicTools = mcpToolsToAnthropicTools(tools);
-  // Only Sonnet 5.5 can run without thinking, and it takes between_tools, not disabled.
-  const disableThinking = model === 'claude-sonnet-5-5' && !thinkingEnabled;
+  const modelConfig = AI_PROVIDERS.find((p) => p.id === 'claude')?.models.find((m) => m.model === model);
+  // A Claude model that can run without thinking takes between_tools, not disabled.
+  const disableThinking = !modelConfig?.alwaysThinks && !thinkingEnabled;
 
   let messages: any[] = [{ role: 'user', content: prompt }];
-  // Room for the 4-round drill-down plus a retriable tool error, without allowing a real runaway.
+  // A pair lookup takes about 7 rounds. 12 leaves room for retried tool errors without allowing a real runaway.
   const MAX_ITERATIONS = 12;
   let iterations = 0;
   let finished = false;
