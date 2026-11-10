@@ -76,7 +76,7 @@ const stepAction = (template: any, account: unknown = template.address, override
   overrides,
 });
 
-const renderEditor = (...actions: ReturnType<typeof stepAction>[]) =>
+const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { modifiedFields?: string[] }>) =>
   render(
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
@@ -104,14 +104,14 @@ async function openEditor(
   fireEvent.click(await screen.findByText(template.name));
 }
 
-const savedOverride = async () => {
+const savedOverride = async (index = 0) => {
   fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
   const patch = await waitFor(() => {
     const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(call).toBeDefined();
     return call!;
   });
-  return JSON.parse(patch[1].body).overrides[0];
+  return JSON.parse(patch[1].body).overrides[index];
 };
 
 const pda = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { propertyRef: 'mint' }] } };
@@ -206,6 +206,85 @@ it.each(marketTemplates)('edits and saves $name using input template fields', as
 
 const rpcParams = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params);
+
+const poolTemplate = {
+  ...collateralTemplate,
+  id: 'jupiter-perps-pool',
+  name: 'Pool LP price guard',
+  protocol: 'Phoenix Eternal',
+  accountType: 'Pool',
+  address: { pubkey: 'pool' },
+  properties: [{ path: 'max_lp_token_price_change_bps' }],
+  idl: {
+    types: [
+      {
+        name: 'Pool',
+        type: {
+          kind: 'struct',
+          fields: [
+            { name: 'name', type: 'string' },
+            { name: 'bump', type: 'u8' },
+            { name: 'aum_usd', type: 'u64' },
+            { name: 'max_lp_token_price_change_bps', type: 'u64' },
+          ],
+        },
+      },
+    ],
+  },
+};
+const poolAccount = { name: 'Pool', bump: 252, aum_usd: 999, aum_usd_updated_at: 1, max_lp_token_price_change_bps: 25 };
+
+const readsPoolAccount = () =>
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () =>
+      url.endsWith('/templates') ? [poolTemplate] : { result: { value: { data: { parsed: { ...poolAccount } } } } },
+  }));
+
+it('saves only the edited field of the account it reads, not the rest of the account', async () => {
+  await openEditor(poolTemplate);
+  readsPoolAccount();
+  fireEvent.click(await screen.findByRole('heading', { name: poolTemplate.name }));
+  const input = await screen.findByPlaceholderText('Enter max_lp_token_price_change_bps...');
+  await waitFor(() => expect(input).toHaveValue(25));
+
+  fireEvent.change(input, { target: { value: '50' } });
+
+  expect((await savedOverride()).values).toEqual({ max_lp_token_price_change_bps: 50 });
+});
+
+it('saves only the edited field again when a new override is reopened and updated without edits', async () => {
+  await loadEditor(poolTemplate);
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${poolTemplate.name}`));
+  readsPoolAccount();
+  const protocolIcons = await waitFor(() => {
+    const icons = screen.getAllByAltText('Phoenix Eternal');
+    expect(icons).toHaveLength(2);
+    return icons;
+  });
+  fireEvent.click(protocolIcons[1]);
+  const input = await screen.findByPlaceholderText('Enter max_lp_token_price_change_bps...');
+  await waitFor(() => expect(input).toHaveValue(25));
+  fireEvent.change(input, { target: { value: '50' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add to Selected Slot' }));
+
+  fireEvent.click((await screen.findAllByText(poolTemplate.name))[1]);
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter max_lp_token_price_change_bps...')).toHaveValue(50));
+  fetchMock.mockClear();
+
+  expect((await savedOverride(1)).values).toEqual({ max_lp_token_price_change_bps: 50 });
+});
+
+it('keeps every saved value of a reopened override saved without edits', async () => {
+  const values = { max_lp_token_price_change_bps: 40, 'limit.max_aum_usd': 5, aum_usd: 7 };
+  readsPoolAccount();
+  renderEditor({ ...stepAction(poolTemplate, poolTemplate.address, values), modifiedFields: Object.keys(values) });
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${poolTemplate.name}`));
+  fireEvent.click(await screen.findByText(poolTemplate.name));
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter max_lp_token_price_change_bps...')).toHaveValue(40));
+
+  expect((await savedOverride()).values).toEqual(values);
+});
 
 it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
   await openEditor(collateralTemplate, {}, { pubkey: 'saved-trader' });

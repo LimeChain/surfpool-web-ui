@@ -605,10 +605,11 @@ export function buildUpdatePayload(scenario: Scenario) {
 /**
  * Collect an action's override values into the flat dot-notation map the backend expects.
  *
- * Values arrive in two shapes: entries restored from the backend (and constant_ref selections
- * like feed_id) are already flat at the top level, while fields edited in the UI live nested
- * inside the account-shaped editing state, reachable only through their dotted paths in
- * modifiedFields. Dropping either shape loses data, so both are collected.
+ * Only the paths in modifiedFields are sent. In the editor, overrides is the whole account as it
+ * was read when the override was selected, so any other field is a stale snapshot that would
+ * overwrite the live account when the scenario plays. A path is either a flat key (values
+ * restored from the backend) or a dotted path into the nested editing state. Without
+ * modifiedFields, every top-level value is the intended one and is kept.
  */
 export function flattenOverrideValues(
   overrides: Record<string, unknown> | undefined,
@@ -621,22 +622,19 @@ export function flattenOverrideValues(
   const isNestedObject = (value: unknown): boolean =>
     value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof LosslessNumber);
 
-  for (const [key, value] of Object.entries(overrides)) {
-    if (!isNestedObject(value)) {
-      flat[key] = value;
-    }
-  }
-
-  for (const path of modifiedFields ?? []) {
-    if (path in flat) continue;
-
+  for (const path of modifiedFields ?? Object.keys(overrides)) {
     let current: unknown = overrides;
-    for (const key of path.split('.')) {
-      if (isNestedObject(current)) {
-        current = (current as Record<string, unknown>)[key];
-      } else {
-        current = undefined;
-        break;
+    if (Object.prototype.hasOwnProperty.call(overrides, path)) {
+      current = overrides[path];
+    } else {
+      // Arrays are walked too: a path such as prices.3.price.value edits one entry of an array.
+      for (const key of path.split('.')) {
+        if ((isNestedObject(current) || Array.isArray(current)) && Object.prototype.hasOwnProperty.call(current, key)) {
+          current = (current as Record<string, unknown>)[key];
+        } else {
+          current = undefined;
+          break;
+        }
       }
     }
 

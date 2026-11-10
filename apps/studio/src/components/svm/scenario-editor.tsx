@@ -304,7 +304,7 @@ export default function ScenarioEditor({
           const overrides = slots.flatMap((slot) =>
             slot.actions.map((action) => {
               // The backend expects flat dot-notation values ("price_message.price": 123);
-              // fields edited in the UI live nested and are reachable via modifiedFields
+              // only the paths in modifiedFields are sent, not the rest of the account read
               const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
               const original = (action.original ?? {}) as Partial<OverridePayload>;
@@ -952,7 +952,7 @@ export default function ScenarioEditor({
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
         // The backend expects flat dot-notation values ("price_message.price": 123);
-        // fields edited in the UI live nested and are reachable via modifiedFields
+        // only the paths in modifiedFields are sent, not the rest of the account read
         const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
         const original = (action.original ?? {}) as Partial<OverridePayload>;
@@ -1412,6 +1412,7 @@ export default function ScenarioEditor({
 
                                                     // Extract constant_ref values from saved PDA seeds
                                                     // This restores "PDA Configuration" values when editing an existing override
+                                                    const seedFields = new Set<string>();
                                                     if (
                                                       action.account?.pda?.seeds &&
                                                       foundAction.template?.address?.pda?.seeds
@@ -1488,6 +1489,7 @@ export default function ScenarioEditor({
                                                               }
 
                                                               restoredData[propName] = savedPubkey;
+                                                              seedFields.add(propName);
                                                             }
                                                           }
 
@@ -1525,6 +1527,7 @@ export default function ScenarioEditor({
                                                               }
 
                                                               restoredData[propName] = savedValue;
+                                                              seedFields.add(propName);
                                                             }
                                                           }
 
@@ -1580,6 +1583,7 @@ export default function ScenarioEditor({
                                                               }
 
                                                               restoredData[propName] = hexValue;
+                                                              seedFields.add(propName);
                                                             }
                                                           }
 
@@ -1603,13 +1607,11 @@ export default function ScenarioEditor({
                                                     setAccountData(restoredData);
 
                                                     // Combine action.modifiedFields with any restored constant_ref fields
-                                                    const allModifiedFields = new Set(action.modifiedFields || []);
-                                                    // Add all keys from restoredData that came from PDA seeds
-                                                    Object.keys(restoredData).forEach((key) => {
-                                                      if (restoredData[key] !== undefined && restoredData[key] !== '') {
-                                                        allModifiedFields.add(key);
-                                                      }
-                                                    });
+                                                    // An action that names no modified fields owns every value it carries
+                                                    const allModifiedFields = new Set([
+                                                      ...(action.modifiedFields ?? Object.keys(action.overrides ?? {})),
+                                                      ...seedFields,
+                                                    ]);
                                                     setModifiedFields(allModifiedFields);
                                                     if (action.fetchBeforeUse !== undefined) {
                                                       setFetchBeforeUse(action.fetchBeforeUse);
