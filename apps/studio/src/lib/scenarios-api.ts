@@ -624,12 +624,12 @@ export function flattenOverrideValues(
 
   for (const path of modifiedFields ?? Object.keys(overrides)) {
     let current: unknown = overrides;
-    if (path in overrides) {
+    if (Object.prototype.hasOwnProperty.call(overrides, path)) {
       current = overrides[path];
     } else {
       // Arrays are walked too: a path such as prices.3.price.value edits one entry of an array.
       for (const key of path.split('.')) {
-        if (isNestedObject(current) || Array.isArray(current)) {
+        if ((isNestedObject(current) || Array.isArray(current)) && Object.prototype.hasOwnProperty.call(current, key)) {
           current = (current as Record<string, unknown>)[key];
         } else {
           current = undefined;

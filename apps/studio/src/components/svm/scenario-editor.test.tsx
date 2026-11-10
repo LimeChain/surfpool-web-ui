@@ -104,14 +104,14 @@ async function openEditor(
   fireEvent.click(await screen.findByText(template.name));
 }
 
-const savedOverride = async () => {
+const savedOverride = async (index = 0) => {
   fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
   const patch = await waitFor(() => {
     const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(call).toBeDefined();
     return call!;
   });
-  return JSON.parse(patch[1].body).overrides[0];
+  return JSON.parse(patch[1].body).overrides[index];
 };
 
 const pda = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { propertyRef: 'mint' }] } };
@@ -251,6 +251,28 @@ it('saves only the edited field of the account it reads, not the rest of the acc
   fireEvent.change(input, { target: { value: '50' } });
 
   expect((await savedOverride()).values).toEqual({ max_lp_token_price_change_bps: 50 });
+});
+
+it('saves only the edited field again when a new override is reopened and updated without edits', async () => {
+  await loadEditor(poolTemplate);
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${poolTemplate.name}`));
+  readsPoolAccount();
+  const protocolIcons = await waitFor(() => {
+    const icons = screen.getAllByAltText('Phoenix Eternal');
+    expect(icons).toHaveLength(2);
+    return icons;
+  });
+  fireEvent.click(protocolIcons[1]);
+  const input = await screen.findByPlaceholderText('Enter max_lp_token_price_change_bps...');
+  await waitFor(() => expect(input).toHaveValue(25));
+  fireEvent.change(input, { target: { value: '50' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add to Selected Slot' }));
+
+  fireEvent.click((await screen.findAllByText(poolTemplate.name))[1]);
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter max_lp_token_price_change_bps...')).toHaveValue(50));
+  fetchMock.mockClear();
+
+  expect((await savedOverride(1)).values).toEqual({ max_lp_token_price_change_bps: 50 });
 });
 
 it('keeps every saved value of a reopened override saved without edits', async () => {

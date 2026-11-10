@@ -753,6 +753,10 @@ describe('flattenOverrideValues', () => {
     expect(flattenOverrideValues(editedAccountData, [])).toEqual({});
   });
 
+  it('ignores a path that names an inherited property, not a field of the account', () => {
+    expect(flattenOverrideValues(editedAccountData, ['constructor', 'price_message.toString'])).toEqual({});
+  });
+
   it('resolves an edited path through an array entry', () => {
     const scope = { prices: [{ price: { value: 1 } }, { price: { value: 2 } }], tokens: 512 };
     expect(flattenOverrideValues(scope, ['prices.1.price.value'])).toEqual({ 'prices.1.price.value': 2 });
