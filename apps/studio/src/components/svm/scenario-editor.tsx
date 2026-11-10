@@ -154,6 +154,8 @@ const PAUSED_CLOCK_WARNING =
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
 
+type TypedAccountIssue = 'missing' | 'foreign' | null;
+
 const isSolanaAddress = (value: string) => {
   try {
     new PublicKey(value);
@@ -185,6 +187,7 @@ export default function ScenarioEditor({
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
   const [typedAccount, setTypedAccount] = useState('');
+  const [typedAccountIssue, setTypedAccountIssue] = useState<TypedAccountIssue>(null);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -205,8 +208,10 @@ export default function ScenarioEditor({
   const typedAccountPubkey = typedAccount.trim();
   const hasTypedAccount = isSolanaAddress(typedAccountPubkey);
   const isTypedAccountInvalid = !!typedAccountPubkey && !hasTypedAccount;
+  const hasUsableTypedAccount = hasTypedAccount && !typedAccountIssue;
 
   const accountRequestRef = useRef(0);
+  const loadedTypedAccountRef = useRef('');
   // A ref, so a second click sees the Step in flight before the next render
   const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
@@ -661,12 +666,14 @@ export default function ScenarioEditor({
   // Register IDL and fetch account data when an action is selected
   const handleActionSelect = async (action: Action, accountPubkey?: string) => {
     const requestId = ++accountRequestRef.current;
+    loadedTypedAccountRef.current = accountPubkey ?? '';
     setSelectedAction(action);
     setAccountData({});
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
     setTypedAccount(accountPubkey ?? '');
+    setTypedAccountIssue(null);
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
@@ -732,9 +739,18 @@ export default function ScenarioEditor({
       logger.log('✅ Account info received:', accountInfoData);
       if (requestId !== accountRequestRef.current) return;
 
-      if (accountInfoData.result?.value?.data?.parsed) {
+      const account = accountInfoData.result?.value;
+      let issue: TypedAccountIssue = null;
+      if (accountPubkey && leavesAccountToOverride(action.template.address)) {
+        const programId = action.template.idl.address;
+        if (!account) issue = 'missing';
+        else if (programId && account.owner !== programId) issue = 'foreign';
+      }
+      setTypedAccountIssue(issue);
+
+      if (!issue && account?.data?.parsed) {
         // Populate accountData with the parsed data
-        const parsed = accountInfoData.result.value.data.parsed;
+        const parsed = account.data.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
@@ -750,10 +766,23 @@ export default function ScenarioEditor({
   const handleTypedAccountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const pubkey = event.target.value.trim();
     setTypedAccount(event.target.value);
-    if (selectedAction && pubkey !== typedAccountPubkey && isSolanaAddress(pubkey)) {
-      handleActionSelect(selectedAction, pubkey);
+    if (!selectedAction) return;
+    if (isSolanaAddress(pubkey)) {
+      if (pubkey !== loadedTypedAccountRef.current) handleActionSelect(selectedAction, pubkey);
+      return;
+    }
+    // A finished read stays, so retyping its address keeps the edits; a read in flight must not fill the fields
+    if (loadingAccountData) {
+      accountRequestRef.current++;
+      loadedTypedAccountRef.current = '';
+      setAccountData({});
+      setLoadingAccountData(false);
     }
   };
+
+  const isTypedAccountReady = (action: Action) =>
+    !leavesAccountToOverride(action.template?.address) ||
+    (hasUsableTypedAccount && typedAccountPubkey === loadedTypedAccountRef.current);
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
@@ -1991,6 +2020,16 @@ export default function ScenarioEditor({
                                         Not a valid Solana address.
                                       </p>
                                     )}
+                                    {hasTypedAccount && typedAccountIssue === 'missing' && (
+                                      <p role="status" className="text-sm text-red-400">
+                                        No account at this address.
+                                      </p>
+                                    )}
+                                    {hasTypedAccount && typedAccountIssue === 'foreign' && (
+                                      <p role="status" className="text-sm text-red-400">
+                                        Not a {selectedProtocol?.title} account.
+                                      </p>
+                                    )}
                                   </div>
                                 )}
                                 <div className="mb-4">
@@ -2759,7 +2798,12 @@ export default function ScenarioEditor({
                                   <div className="flex justify-end">
                                     <button
                                       onClick={() => {
-                                        if (selectedSlotId && selectedProtocol && selectedAction) {
+                                        if (
+                                          selectedSlotId &&
+                                          selectedProtocol &&
+                                          selectedAction &&
+                                          isTypedAccountReady(selectedAction)
+                                        ) {
                                           if (editingAction) {
                                             // Update existing action
                                             updateActionInSlot(
@@ -2784,7 +2828,9 @@ export default function ScenarioEditor({
                                         }
                                       }}
                                       disabled={
-                                        !selectedSlotId || !selectedAction || (needsTypedAccount && !hasTypedAccount)
+                                        !selectedSlotId ||
+                                        !selectedAction ||
+                                        (needsTypedAccount && !hasUsableTypedAccount)
                                       }
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >

@@ -222,7 +222,13 @@ it('keeps the trader of a dialog-created collateral override when it is saved fr
     address: { pubkey: '' },
     properties: [{ path: 'effective_collateral_usdc', type: 'input', value_type: 'string' }],
   };
-  await openEditor(template, { effective_collateral_usdc: '1000' }, { pubkey: trader });
+  await loadEditor(template, { effective_collateral_usdc: '1000' }, { pubkey: trader });
+  fetchMock.mockImplementation(async () => ({
+    ok: true,
+    json: async () => ({ result: { value: { data: ['', 'base64'] } } }),
+  }));
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
   await waitFor(() =>
     expect(rpcParams()).toEqual([
       [trader, { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }],
@@ -370,30 +376,46 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
 
 const TRADER = 'HB66UQf7Bv82q9VPhg9Hz6RcDaTMY1yJm8KVDA8VG7Gp';
 const OTHER_TRADER = '6tgCsPZqZi4rcQWLLgoMHE1XAnRqA7mYYRByGUYxyFwB';
+const FOREIGN_ACCOUNT = 'So11111111111111111111111111111111111111112';
+const MISSING_ACCOUNT = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
+const PHOENIX_PROGRAM = 'EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih';
 const typedAccountTemplate = {
   ...collateralTemplate,
   id: 'typed-collateral',
   name: 'Typed collateral',
   address: { pubkey: '' },
 };
+const ownedTypedAccountTemplate = {
+  ...typedAccountTemplate,
+  id: 'owned-typed-collateral',
+  name: 'Owned collateral',
+  idl: { ...collateralTemplate.idl, address: PHOENIX_PROGRAM },
+};
+// A new object per read, since the editor writes edits into the account it read
+const traderAccount = (pubkey: string) =>
+  ({
+    [TRADER]: { owner: PHOENIX_PROGRAM, data: { parsed: { traderState: { quoteLotCollateral: 42 } } } },
+    [OTHER_TRADER]: { owner: PHOENIX_PROGRAM, data: ['', 'base64'] },
+    [FOREIGN_ACCOUNT]: { owner: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', data: ['', 'base64'] },
+  })[pubkey] ?? null;
 const collateral = () => screen.getByPlaceholderText('Enter quoteLotCollateral...');
 const readAccounts = () => rpcParams().map(([pubkey]) => pubkey);
 
 const mockTraderAccount = (...templates: any[]) =>
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const pubkey = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params[0] : undefined;
-    const value = pubkey === TRADER ? { data: { parsed: { traderState: { quoteLotCollateral: 42 } } } } : null;
+    const value = traderAccount(pubkey);
     return { ok: true, json: async () => (url.endsWith('/templates') ? templates : { result: { value } }) };
   });
 
-const pickTypedAccountTemplate = async () => {
-  mockTraderAccount(collateralTemplate, typedAccountTemplate);
+const pickTypedAccountTemplate = async (template: any = typedAccountTemplate) => {
+  mockTraderAccount(collateralTemplate, template);
   renderEditor(stepAction(collateralTemplate));
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${collateralTemplate.name}`));
   fireEvent.click(await screen.findByText('Phoenix Eternal', { selector: 'span' }));
   await screen.findByPlaceholderText('Enter quoteLotCollateral...');
   expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
-  fireEvent.click(await screen.findByRole('heading', { name: typedAccountTemplate.name }));
+  fireEvent.click(await screen.findByRole('heading', { name: template.name }));
   return screen.findByLabelText('Account');
 };
 
@@ -439,6 +461,61 @@ it('shows and reads the saved account of a reopened override, and clears the fie
   await waitFor(() => expect(collateral()).toHaveValue(null));
   expect((await savedOverride()).account).toEqual({ pubkey: OTHER_TRADER });
   expect(readAccounts()).toEqual([TRADER, OTHER_TRADER]);
+});
+
+it('keeps the edits of a typed account retyped to the same address after an invalid one', async () => {
+  const account = await pickTypedAccountTemplate();
+  fireEvent.change(account, { target: { value: TRADER } });
+  await waitFor(() => expect(collateral()).toHaveValue(42));
+  fireEvent.change(collateral(), { target: { value: '7' } });
+
+  fireEvent.change(account, { target: { value: `${TRADER}.` } });
+  fireEvent.change(account, { target: { value: TRADER } });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  expect(collateral()).toHaveValue(7);
+  expect(readAccounts()).toEqual(['trader', TRADER]);
+  expect((await savedOverride('Add to Selected Slot')).values).toEqual({ 'traderState.quoteLotCollateral': 7 });
+});
+
+it('drops the read of a typed account that is cleared before the read returns', async () => {
+  const account = await pickTypedAccountTemplate();
+  const reply = fetchMock.getMockImplementation()!;
+  let releaseRead = () => {};
+  const readReleased = new Promise<void>((resolve) => (releaseRead = resolve));
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    await readReleased;
+    return reply(url, init);
+  });
+  fireEvent.change(account, { target: { value: TRADER } });
+  await waitFor(() => expect(readAccounts()).toEqual(['trader', TRADER]));
+
+  fireEvent.change(account, { target: { value: '' } });
+  releaseRead();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(collateral()).toHaveValue(null);
+
+  fireEvent.change(account, { target: { value: TRADER } });
+  await waitFor(() => expect(collateral()).toHaveValue(42));
+  expect(readAccounts()).toEqual(['trader', TRADER, TRADER]);
+});
+
+it('keeps an override off a typed account that does not exist or that another program owns', async () => {
+  const account = await pickTypedAccountTemplate(ownedTypedAccountTemplate);
+  const save = () => screen.getByRole('button', { name: 'Add to Selected Slot' });
+
+  fireEvent.change(account, { target: { value: MISSING_ACCOUNT } });
+  expect(await screen.findByText('No account at this address.')).toBeInTheDocument();
+  expect(save()).toBeDisabled();
+
+  fireEvent.change(account, { target: { value: FOREIGN_ACCOUNT } });
+  expect(await screen.findByText('Not a Phoenix Eternal account.')).toBeInTheDocument();
+  expect(save()).toBeDisabled();
+
+  fireEvent.change(account, { target: { value: TRADER } });
+  await waitFor(() => expect(collateral()).toHaveValue(42));
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(save()).toBeEnabled();
 });
 
 it('steps forward to the slot after the processed one, which surfnet reads ahead of the finalized default', async () => {
