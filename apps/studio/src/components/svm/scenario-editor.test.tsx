@@ -81,6 +81,11 @@ async function openEditor(
   fireEvent.click(await screen.findByText(template.name));
 }
 
+const rpcReads = () =>
+  fetchMock.mock.calls
+    .filter(([url, init]) => url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'getAccountInfo')
+    .map(([, init]) => JSON.parse(`${init?.body}`).params[0]);
+
 const savedOverride = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
   const patch = await waitFor(() => {
@@ -376,4 +381,26 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+it('reads the account picked for a featured-account template and fills its fields', async () => {
+  const bank = 'CCKtUs6Cgwo4aaQUmBPmyoApH2gUDErxNZCAntD6LYGh';
+  const bankTemplate = {
+    ...collateralTemplate,
+    id: 'project0-bank-risk-weights',
+    name: 'Bank risk weights',
+    address: { pubkey: null },
+  };
+  await openEditor(bankTemplate, {}, { pubkey: null });
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const params = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params : [];
+    const parsed = { traderState: { quoteLotCollateral: 42 } };
+    return { ok: true, json: async () => ({ result: { value: params[0] === bank ? { data: { parsed } } : null } }) };
+  });
+  fireEvent.click(await screen.findByRole('heading', { name: bankTemplate.name }));
+
+  fireEvent.click((await screen.findAllByRole('button', { name: 'SOL bank' }))[0]);
+
+  await waitFor(() => expect(rpcReads()).toContain(bank));
+  expect(await screen.findByDisplayValue('42')).toBeInTheDocument();
 });
