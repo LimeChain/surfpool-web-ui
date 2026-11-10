@@ -36,7 +36,6 @@ import {
   DropdownItem,
   DropdownLabel,
   DropdownMenu,
-  Input,
   Select,
   Switch,
 } from '@surfpool/ui';
@@ -44,7 +43,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { customValueOption, findOptionByTypedValue, resolveTokenSelectorOptions } from './token-selector-options';
+import {
+  customValueOption,
+  findOptionByTypedValue,
+  resolveTokenSelectorOptions,
+  type TokenSelectorOption,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -187,6 +191,7 @@ export default function ScenarioEditor({
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
   const [typedAccount, setTypedAccount] = useState('');
+  const [accountQuery, setAccountQuery] = useState('');
   const [typedAccountIssue, setTypedAccountIssue] = useState<TypedAccountIssue>(null);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
@@ -205,10 +210,10 @@ export default function ScenarioEditor({
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
   const needsTypedAccount = leavesAccountToOverride(selectedAction?.template?.address);
-  const typedAccountPubkey = typedAccount.trim();
-  const hasTypedAccount = isSolanaAddress(typedAccountPubkey);
-  const isTypedAccountInvalid = !!typedAccountPubkey && !hasTypedAccount;
+  const hasTypedAccount = isSolanaAddress(typedAccount);
+  const isAccountQueryInvalid = !!accountQuery.trim() && !isSolanaAddress(accountQuery.trim());
   const hasUsableTypedAccount = hasTypedAccount && !typedAccountIssue;
+  const accountSelection = resolveTokenSelectorOptions([], typedAccount);
 
   const accountRequestRef = useRef(0);
   const loadedTypedAccountRef = useRef('');
@@ -673,6 +678,7 @@ export default function ScenarioEditor({
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
     setTypedAccount(accountPubkey ?? '');
+    setAccountQuery('');
     setTypedAccountIssue(null);
 
     if (!action.template?.idl || !action.template?.address) {
@@ -763,15 +769,15 @@ export default function ScenarioEditor({
   };
 
   // The read fills the fields and pulls the account into the local VM, without which Play skips it
-  const handleTypedAccountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const pubkey = event.target.value.trim();
-    setTypedAccount(event.target.value);
+  const handleTypedAccountChange = (option: TokenSelectorOption | null) => {
+    const pubkey = option?.value != null ? String(option.value) : '';
+    setTypedAccount(pubkey);
     if (!selectedAction) return;
-    if (isSolanaAddress(pubkey)) {
+    if (pubkey) {
       if (pubkey !== loadedTypedAccountRef.current) handleActionSelect(selectedAction, pubkey);
       return;
     }
-    // A finished read stays, so retyping its address keeps the edits; a read in flight must not fill the fields
+    // A finished read stays, so choosing its address again keeps the edits; a read in flight must not fill the fields
     if (loadingAccountData) {
       accountRequestRef.current++;
       loadedTypedAccountRef.current = '';
@@ -782,7 +788,20 @@ export default function ScenarioEditor({
 
   const isTypedAccountReady = (action: Action) =>
     !leavesAccountToOverride(action.template?.address) ||
-    (hasUsableTypedAccount && typedAccountPubkey === loadedTypedAccountRef.current);
+    (hasUsableTypedAccount && typedAccount === loadedTypedAccountRef.current);
+
+  const typedAccountOption = (query: string) =>
+    isSolanaAddress(query) && !findOptionByTypedValue(accountSelection.options, query)
+      ? customValueOption(query)
+      : null;
+
+  const displayAccount = (option: TokenSelectorOption | null) => (option?.value != null ? String(option.value) : '');
+
+  const renderAccountOption = (option: TokenSelectorOption) => (
+    <ComboboxOption key={option.id} value={option}>
+      <ComboboxLabel>{option.metadata?.symbol}</ComboboxLabel>
+    </ComboboxOption>
+  );
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
   const filteredActions =
@@ -864,7 +883,7 @@ export default function ScenarioEditor({
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
                 account: leavesAccountToOverride(action.template?.address)
-                  ? { pubkey: typedAccountPubkey }
+                  ? { pubkey: typedAccount }
                   : action.template?.address,
               },
             ],
@@ -909,7 +928,7 @@ export default function ScenarioEditor({
                     // override was saved for, such as a trader given to a preset. Any other address, a PDA included,
                     // comes from the template, so edited seed fields such as a token or fee tier pick the new account.
                     account: leavesAccountToOverride(action.template?.address)
-                      ? { pubkey: typedAccountPubkey }
+                      ? { pubkey: typedAccount }
                       : action.template?.address,
                   }
                 : existingAction
@@ -1997,39 +2016,45 @@ export default function ScenarioEditor({
                             {selectedAction ? (
                               <>
                                 {needsTypedAccount && (
-                                  <div className="mb-6 space-y-2 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
-                                    <label
-                                      htmlFor="override-account"
-                                      className="block text-sm font-semibold uppercase tracking-wide text-zinc-400"
-                                    >
-                                      Account
-                                    </label>
-                                    <p className="text-xs text-zinc-500">The account this override changes.</p>
-                                    <Input
-                                      id="override-account"
-                                      value={typedAccount}
-                                      onChange={handleTypedAccountChange}
-                                      invalid={isTypedAccountInvalid}
-                                      placeholder="Account address"
-                                      spellCheck={false}
-                                      autoComplete="off"
-                                      className="font-mono"
-                                    />
-                                    {isTypedAccountInvalid && (
-                                      <p role="status" className="text-sm text-red-400">
-                                        Not a valid Solana address.
+                                  <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                    <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                                      Account selection
+                                    </h5>
+                                    <div className="space-y-2">
+                                      <label className="block text-sm font-medium text-zinc-300">Account</label>
+                                      <p className="text-xs text-zinc-500">
+                                        The account this override changes. Paste its address.
                                       </p>
-                                    )}
-                                    {hasTypedAccount && typedAccountIssue === 'missing' && (
-                                      <p role="status" className="text-sm text-red-400">
-                                        No account at this address.
-                                      </p>
-                                    )}
-                                    {hasTypedAccount && typedAccountIssue === 'foreign' && (
-                                      <p role="status" className="text-sm text-red-400">
-                                        Not a {selectedProtocol?.title} account.
-                                      </p>
-                                    )}
+                                      <Combobox<TokenSelectorOption | null>
+                                        value={accountSelection.selectedOption}
+                                        onChange={handleTypedAccountChange}
+                                        options={accountSelection.options}
+                                        displayValue={displayAccount}
+                                        customOption={typedAccountOption}
+                                        onQueryChange={setAccountQuery}
+                                        invalid={isAccountQueryInvalid}
+                                        immediate
+                                        placeholder="Paste an account address..."
+                                        aria-label="Account"
+                                      >
+                                        {renderAccountOption}
+                                      </Combobox>
+                                      {isAccountQueryInvalid && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a valid Solana address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'missing' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          No account at this address.
+                                        </p>
+                                      )}
+                                      {hasTypedAccount && typedAccountIssue === 'foreign' && (
+                                        <p role="status" className="text-sm text-red-400">
+                                          Not a {selectedProtocol?.title} account.
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                                 <div className="mb-4">

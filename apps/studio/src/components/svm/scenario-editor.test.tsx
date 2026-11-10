@@ -21,7 +21,6 @@ vi.mock('@surfpool/ui', async () => ({
   DropdownItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
   DropdownLabel: ({ children }: any) => <span>{children}</span>,
   DropdownDescription: ({ children }: any) => <span>{children}</span>,
-  Input: ({ invalid, ...props }: any) => <input aria-invalid={invalid} {...props} />,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
   Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
 }));
@@ -419,13 +418,22 @@ const pickTypedAccountTemplate = async (template: any = typedAccountTemplate) =>
   return screen.findByLabelText('Account');
 };
 
+const chooseAccount = (pubkey: string) => {
+  fireEvent.change(screen.getByLabelText('Account'), { target: { value: pubkey } });
+  fireEvent.click(screen.getByRole('button', { name: pubkey.trim() }));
+};
+
 it('adds an override of a template without an address on the account typed for it', async () => {
   const account = await pickTypedAccountTemplate();
   expect(account).toHaveValue('');
   expect(readAccounts()).toEqual(['trader']);
 
   fireEvent.change(account, { target: { value: ` ${TRADER} ` } });
+  expect(comboboxResults('Account')).toEqual([TRADER]);
+  expect(readAccounts()).toEqual(['trader']);
+  fireEvent.click(screen.getByRole('button', { name: TRADER }));
   await waitFor(() => expect(collateral()).toHaveValue(42));
+  expect(account).toHaveValue(TRADER);
   fireEvent.change(collateral(), { target: { value: '7' } });
 
   expect(await savedOverride('Add to Selected Slot')).toMatchObject({
@@ -443,6 +451,7 @@ it('keeps an override of a template without an address from being saved without 
 
   fireEvent.change(account, { target: { value: `${TRADER}.` } });
   expect(screen.getByRole('status')).toHaveTextContent('Not a valid Solana address.');
+  expect(comboboxResults('Account')).toEqual([]);
   expect(save).toBeDisabled();
   expect(readAccounts()).toEqual(['trader']);
 });
@@ -457,7 +466,7 @@ it('shows and reads the saved account of a reopened override, and clears the fie
   expect(account).toHaveValue(TRADER);
   await waitFor(() => expect(collateral()).toHaveValue(5));
 
-  fireEvent.change(account, { target: { value: OTHER_TRADER } });
+  chooseAccount(OTHER_TRADER);
   await waitFor(() => expect(collateral()).toHaveValue(null));
   expect((await savedOverride()).account).toEqual({ pubkey: OTHER_TRADER });
   expect(readAccounts()).toEqual([TRADER, OTHER_TRADER]);
@@ -465,12 +474,12 @@ it('shows and reads the saved account of a reopened override, and clears the fie
 
 it('keeps the edits of a typed account retyped to the same address after an invalid one', async () => {
   const account = await pickTypedAccountTemplate();
-  fireEvent.change(account, { target: { value: TRADER } });
+  chooseAccount(TRADER);
   await waitFor(() => expect(collateral()).toHaveValue(42));
   fireEvent.change(collateral(), { target: { value: '7' } });
 
   fireEvent.change(account, { target: { value: `${TRADER}.` } });
-  fireEvent.change(account, { target: { value: TRADER } });
+  chooseAccount(TRADER);
   await new Promise((resolve) => setTimeout(resolve, 50));
 
   expect(collateral()).toHaveValue(7);
@@ -487,7 +496,7 @@ it('drops the read of a typed account that is cleared before the read returns', 
     await readReleased;
     return reply(url, init);
   });
-  fireEvent.change(account, { target: { value: TRADER } });
+  chooseAccount(TRADER);
   await waitFor(() => expect(readAccounts()).toEqual(['trader', TRADER]));
 
   fireEvent.change(account, { target: { value: '' } });
@@ -495,24 +504,24 @@ it('drops the read of a typed account that is cleared before the read returns', 
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(collateral()).toHaveValue(null);
 
-  fireEvent.change(account, { target: { value: TRADER } });
+  chooseAccount(TRADER);
   await waitFor(() => expect(collateral()).toHaveValue(42));
   expect(readAccounts()).toEqual(['trader', TRADER, TRADER]);
 });
 
 it('keeps an override off a typed account that does not exist or that another program owns', async () => {
-  const account = await pickTypedAccountTemplate(ownedTypedAccountTemplate);
+  await pickTypedAccountTemplate(ownedTypedAccountTemplate);
   const save = () => screen.getByRole('button', { name: 'Add to Selected Slot' });
 
-  fireEvent.change(account, { target: { value: MISSING_ACCOUNT } });
+  chooseAccount(MISSING_ACCOUNT);
   expect(await screen.findByText('No account at this address.')).toBeInTheDocument();
   expect(save()).toBeDisabled();
 
-  fireEvent.change(account, { target: { value: FOREIGN_ACCOUNT } });
+  chooseAccount(FOREIGN_ACCOUNT);
   expect(await screen.findByText('Not a Phoenix Eternal account.')).toBeInTheDocument();
   expect(save()).toBeDisabled();
 
-  fireEvent.change(account, { target: { value: TRADER } });
+  chooseAccount(TRADER);
   await waitFor(() => expect(collateral()).toHaveValue(42));
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   expect(save()).toBeEnabled();
