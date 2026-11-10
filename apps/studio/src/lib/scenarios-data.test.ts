@@ -57,6 +57,19 @@ describe('scenarioFromApiData', () => {
     expect(scenarioFromApiData(noId, 'key-42', templates).id).toBe('key-42');
   });
 
+  it('reads an absent keepAlive as on and keeps keepAlive: false', () => {
+    const s = scenarioFromApiData(
+      {
+        id: 's2',
+        overrides: [{ id: 'o1', templateId: 'pyth-price-feed-v2', scenarioRelativeSlot: 0, keepAlive: false }],
+      },
+      's2',
+      templates
+    );
+    expect(s.steps![0].actions![0].keepAlive).toBe(false);
+    expect(scenarioFromApiData(scenarioData, 's1', templates).steps![0].actions![0].keepAlive).toBe(true);
+  });
+
   it('handles a scenario with no overrides', () => {
     const s = scenarioFromApiData({ id: 'empty' }, 'empty', templates);
     expect(s.steps).toBeUndefined();

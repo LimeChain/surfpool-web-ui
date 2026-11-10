@@ -82,6 +82,7 @@ interface Slot {
     overrides?: Record<string, unknown>;
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
+    keepAlive?: boolean;
     account?: any; // Account address from template (Pubkey or PDA)
     original?: Record<string, unknown>; // Untouched backend override, passed through on save
   }[];
@@ -105,6 +106,7 @@ interface ScenarioEditorProps {
       action: string;
       account?: any; // Preserve account data from backend
       fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
+      keepAlive?: boolean;
       overrides?: Record<string, unknown>; // Preserve the values/overrides from backend
       modifiedFields?: string[]; // Track which fields were modified
       original?: Record<string, unknown>; // Untouched backend override, passed through on save
@@ -173,6 +175,7 @@ export default function ScenarioEditor({
   // asset - SOL is 3 on the Main Market, USDC 13 - so the index has to be selectable.
   const [arrayEntryIndex, setArrayEntryIndex] = useState<Record<string, string>>({});
   const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
+  const [keepAlive, setKeepAlive] = useState(true);
   const [loadingAccountData, setLoadingAccountData] = useState(false);
   const [showProtocolPanel, setShowProtocolPanel] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -320,6 +323,7 @@ export default function ScenarioEditor({
                 label: action.action,
                 enabled: original.enabled ?? true,
                 fetchBeforeUse: action.fetchBeforeUse || false,
+                keepAlive: action.keepAlive ?? true,
               };
 
               // Only include account if it exists, don't send default values
@@ -385,6 +389,7 @@ export default function ScenarioEditor({
           setModifiedFields(new Set());
           setArrayEntryIndex({});
           setFetchBeforeUse(false);
+          setKeepAlive(true);
         } else {
           // Check if the selected slot has more than 1 override
           const selectedSlot = slots.find((s) => s.id === selectedSlotId);
@@ -649,6 +654,7 @@ export default function ScenarioEditor({
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
+    setKeepAlive(true);
 
     if (!action.template?.idl || !action.template?.address) {
       console.warn('Action template missing IDL or address');
@@ -803,6 +809,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
+                keepAlive,
                 account: action.template?.address,
               },
             ],
@@ -843,6 +850,7 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
+                    keepAlive,
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
@@ -968,6 +976,7 @@ export default function ScenarioEditor({
           label: action.action,
           enabled: original.enabled ?? true,
           fetchBeforeUse: action.fetchBeforeUse || false,
+          keepAlive: action.keepAlive ?? true,
         };
 
         // Only include account if it exists, don't send default values
@@ -1194,6 +1203,8 @@ export default function ScenarioEditor({
     };
   }, [selectedAction, studioUrl, rpcUrl]);
 
+  const templateHasKeepAlive = (selectedAction?.template?.keepAlive?.length ?? 0) > 0;
+
   return (
     <div className="relative flex h-full">
       {/* Main Stage - Scrollable */}
@@ -1213,6 +1224,7 @@ export default function ScenarioEditor({
             setSelectedProduct(null);
             setEditingAction(null);
             setFetchBeforeUse(false);
+            setKeepAlive(true);
           }
         }}
       >
@@ -1614,6 +1626,13 @@ export default function ScenarioEditor({
                                                     if (action.fetchBeforeUse !== undefined) {
                                                       setFetchBeforeUse(action.fetchBeforeUse);
                                                     }
+                                                    // A template without a keep-alive list hides the switch, so a saved off is not kept
+                                                    if (
+                                                      action.keepAlive !== undefined &&
+                                                      (foundAction.template?.keepAlive?.length ?? 0) > 0
+                                                    ) {
+                                                      setKeepAlive(action.keepAlive);
+                                                    }
                                                   }
                                                 }
 
@@ -1829,6 +1848,7 @@ export default function ScenarioEditor({
                                 setModifiedFields(new Set());
                                 setArrayEntryIndex({});
                                 setFetchBeforeUse(false);
+                                setKeepAlive(true);
                               }}
                               title="Back to Kamino products"
                               className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
@@ -1860,6 +1880,7 @@ export default function ScenarioEditor({
                             setModifiedFields(new Set());
                             setArrayEntryIndex({});
                             setFetchBeforeUse(false);
+                            setKeepAlive(true);
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
                         >
@@ -1945,12 +1966,23 @@ export default function ScenarioEditor({
                                     <div className="flex items-center gap-3">
                                       <label className="text-sm text-zinc-400">Fetch before use</label>
                                       <Switch checked={fetchBeforeUse} onChange={setFetchBeforeUse} color="purple" />
+                                      {templateHasKeepAlive && (
+                                        <>
+                                          <label className="text-sm text-zinc-400">Keep alive</label>
+                                          <Switch checked={keepAlive} onChange={setKeepAlive} color="purple" />
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                   <p className="mt-2 text-xs text-zinc-500">
                                     Fetch account data just before transaction execution. Useful for price feeds, oracle
                                     updates, and dynamic balances.
                                   </p>
+                                  {templateHasKeepAlive && (
+                                    <p className="mt-1 text-xs text-zinc-500">
+                                      Keep alive: keep this account fresh every slot. Off: write once and let it age.
+                                    </p>
+                                  )}
                                 </div>
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
@@ -2724,6 +2756,7 @@ export default function ScenarioEditor({
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
+                                          setKeepAlive(true);
                                         }
                                       }}
                                       disabled={!selectedSlotId || !selectedAction}
