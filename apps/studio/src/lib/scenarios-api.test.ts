@@ -557,8 +557,8 @@ describe('buildAiPrompt', () => {
   it('adds the featured HumidiFi account addresses', () => {
     const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['humidifi']));
 
-    expect(result).toContain('market 8sKQHfjNhvmAw94PhfvfMcytmqW6jmxvwieYyzXCCPu');
-    expect(result).toContain('USDC vault A3C9xwv4Hfx92M5HQpxUiibSqCa5pYhD2kTwnU5fEPq');
+    expect(result).toContain('market FksffEqnBRixYGR791Qw2MgdU7zNCpHVFYBL4Fa4qVuH');
+    expect(result).toContain('USDC vault 3RWFAQBRkNGq7CMGcTLK3kXDgFTe9jgMeFYqk8nHwcWh');
   });
 
   it('preserves base prompt before protocol line', () => {

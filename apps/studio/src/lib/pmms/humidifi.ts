@@ -3,46 +3,49 @@ import type { FeaturedAccounts, FeaturedProtocol } from '../featured-accounts';
 import type { PmmFairValueAdapter, PmmMarketOption } from '../pmm-fair-value';
 import { listedSymbol, parseDecimalPrice, readDecimals, rpcResult, TEN, ZERO } from '../pmm-price';
 
-/** The HumidiFi markets Studio offers as shortcuts; any other HumidiFi account can be typed instead. */
+/**
+ * The HumidiFi markets Studio offers as shortcuts: the live markets with funded vaults. Any other
+ * HumidiFi account can be typed instead.
+ */
 export const HUMIDIFI_FEATURED_MARKETS = [
   {
     id: 'sol-usdc',
     label: 'SOL / USDC',
-    market: '8sKQHfjNhvmAw94PhfvfMcytmqW6jmxvwieYyzXCCPu',
+    market: 'FksffEqnBRixYGR791Qw2MgdU7zNCpHVFYBL4Fa4qVuH',
     baseSymbol: 'SOL',
     baseMint: 'So11111111111111111111111111111111111111112',
     baseDecimals: 9,
-    baseVault: 'H292B1VbSvD6GuUmSvUvfQstg1Acfzog796uQ7d1ccCw',
+    baseVault: 'C3FzbX9n1YD2dow2dCmEv5uNyyf22Gb3TLAEqGBhw5fY',
     quoteSymbol: 'USDC',
     quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
     quoteDecimals: 6,
-    quoteVault: 'A3C9xwv4Hfx92M5HQpxUiibSqCa5pYhD2kTwnU5fEPq',
+    quoteVault: '3RWFAQBRkNGq7CMGcTLK3kXDgFTe9jgMeFYqk8nHwcWh',
   },
   {
-    id: 'hype-usdc',
-    label: 'HYPE / USDC',
-    market: 'H3TyE2Q3rDrvRXD8PzHYE7BS2hafGuybje4qXCtyWqMH',
-    baseSymbol: 'HYPE',
-    baseMint: '98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g',
-    baseDecimals: 9,
-    baseVault: '49pft8q7cyugVDWnJCXjMHJdb5Uji198k5MognVvA48n',
-    quoteSymbol: 'USDC',
-    quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    quoteDecimals: 6,
-    quoteVault: 'EKFwmKoPA9o3HpoL8AnQd8uNBxtJbaPv4w4tbxNn6iei',
-  },
-  {
-    id: 'jup-usdc',
-    label: 'JUP / USDC',
-    market: 'hKgG7iEDRFNsJSwLYqz8ETHuZwzh6qMMLow8VXa8pLm',
-    baseSymbol: 'JUP',
-    baseMint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+    id: 'pengu-usdc',
+    label: 'PENGU / USDC',
+    market: '2866MvCKPGz9LdnPcmPueoV3mA2Ac1ceEQ8Xqb9VNefu',
+    baseSymbol: 'PENGU',
+    baseMint: '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv',
     baseDecimals: 6,
-    baseVault: 'GRLhXC9eKoZMLBNQqRnNHg62hc4NM2Wm4amm7Aiz4ts',
+    baseVault: '8UwYWkJ78uG7Cy8bZJURzwFfDUTX4oeiAriBQVWwmY8',
     quoteSymbol: 'USDC',
     quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
     quoteDecimals: 6,
-    quoteVault: 'AKaBxaHDdaJEJyQSHNRdLu7yN3JbDDkSG189ssTjSGW8',
+    quoteVault: '6iNgLk2CUJYA6ZVTcaTeSQiaaUfUbYgZZShWCSsTTkPn',
+  },
+  {
+    id: 'wet-usdc',
+    label: 'WET / USDC',
+    market: 'Cc2oMdeNDmZ7ZD8b7igQg1EHjBEinR1Vi6nx2VHpVm6H',
+    baseSymbol: 'WET',
+    baseMint: 'WETZjtprkDMCcUxPi9PfWnowMRZkiGGHDb9rABuRZ2U',
+    baseDecimals: 6,
+    baseVault: '7gxM8fzfJ331g1yddEDUDrz4BLwEEPPPcCDV57pDQWyT',
+    quoteSymbol: 'USDC',
+    quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    quoteDecimals: 6,
+    quoteVault: 'F9JdjxCTiyy9xB4BjvGQAzzxetVJQWAjWzAMxzMMD23D',
   },
   {
     id: 'pump-usdc',

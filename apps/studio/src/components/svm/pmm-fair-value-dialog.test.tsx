@@ -73,8 +73,8 @@ const createScenarioMock = vi.mocked(createTemplateScenario);
 const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const JUP_USDC = HUMIDIFI_FEATURED_MARKETS[2];
-const FEATURED = ['SOL / USDC', 'HYPE / USDC', 'JUP / USDC', 'PUMP / USDC'];
+const WET_USDC = HUMIDIFI_FEATURED_MARKETS[2];
+const FEATURED = ['SOL / USDC', 'PENGU / USDC', 'WET / USDC', 'PUMP / USDC'];
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -150,10 +150,10 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     const search = screen.getByLabelText('PMM market');
 
-    fireEvent.change(search, { target: { value: 'hype/usdc' } });
-    expect(marketNames()).toEqual(['HYPE / USDC']);
+    fireEvent.change(search, { target: { value: 'pengu/usdc' } });
+    expect(marketNames()).toEqual(['PENGU / USDC']);
 
-    fireEvent.change(search, { target: { value: '8sKQ' } });
+    fireEvent.change(search, { target: { value: 'Fksff' } });
     expect(marketNames()).toEqual(['SOL / USDC']);
 
     fireEvent.change(search, { target: { value: 'usdc' } });
@@ -169,9 +169,9 @@ describe('PmmFairValueDialog', () => {
     renderDialog(onCreated);
 
     await screen.findByLabelText('Price of SOL in USDC');
-    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'jup' } });
-    fireEvent.click(screen.getByRole('button', { name: 'JUP / USDC' }));
-    fireEvent.change(screen.getByLabelText('Price of JUP in USDC'), { target: { value: '0.35' } });
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'wet' } });
+    fireEvent.click(screen.getByRole('button', { name: 'WET / USDC' }));
+    fireEvent.change(screen.getByLabelText('Price of WET in USDC'), { target: { value: '0.35' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
@@ -182,7 +182,7 @@ describe('PmmFairValueDialog', () => {
     expect(scenario.overrides).toHaveLength(1);
     expect(price).toMatchObject({
       templateId: 'humidifi-price',
-      account: { pubkey: JUP_USDC.market },
+      account: { pubkey: WET_USDC.market },
       fetchBeforeUse: true,
     });
     expect(String(price.values.fair_value)).toBe('98516241848729');
