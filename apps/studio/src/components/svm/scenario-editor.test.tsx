@@ -212,6 +212,61 @@ it('reads the own account of a fixed-address template with IDL fields as parsed 
   await waitFor(() => expect(rpcParams()).toEqual([['trader', { commitment: 'confirmed', encoding: 'jsonParsed' }]]));
 });
 
+const WEIGHT_PATH = 'config.asset_weight_init.value';
+const POINT_85 = [154, 153, 153, 153, 153, 217, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const weightTemplate = {
+  ...collateralTemplate,
+  id: 'bank-risk-weights',
+  name: 'Risk weights',
+  accountType: 'Bank',
+  address: { pubkey: 'bank' },
+  properties: [{ path: WEIGHT_PATH }],
+  idl: {
+    types: [
+      {
+        name: 'Bank',
+        type: { kind: 'struct', fields: [{ name: 'config', type: { defined: { name: 'BankConfig' } } }] },
+      },
+      {
+        name: 'BankConfig',
+        type: { kind: 'struct', fields: [{ name: 'asset_weight_init', type: { defined: { name: 'WrappedI80F48' } } }] },
+      },
+      { name: 'WrappedI80F48', type: { kind: 'struct', fields: [{ name: 'value', type: { array: ['u8', 16] } }] } },
+    ],
+  },
+};
+
+it('shows a fixed-point field the IDL stores as bytes as a decimal, and saves a typed decimal as its bytes', async () => {
+  await openEditor(weightTemplate, { [WEIGHT_PATH]: POINT_85 });
+  const input = await screen.findByPlaceholderText('Enter value...');
+  expect(input).toHaveValue('0.85');
+  expect(screen.getByText('(I80F48)')).toBeInTheDocument();
+
+  fireEvent.change(input, { target: { value: 'abc' } });
+  expect(screen.getByText('Enter a decimal number that fits I80F48')).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: '0.30' } });
+  expect(input).toHaveValue('0.30');
+  fireEvent.blur(input);
+  expect(input).toHaveValue('0.3');
+
+  expect((await savedOverride()).values).toEqual({
+    [WEIGHT_PATH]: [205, 204, 204, 204, 204, 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  });
+});
+
+it("shows the account's current fixed-point bytes as a decimal", async () => {
+  const bank = { data: { parsed: { config: { asset_weight_init: { value: POINT_85 } } } } };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate, weightTemplate] : { result: { value: bank } }),
+  }));
+  renderEditor(stepAction(collateralTemplate));
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${collateralTemplate.name}`));
+  fireEvent.click(await screen.findByText('Phoenix Eternal', { selector: 'span' }));
+  fireEvent.click(await screen.findByRole('heading', { name: weightTemplate.name }));
+  expect(await screen.findByPlaceholderText('Enter value...')).toHaveValue('0.85');
+});
+
 it('keeps the trader of a dialog-created collateral override when it is saved from the editor', async () => {
   const trader = 'HB66UQf7Bv82q9VPhg9Hz6RcDaTMY1yJm8KVDA8VG7Gp';
   const template = {

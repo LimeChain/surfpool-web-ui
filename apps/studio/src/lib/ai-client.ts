@@ -1,6 +1,7 @@
 'use client';
 
 import { DEFAULT_OLLAMA_URL } from '@surfpool/shared';
+import { withFixedPointBytes } from './fixed-point';
 
 export type AIProvider = 'claude' | 'gemini' | 'groq' | 'ollama' | 'openai';
 
@@ -345,6 +346,16 @@ export async function callMCPTool(
   // Ensure mcpUrl ends with /mcp
   const endpoint = mcpUrl.endsWith('/mcp') ? mcpUrl : `${mcpUrl}/mcp`;
 
+  let callArgs = args;
+  if (toolName === 'create_scenario' && Array.isArray(args?.overrides)) {
+    try {
+      const templates = await fetch(`${endpoint.slice(0, -'/mcp'.length)}/v1/scenarios/templates`);
+      callArgs = withFixedPointBytes(await templates.json(), args);
+    } catch {
+      // Without the templates a decimal for a fixed-point field reaches the engine as is, which refuses it.
+    }
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -355,7 +366,7 @@ export async function callMCPTool(
       jsonrpc: '2.0',
       id: Date.now(),
       method: 'tools/call',
-      params: { name: toolName, arguments: args },
+      params: { name: toolName, arguments: callArgs },
     }),
   });
 
@@ -456,6 +467,7 @@ IMPORTANT: A surfnet (simulation network) is ALREADY RUNNING. You do NOT need to
 - Use realistic values based on current Solana ecosystem norms
 - When prices aren't specified, use reasonable defaults and state your assumptions
 - For Pyth price feeds, prices use 8 decimal precision (e.g., $150.00 = 15000000000)
+- A property described as an I80F48 number, stored as 16 little-endian bytes, also takes its plain decimal here, such as "0.3" for 0.3 or "20" for $20: Studio converts it to the bytes
 
 ## Response Format
 1. Briefly confirm your understanding of the scenario

@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { decimalToFixedPoint, fixedPointFormat, fixedPointToDecimal } from '@/lib/fixed-point';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
@@ -2204,6 +2205,11 @@ export default function ScenarioEditor({
                                           return value.toString();
                                         }
 
+                                        const { idl, accountType } = selectedAction.template ?? {};
+                                        const format = fixedPointFormat(idl, accountType, path);
+                                        const decimal = format && fixedPointToDecimal(value, format);
+                                        if (decimal) return decimal;
+
                                         // Convert objects/arrays to JSON string for display,
                                         // keeping any nested u64 as its exact digits.
                                         if (typeof value === 'object') {
@@ -2437,7 +2443,12 @@ export default function ScenarioEditor({
                                         }
 
                                         // Regular field - render input based on type
-                                        const typeString = String(typeInfo.type);
+                                        const fixedPoint = fixedPointFormat(
+                                          selectedAction.template?.idl,
+                                          selectedAction.template?.accountType,
+                                          fieldPath
+                                        );
+                                        const typeString = fixedPoint?.name ?? String(typeInfo.type);
                                         const inputType =
                                           typeString.startsWith('i') || typeString.startsWith('u')
                                             ? 'number'
@@ -2447,6 +2458,14 @@ export default function ScenarioEditor({
 
                                         // Check if this field has been explicitly modified by the user
                                         const isModified = modifiedFields.has(fieldPath);
+                                        const fixedPointBytes =
+                                          fixedPoint && decimalToFixedPoint(String(getValue(fieldPath)), fixedPoint);
+                                        const isFixedPointInvalid = !!fixedPoint && isModified && !fixedPointBytes;
+
+                                        // The decimal typed stays text while it is edited and becomes the field's bytes once left
+                                        const commitFixedPoint = () => {
+                                          if (isModified && fixedPointBytes) setValue(fieldPath, fixedPointBytes);
+                                        };
 
                                         // Determine field state: OVERRIDE > STREAMED > CACHED
                                         const fieldState = isModified
@@ -2541,6 +2560,7 @@ export default function ScenarioEditor({
                                                   inputType === 'number' ? (e) => e.currentTarget.blur() : undefined
                                                 }
                                                 value={getValue(fieldPath)}
+                                                onBlur={fixedPoint ? commitFixedPoint : undefined}
                                                 onChange={(e) => {
                                                   let newValue: any = e.target.value;
 
@@ -2574,6 +2594,11 @@ export default function ScenarioEditor({
                                                       : 'border-zinc-500 bg-zinc-500/5 focus:border-zinc-400 focus:ring-zinc-500/50'
                                                 }`}
                                               />
+                                            )}
+                                            {isFixedPointInvalid && (
+                                              <p className="text-xs text-red-400">
+                                                Enter a decimal number that fits {fixedPoint.name}
+                                              </p>
                                             )}
                                           </div>
                                         );
