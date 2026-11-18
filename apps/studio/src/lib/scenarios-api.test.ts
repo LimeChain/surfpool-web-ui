@@ -511,13 +511,19 @@ describe('Meteora scenarios', () => {
     expect(postedBody(2).overrides[0]).toMatchObject({
       templateId: 'meteora-damm-v2-pool-fees',
       values: {
-        'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': 50000000,
-        'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
+        'pool_fees.base_fee.base_fee_info.data.0': 128,
+        'pool_fees.base_fee.base_fee_info.data.1': 240,
+        'pool_fees.base_fee.base_fee_info.data.2': 250,
+        'pool_fees.base_fee.base_fee_info.data.3': 2,
+        'pool_fees.base_fee.base_fee_info.data.7': 0,
+        'pool_fees.base_fee.base_fee_info.data.24': 0,
+        'pool_fees.base_fee.base_fee_info.data.31': 0,
       },
       scenarioRelativeSlot: 0,
       fetchBeforeUse: true,
       account: { pubkey: dammPool },
     });
+    expect(Object.keys(postedBody(2).overrides[0].values)).toHaveLength(16);
   });
 
   it('rejects a DAMM v2 fee outside 1 to 5000 basis points before any request', async () => {

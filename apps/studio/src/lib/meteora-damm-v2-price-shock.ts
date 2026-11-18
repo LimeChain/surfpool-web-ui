@@ -20,6 +20,8 @@ const COMPOUNDING = 2;
 const BASE_FEE_MODE_OFFSET = 16;
 const RATE_LIMITER = 2;
 const MAX_FEE_BPS = 5000;
+const BASE_FEE_DATA_PATH = 'pool_fees.base_fee.base_fee_info.data';
+const REDUCTION_FACTOR_INDEX = 24;
 
 const U64_MAX = (BigInt(1) << BigInt(64)) - BigInt(1);
 const SCALE = BigInt(1_000_000_000_000);
@@ -146,6 +148,19 @@ export function planDammV2Fee(pool: string, account: ProgramAccount, feeBps: num
   return { pool, feeBps, cliffFeeNumerator: feeBps * 100_000 };
 }
 
+export function u64LeBytes(value: bigint | number): number[] {
+  const isWhole = typeof value === 'bigint' || Number.isSafeInteger(value);
+  if (!isWhole || BigInt(value) < BigInt(0) || BigInt(value) > U64_MAX) {
+    throw new Error(`${value} is not a whole number from 0 to ${U64_MAX}`);
+  }
+  return Array.from({ length: 8 }, (_, i) => Number((BigInt(value) >> BigInt(8 * i)) & BigInt(255)));
+}
+
+// The engine writes `data.N` byte by byte and keeps the rest of the account, so only the changed bytes are sent.
+function baseFeeBytes(start: number, value: bigint | number) {
+  return u64LeBytes(value).map((byte, i) => [`${BASE_FEE_DATA_PATH}.${start + i}`, byte] as const);
+}
+
 export function buildDammV2FeeScenario(plan: ReturnType<typeof planDammV2Fee>, templateId: string) {
   return {
     id: crypto.randomUUID(),
@@ -155,10 +170,10 @@ export function buildDammV2FeeScenario(plan: ReturnType<typeof planDammV2Fee>, t
       {
         id: crypto.randomUUID(),
         templateId,
-        values: {
-          'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': plan.cliffFeeNumerator,
-          'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
-        },
+        values: Object.fromEntries([
+          ...baseFeeBytes(0, plan.cliffFeeNumerator),
+          ...baseFeeBytes(REDUCTION_FACTOR_INDEX, 0),
+        ]),
         scenarioRelativeSlot: 0,
         label: `DAMM v2 fee ${plan.feeBps} bps`,
         enabled: true,

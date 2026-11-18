@@ -6,6 +6,7 @@ import {
   METEORA_DAMM_V2_PROGRAM_ID,
   planDammV2Fee,
   planDammV2PriceShock,
+  u64LeBytes,
 } from './meteora-damm-v2-price-shock';
 
 const POOL = '8Pm2kZpnxD3hoMmt4bjStX2Pw2Z9abpbHzZxMPqxPmie';
@@ -86,6 +87,23 @@ describe('meteora damm v2 price shock', () => {
   });
 });
 
+const DATA = 'pool_fees.base_fee.base_fee_info.data';
+
+describe('u64 little-endian bytes', () => {
+  it('splits a u64 into its eight little-endian bytes', () => {
+    expect(u64LeBytes(0)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(u64LeBytes(1)).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(u64LeBytes(50_000_000)).toEqual([128, 240, 250, 2, 0, 0, 0, 0]);
+    expect(u64LeBytes(BigInt('18446744073709551615'))).toEqual([255, 255, 255, 255, 255, 255, 255, 255]);
+  });
+
+  it('refuses a value past u64, negative, or not whole', () => {
+    for (const value of [BigInt('18446744073709551616'), BigInt(-1), -1, 1.5, Number.NaN, 2 ** 64]) {
+      expect(() => u64LeBytes(value)).toThrow('is not a whole number from 0 to 18446744073709551615');
+    }
+  });
+});
+
 describe('meteora damm v2 fee', () => {
   it('holds the base fee flat at the given basis points', () => {
     const plan = planDammV2Fee(POOL, CONCENTRATED, 500);
@@ -95,14 +113,18 @@ describe('meteora damm v2 fee', () => {
     expect(scenario.name).toBe('Meteora DAMM v2 Fee (8Pm2kZ…)');
     expect(scenario.overrides[0]).toMatchObject({
       templateId: 'meteora-damm-v2-pool-fees',
-      values: {
-        'pool_fees.base_fee.base_fee_info.cliff_fee_numerator': 50_000_000,
-        'pool_fees.base_fee.base_fee_info.reduction_factor': 0,
-      },
       scenarioRelativeSlot: 0,
       fetchBeforeUse: true,
       account: { pubkey: POOL },
     });
+  });
+
+  it('writes the fee into data bytes 0..8 and zeroes reduction_factor in bytes 24..32, nothing else', () => {
+    const values = buildDammV2FeeScenario(planDammV2Fee(POOL, CONCENTRATED, 500), 'template').overrides[0].values;
+    expect(stringify(values)).toBe(
+      `{${[128, 240, 250, 2, 0, 0, 0, 0].map((byte, i) => `"${DATA}.${i}":${byte}`).join(',')},` +
+        `${[24, 25, 26, 27, 28, 29, 30, 31].map((i) => `"${DATA}.${i}":0`).join(',')}}`
+    );
   });
 
   it('refuses a pool on the deprecated rate limiter', () => {
