@@ -96,4 +96,16 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Meteora Pair Halt',
+    prompt: 'Disable the deepest Meteora DLMM SOL/USDC pair so it rejects new swaps.',
+    icon: '🧊',
+    protocols: ['meteora'],
+  },
+  {
+    label: 'Meteora DAMM v2 Pool Halt',
+    prompt: 'Halt swaps on the deepest Meteora DAMM v2 SOL/USDC pool.',
+    icon: '🛑',
+    protocols: ['meteora'],
+  },
 ];

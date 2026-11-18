@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
+import MeteoraStateDialog from './meteora-state-dialog';
 import PhoenixStateDialog from './phoenix-state-dialog';
 import PumpGraduationDialog from './pump-graduation-dialog';
 import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
@@ -63,6 +64,7 @@ export default function ScenariosBento({
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
   const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
+  const [meteoraStateDialogOpen, setMeteoraStateDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -203,6 +205,20 @@ export default function ScenariosBento({
 
   const handlePhoenixStateCreated = (scenarioId: string) => {
     setPhoenixStateDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenMeteoraStateDialog = () => {
+    setMeteoraStateDialogOpen(true);
+  };
+
+  const handleCloseMeteoraStateDialog = () => {
+    setMeteoraStateDialogOpen(false);
+  };
+
+  const handleMeteoraStateCreated = (scenarioId: string) => {
+    setMeteoraStateDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -350,6 +366,7 @@ export default function ScenariosBento({
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
             onPhoenixStateSelect={handleOpenPhoenixStateDialog}
+            onMeteoraStateSelect={handleOpenMeteoraStateDialog}
           />
         </>
       )}
@@ -460,6 +477,13 @@ export default function ScenariosBento({
         rpcUrl={rpcUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
+      />
+      <MeteoraStateDialog
+        open={meteoraStateDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleCloseMeteoraStateDialog}
+        onCreated={handleMeteoraStateCreated}
       />
     </div>
   );
