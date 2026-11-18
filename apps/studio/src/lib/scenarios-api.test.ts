@@ -4,6 +4,7 @@ import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createdScenarioIdFromToolResult,
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
@@ -587,6 +588,32 @@ describe('buildAiPrompt', () => {
   });
 });
 
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=project0-sol-crash&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('project0-sol-crash');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
+  });
+});
+
 describe('scenarioImportPayload', () => {
   const downloaded = JSON.stringify({
     id: 'original',
@@ -782,6 +809,14 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
     expect(big).toBeInstanceOf(LosslessNumber);
     expect(String(big)).toBe(EXACT);
     expect(typeof toScenarioNumber('42')).toBe('number');
+  });
+
+  it('toScenarioNumber sends an integer wider than 64 bits as a decimal string', () => {
+    expect(toScenarioNumber('5427949582765380709301894')).toBe('5427949582765380709301894');
+    expect(toScenarioNumber('-170141183460469231731687303715884105728')).toBe(
+      '-170141183460469231731687303715884105728'
+    );
+    expect(toScenarioNumber('18446744073709551615')).toBeInstanceOf(LosslessNumber);
   });
 
   it('flattenOverrideValues treats a LosslessNumber as a value, not a nested object', () => {

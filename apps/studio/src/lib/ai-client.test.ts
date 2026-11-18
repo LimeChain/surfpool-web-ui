@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MCPTool } from './ai-client';
 import {
   AI_PROVIDERS,
+  callMCPTool,
   clearApiKey,
   DEFAULT_MODEL_ID,
   fetchOllamaStatus,
@@ -601,5 +602,39 @@ describe('streamClaudeResponse thinking toggle', () => {
     const events = await runClaudeTurn('claude-opus-5', true);
     expect(events.find((e) => e.type === 'error')?.content).toContain('context window');
     expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+});
+
+describe('callMCPTool', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a decimal for a fixed-point field of create_scenario as the bytes its template IDL stores', async () => {
+    const template = {
+      id: 'weights',
+      accountType: 'Bank',
+      idl: {
+        types: [
+          {
+            name: 'Bank',
+            type: { kind: 'struct', fields: [{ name: 'w', type: { defined: { name: 'WrappedI80F48' } } }] },
+          },
+          { name: 'WrappedI80F48', type: { kind: 'struct', fields: [{ name: 'value', type: { array: ['u8', 16] } }] } },
+        ],
+      },
+    };
+    const fetchMock = vi.fn(async (url: unknown, _init?: any) =>
+      String(url).endsWith('/templates') ? { json: async () => [template] } : mcpToolResult()
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callMCPTool('http://studio', 'create_scenario', {
+      overrides: [{ templateId: 'weights', values: { 'w.value': '1' } }],
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://studio/v1/scenarios/templates');
+    const sent = JSON.parse(fetchMock.mock.calls[1][1].body).params.arguments;
+    expect(sent.overrides[0].values['w.value']).toEqual([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   });
 });
