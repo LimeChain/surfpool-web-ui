@@ -113,7 +113,7 @@ describe('createPumpSwapPriceShockScenario', () => {
       .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+        jsonResponse([{ id: 'pump-amm-virtual-quote-reserves', address: { pda: { programId: 'pump', seeds: [] } } }])
       )
       .mockResolvedValueOnce(jsonResponse({ id: '11111111-1111-4111-8111-111111111111' }));
 
@@ -133,7 +133,7 @@ describe('createPumpSwapPriceShockScenario', () => {
       overrides: [
         {
           id: '22222222-2222-4222-8222-222222222222',
-          templateId: 'pump-amm-canonical-pool',
+          templateId: 'pump-amm-virtual-quote-reserves',
           values: { base_mint: 'mint', virtual_quote_reserves: 15000000000000 },
           scenarioRelativeSlot: 1,
           label: 'PumpSwap virtual quote reserve shock',
@@ -150,7 +150,7 @@ describe('createPumpSwapPriceShockScenario', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+        jsonResponse([{ id: 'pump-amm-virtual-quote-reserves', address: { pda: { programId: 'pump', seeds: [] } } }])
       )
       .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
@@ -164,7 +164,7 @@ describe('createPumpSwapPriceShockScenario', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+        jsonResponse([{ id: 'pump-amm-virtual-quote-reserves', address: { pda: { programId: 'pump', seeds: [] } } }])
       )
       .mockResolvedValueOnce(jsonResponse({ id: 'scenario-id' }));
 
@@ -178,7 +178,7 @@ describe('createPumpSwapPriceShockScenario', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse([{ id: 'pump-amm-canonical-pool', address: { pda: { programId: 'pump', seeds: [] } } }])
+        jsonResponse([{ id: 'pump-amm-virtual-quote-reserves', address: { pda: { programId: 'pump', seeds: [] } } }])
       )
       .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
 

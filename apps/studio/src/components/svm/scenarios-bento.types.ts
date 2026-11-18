@@ -78,14 +78,14 @@ export const exampleScenarios: ExampleScenario[] = [
   {
     label: 'PumpSwap Pool',
     prompt:
-      "Set The Official 67 Coin's canonical PumpSwap pool virtual_quote_reserves to 15000000000000 so buying it becomes far more expensive",
+      "Set The Official 67 Coin's canonical PumpSwap pool virtual_quote_reserves to 15000000000000 with the pump-amm-virtual-quote-reserves template so buying it becomes far more expensive",
     icon: '💧',
     protocols: ['pumpswap'],
   },
   {
     label: 'PumpSwap Price Shock',
     prompt:
-      'Create an editable PumpSwap price shock for token mint <PASTE_TOKEN_MINT_HERE>. Fetch the existing override templates, then call create_scenario once with the pump-amm-canonical-pool template, base_mint set to that mint, virtual_quote_reserves set to 15000000000000, slot 1, and fetchBeforeUse enabled. Prepare state only; do not build or execute a swap.',
+      'Create an editable PumpSwap price shock for token mint <PASTE_TOKEN_MINT_HERE>. Fetch the existing override templates, then call create_scenario once with the pump-amm-virtual-quote-reserves template, base_mint set to that mint, virtual_quote_reserves set to 15000000000000, slot 1, and fetchBeforeUse enabled. Prepare state only; do not build or execute a swap.',
     icon: '⚡',
     protocols: ['pumpswap'],
   },

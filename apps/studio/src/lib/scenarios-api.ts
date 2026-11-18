@@ -174,8 +174,8 @@ export async function createPumpSwapPriceShockScenario(
   }
 
   const templates = (await templatesResponse.json()) as ScenarioTemplate[];
-  const template = findScenarioTemplate(templates, 'pump-amm-canonical-pool');
-  if (!template) throw new Error('PumpSwap canonical pool template is unavailable');
+  const template = findScenarioTemplate(templates, 'pump-amm-virtual-quote-reserves');
+  if (!template) throw new Error('PumpSwap virtual quote reserves template is unavailable');
 
   const scenarioId = crypto.randomUUID();
   const normalizedMint = tokenMint.trim();
