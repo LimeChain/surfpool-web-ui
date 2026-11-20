@@ -390,7 +390,9 @@ describe('Raydium scenarios', () => {
   const clmm = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK';
   const accounts = (...data: Uint8Array[]) =>
     jsonResponse({
-      result: { value: data.map((bytes) => ({ owner: clmm, data: [Buffer.from(bytes).toString('base64'), 'base64'] })) },
+      result: {
+        value: data.map((bytes) => ({ owner: clmm, data: [Buffer.from(bytes).toString('base64'), 'base64'] })),
+      },
     });
   const postedOverride = (call: number) =>
     JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string).overrides[0];
@@ -421,7 +423,9 @@ describe('Raydium scenarios', () => {
       id: 'shock',
     });
     // Ticks -21160 and -21150 share the array starting at -21180, so the path is that one array.
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual(['GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK']);
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual([
+      'GamghVsuRYt6yuHQyapXxx6wXYNvRTKiVUpr9FimGLKK',
+    ]);
     expect(postedOverride(3)).toMatchObject({
       templateId: 'raydium-clmm-pool-state',
       values: { sqrt_price_x64: '6407334985383984128', tick_current: -21150, liquidity: '1000' },
