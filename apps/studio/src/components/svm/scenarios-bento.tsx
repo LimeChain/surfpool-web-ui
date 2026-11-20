@@ -474,6 +474,7 @@ export default function ScenariosBento({
       <PhoenixStateDialog
         open={phoenixStateDialogOpen}
         studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
       />
