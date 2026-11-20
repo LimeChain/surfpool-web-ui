@@ -560,15 +560,20 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
+  keepAlive?: unknown[];
   account?: unknown;
   [passthrough: string]: unknown;
 };
+
+// Only [] has meaning: keep-alive off for the account from this override on. Absent, or any other value,
+// keeps the template's. The engine refuses a boolean, so a payload sends keepAlive only when this is true.
+export const isKeepAliveOff = (keepAlive: unknown) => Array.isArray(keepAlive) && keepAlive.length === 0;
 
 /**
  * Convert a scenario's steps/actions into the backend "overrides" format
  * and return the full PATCH payload. Mirrors the scenario editor's sync
  * payload: everything loaded from the backend (override ids, values, account,
- * fetchBeforeUse, enabled, tags) is carried through, so a metadata-only
+ * fetchBeforeUse, keepAlive, enabled, tags) is carried through, so a metadata-only
  * update cannot strip a scenario of its data.
  */
 export function buildUpdatePayload(scenario: Scenario) {
@@ -585,7 +590,9 @@ export function buildUpdatePayload(scenario: Scenario) {
         label: action.action,
         enabled: original.enabled ?? true,
         fetchBeforeUse: action.fetchBeforeUse || false,
+        keepAlive: action.keepAlive,
       };
+      if (!isKeepAliveOff(override.keepAlive)) delete override.keepAlive;
       if (action.account) {
         override.account = action.account;
       }

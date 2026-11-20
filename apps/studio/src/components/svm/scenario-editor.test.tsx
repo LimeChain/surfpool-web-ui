@@ -22,7 +22,11 @@ vi.mock('@surfpool/ui', async () => ({
   DropdownLabel: ({ children }: any) => <span>{children}</span>,
   DropdownDescription: ({ children }: any) => <span>{children}</span>,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
-  Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
+  Switch: ({ checked, onChange }: any) => {
+    const handleChange = (event: any) => onChange(event.target.checked);
+
+    return <input type="checkbox" checked={checked} onChange={handleChange} />;
+  },
 }));
 vi.mock('./transaction-inspector', () => ({ default: () => null }));
 vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
@@ -76,7 +80,7 @@ const stepAction = (template: any, account: unknown = template.address, override
   overrides,
 });
 
-const renderEditor = (...actions: ReturnType<typeof stepAction>[]) =>
+const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: unknown[] }>) =>
   render(
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
@@ -206,6 +210,97 @@ it.each(marketTemplates)('edits and saves $name using input template fields', as
 
 const rpcParams = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params);
+
+const keepAliveTemplate = {
+  ...collateralTemplate,
+  id: 'trader-collateral-keep-alive',
+  name: 'Kept-alive collateral',
+  keepAlive: [{ template: 'fresh', address: { type: 'override' }, values: { slot: '$slot' } }],
+};
+
+const keepAliveSwitch = () => screen.getByText('Keep alive').nextElementSibling as HTMLInputElement;
+
+async function reopenOverride(
+  template: any,
+  keepAlive?: unknown[],
+  ...laterSlotActions: Parameters<typeof renderEditor>
+) {
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  const actions = [
+    { ...stepAction(template, template.address, { 'traderState.quoteLotCollateral': 5 }), keepAlive },
+    ...laterSlotActions,
+  ];
+  render(
+    <ScenarioEditor
+      scenarioId="editor-test"
+      initialSteps={actions.map((action, index) => ({
+        id: `slot-${index}`,
+        name: 'Slot',
+        type: 'slot',
+        actions: [action],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(5));
+}
+
+it('shows keep alive off for a reopened keepAlive: [] override and sends [] back', async () => {
+  await reopenOverride(keepAliveTemplate, []);
+  expect(keepAliveSwitch()).not.toBeChecked();
+  expect((await savedOverride()).keepAlive).toEqual([]);
+});
+
+it('keeps keepAlive: [] behind a hidden switch, on save and on Play', async () => {
+  await reopenOverride(collateralTemplate, []);
+  expect(screen.queryByText('Keep alive')).not.toBeInTheDocument();
+  expect((await savedOverride()).keepAlive).toEqual([]);
+
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  await waitFor(() => expect(registrations()).toHaveLength(1));
+  expect(registrations()[0].params[0].overrides[0].keepAlive).toEqual([]);
+});
+
+it.each([
+  { saved: 'no keepAlive', keepAlive: undefined },
+  { saved: 'a non-empty keepAlive', keepAlive: [{ template: 'fresh' }] },
+])('shows keep alive on for an override with $saved and sends none', async ({ keepAlive }) => {
+  await reopenOverride(keepAliveTemplate, keepAlive);
+  expect(keepAliveSwitch()).toBeChecked();
+  expect(await savedOverride()).not.toHaveProperty('keepAlive');
+});
+
+it('sends keepAlive: [] when keep alive is turned off', async () => {
+  await reopenOverride(keepAliveTemplate);
+  fireEvent.click(keepAliveSwitch());
+  expect((await savedOverride()).keepAlive).toEqual([]);
+});
+
+it('sends no keepAlive when keep alive is turned back on for a reopened keepAlive: [] override', async () => {
+  await reopenOverride(keepAliveTemplate, []);
+  fireEvent.click(keepAliveSwitch());
+  expect(await savedOverride()).not.toHaveProperty('keepAlive');
+});
+
+it('never sends a boolean keepAlive, also for actions cached before keepAlive became a list', async () => {
+  const cached = (keepAlive: boolean) => keepAlive as unknown as unknown[];
+  await reopenOverride(keepAliveTemplate, cached(false), {
+    ...stepAction(keepAliveTemplate),
+    action: 'Not reopened',
+    keepAlive: cached(true),
+  });
+  expect(keepAliveSwitch()).toBeChecked();
+  await savedOverride();
+  const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')!;
+  const { overrides } = JSON.parse(patch[1].body);
+  expect(overrides).toHaveLength(2);
+  for (const override of overrides) expect(override).not.toHaveProperty('keepAlive');
+});
 
 it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
   await openEditor(collateralTemplate, {}, { pubkey: 'saved-trader' });
@@ -528,6 +623,25 @@ it('plays with the running clock: resumes the clock, registers the whole plan on
   fireEvent.click(screen.getByTitle('Complete - back to read mode'));
   expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
   expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']);
+});
+
+it('registers keepAlive only as [], never as a boolean or a non-empty array', async () => {
+  const keepAlives = [undefined, [], [{ template: 'fresh' }], true as unknown as unknown[]];
+  const steps = keepAlives.map((keepAlive, index) => {
+    const step = column(`${index}`);
+    return { ...step, actions: [{ ...step.actions[0], keepAlive }] };
+  });
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="keep-alive-play" initialSteps={steps} />);
+
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  await waitFor(() => expect(registrations()).toHaveLength(1));
+  const { overrides } = registrations()[0].params[0];
+  expect(overrides.map((override: any) => 'keepAlive' in override)).toEqual([false, true, false, false]);
+  expect(overrides[1].keepAlive).toEqual([]);
 });
 
 it('does not register a running Play when the clock cannot be resumed', async () => {
