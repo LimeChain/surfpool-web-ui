@@ -1,4 +1,5 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
+import type { KeepAliveImport } from '@/lib/scenarios-data';
 import { comboboxResults } from '@/test-utils';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -22,7 +23,11 @@ vi.mock('@surfpool/ui', async () => ({
   DropdownLabel: ({ children }: any) => <span>{children}</span>,
   DropdownDescription: ({ children }: any) => <span>{children}</span>,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
-  Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
+  Switch: ({ checked, onChange }: any) => {
+    const handleChange = (event: any) => onChange(event.target.checked);
+
+    return <input type="checkbox" checked={checked} onChange={handleChange} />;
+  },
 }));
 vi.mock('./transaction-inspector', () => ({ default: () => null }));
 vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
@@ -76,7 +81,7 @@ const stepAction = (template: any, account: unknown = template.address, override
   overrides,
 });
 
-const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: boolean }>) =>
+const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: KeepAliveImport[] }>) =>
   render(
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
@@ -214,27 +219,116 @@ const keepAliveTemplate = {
   keepAlive: [{ template: 'fresh', address: { type: 'override' }, values: { slot: '$slot' } }],
 };
 
-it.each([
-  { templateKind: 'without a keep-alive list', template: collateralTemplate, saved: true },
-  { templateKind: 'with a keep-alive list', template: keepAliveTemplate, saved: false },
-])(
-  'saves keep alive $saved for a reopened keep-alive-off override of a template $templateKind',
-  async ({ template, saved }) => {
-    fetchMock.mockImplementation(async (url: string) => ({
-      ok: true,
-      json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
-    }));
-    renderEditor({
-      ...stepAction(template, template.address, { 'traderState.quoteLotCollateral': 5 }),
-      keepAlive: false,
-    });
-    fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
-    fireEvent.click(await screen.findByText(template.name));
-    await waitFor(() => expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(5));
+const keepAliveList: KeepAliveImport[] = [
+  { template: 'fresh', address: { type: 'pubkey', value: 'oracle' }, values: { slot: '$slot-1', ms: '$unix_ms' } },
+];
 
-    expect((await savedOverride()).keepAlive).toBe(saved);
+const keepAliveSwitch = () => screen.getByText('Keep alive').nextElementSibling as HTMLInputElement;
+
+async function reopenOverride(
+  template: any,
+  keepAlive?: KeepAliveImport[],
+  {
+    laterSlotActions = [],
+    otherTemplates = [],
+  }: { laterSlotActions?: Parameters<typeof renderEditor>; otherTemplates?: any[] } = {}
+) {
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template, ...otherTemplates] : { result: { value: null } }),
+  }));
+  const actions = [
+    { ...stepAction(template, template.address, { 'traderState.quoteLotCollateral': 5 }), keepAlive },
+    ...laterSlotActions,
+  ];
+  render(
+    <ScenarioEditor
+      scenarioId="editor-test"
+      initialSteps={actions.map((action, index) => ({
+        id: `slot-${index}`,
+        name: 'Slot',
+        type: 'slot',
+        actions: [action],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(5));
+}
+
+it('shows keep alive off for a reopened keepAlive: [] override and sends [] back', async () => {
+  await reopenOverride(keepAliveTemplate, []);
+  expect(keepAliveSwitch()).not.toBeChecked();
+  expect((await savedOverride()).keepAlive).toEqual([]);
+});
+
+it('keeps keepAlive: [] behind a hidden switch, on save and on Play', async () => {
+  await reopenOverride(collateralTemplate, []);
+  expect(screen.queryByText('Keep alive')).not.toBeInTheDocument();
+  expect((await savedOverride()).keepAlive).toEqual([]);
+
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  await waitFor(() => expect(registrations()).toHaveLength(1));
+  expect(registrations()[0].params[0].overrides[0].keepAlive).toEqual([]);
+});
+
+it('shows keep alive on for an override without keepAlive and sends none', async () => {
+  await reopenOverride(keepAliveTemplate);
+  expect(keepAliveSwitch()).toBeChecked();
+  expect(await savedOverride()).not.toHaveProperty('keepAlive');
+});
+
+it('sends keepAlive: [] when keep alive is turned off', async () => {
+  await reopenOverride(keepAliveTemplate);
+  fireEvent.click(keepAliveSwitch());
+  expect((await savedOverride()).keepAlive).toEqual([]);
+});
+
+it.each([collateralTemplate, keepAliveTemplate])(
+  'sends the keep-alive list of a reopened $name override back unchanged',
+  async (template) => {
+    await reopenOverride(template, keepAliveList);
+    expect((await savedOverride()).keepAlive).toEqual(keepAliveList);
   }
 );
+
+it('sends keepAlive: [] when keep alive is turned off for an override with its own list', async () => {
+  await reopenOverride(keepAliveTemplate, keepAliveList);
+  expect(keepAliveSwitch()).toBeChecked();
+  fireEvent.click(keepAliveSwitch());
+  expect((await savedOverride()).keepAlive).toEqual([]);
+});
+
+it('sends the own keep-alive list unchanged when keep alive is turned off and on again', async () => {
+  await reopenOverride(keepAliveTemplate, keepAliveList);
+  fireEvent.click(keepAliveSwitch());
+  fireEvent.click(keepAliveSwitch());
+  expect((await savedOverride()).keepAlive).toEqual(keepAliveList);
+});
+
+it('never sends a boolean keepAlive, also for actions cached before keepAlive became a list', async () => {
+  const cached = (keepAlive: boolean) => keepAlive as unknown as KeepAliveImport[];
+  await reopenOverride(keepAliveTemplate, cached(false), {
+    laterSlotActions: [{ ...stepAction(keepAliveTemplate), action: 'Not reopened', keepAlive: cached(true) }],
+  });
+  expect(keepAliveSwitch()).toBeChecked();
+  await savedOverride();
+  const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')!;
+  const { overrides } = JSON.parse(patch[1].body);
+  expect(overrides).toHaveLength(2);
+  for (const override of overrides) expect(override).not.toHaveProperty('keepAlive');
+});
+
+it('drops the keep-alive list of an override saved under another template', async () => {
+  const otherTemplate = { ...keepAliveTemplate, id: 'trader-collateral-other', name: 'Other collateral' };
+  await reopenOverride(keepAliveTemplate, keepAliveList, { otherTemplates: [otherTemplate] });
+  fireEvent.click(await screen.findByText(otherTemplate.name));
+  const override = await savedOverride();
+  expect(override.templateId).toBe(otherTemplate.id);
+  expect(override).not.toHaveProperty('keepAlive');
+});
 
 it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
   await openEditor(collateralTemplate, {}, { pubkey: 'saved-trader' });
@@ -557,6 +651,26 @@ it('plays with the running clock: resumes the clock, registers the whole plan on
   fireEvent.click(screen.getByTitle('Complete - back to read mode'));
   expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
   expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']);
+});
+
+it('registers keepAlive only as the list each override has, never as a boolean', async () => {
+  const keepAlives = [undefined, [], keepAliveList, true as unknown as KeepAliveImport[]];
+  const steps = keepAlives.map((keepAlive, index) => {
+    const step = column(`${index}`);
+    return { ...step, actions: [{ ...step.actions[0], keepAlive }] };
+  });
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="keep-alive-play" initialSteps={steps} />);
+
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  await waitFor(() => expect(registrations()).toHaveLength(1));
+  const { overrides } = registrations()[0].params[0];
+  expect(overrides.map((override: any) => 'keepAlive' in override)).toEqual([false, true, true, false]);
+  expect(overrides[1].keepAlive).toEqual([]);
+  expect(overrides[2].keepAlive).toEqual(keepAliveList);
 });
 
 it('does not register a running Play when the clock cannot be resumed', async () => {

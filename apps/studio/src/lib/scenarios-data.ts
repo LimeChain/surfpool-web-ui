@@ -1,3 +1,10 @@
+// One entry of a template's YAML `keep_alive` list, the engine's YamlKeepAliveImport. Studio passes it through unread.
+export type KeepAliveImport = {
+  template: string;
+  address: { type: 'override' | 'input' | 'pubkey' | 'pda'; [field: string]: unknown };
+  values: Record<string, unknown>;
+};
+
 export type ScenarioAction = {
   protocolId: string;
   actionId: string;
@@ -5,7 +12,9 @@ export type ScenarioAction = {
   action: string;
   overrideId?: string;
   fetchBeforeUse?: boolean;
-  keepAlive?: boolean;
+  // Absent, the template's keep-alive applies. [] turns it off and stops the keep-alive earlier overrides of the
+  // account started. A list replaces the template's imports.
+  keepAlive?: KeepAliveImport[];
   overrides?: Record<string, unknown>;
   modifiedFields?: string[];
   account?: any; // Account address (Pubkey or PDA)
@@ -44,7 +53,7 @@ export type ApiOverride = {
   label?: string;
   account?: unknown;
   fetchBeforeUse?: boolean;
-  keepAlive?: boolean;
+  keepAlive?: KeepAliveImport[];
   values?: Record<string, unknown>;
 };
 
@@ -113,7 +122,7 @@ export function scenarioFromApiData(
         action: override.label || 'Unknown Action',
         account: override.account,
         fetchBeforeUse: override.fetchBeforeUse || false,
-        keepAlive: override.keepAlive ?? true,
+        keepAlive: override.keepAlive,
         overrides: override.values || {},
         modifiedFields: Object.keys(override.values || {}),
       });

@@ -2,7 +2,7 @@ import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
-import type { Scenario } from './scenarios-data';
+import type { KeepAliveImport, Scenario } from './scenarios-data';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -560,7 +560,8 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
-  keepAlive: boolean;
+  // Sent only as a list: absent keeps the template's keep-alive, and the engine refuses a boolean
+  keepAlive?: KeepAliveImport[];
   account?: unknown;
   [passthrough: string]: unknown;
 };
@@ -586,8 +587,9 @@ export function buildUpdatePayload(scenario: Scenario) {
         label: action.action,
         enabled: original.enabled ?? true,
         fetchBeforeUse: action.fetchBeforeUse || false,
-        keepAlive: action.keepAlive ?? true,
+        keepAlive: action.keepAlive,
       };
+      if (!Array.isArray(override.keepAlive)) delete override.keepAlive;
       if (action.account) {
         override.account = action.account;
       }

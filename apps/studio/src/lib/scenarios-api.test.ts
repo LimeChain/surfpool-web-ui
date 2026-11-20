@@ -22,7 +22,7 @@ import {
   snapshotDownloadContents,
   toScenarioNumber,
 } from './scenarios-api';
-import type { Scenario } from './scenarios-data';
+import type { KeepAliveImport, Scenario } from './scenarios-data';
 
 vi.mock('./ai-client', () => ({
   callMCPTool: vi.fn(),
@@ -472,11 +472,23 @@ describe('buildUpdatePayload', () => {
     expect(override.account).toEqual({ pda: { programId: 'pyth', seeds: [] } });
   });
 
-  it('defaults keepAlive to true and keeps keepAlive: false', () => {
-    expect(buildUpdatePayload(baseScenario).overrides[0].keepAlive).toBe(true);
-    const action = { ...loadedScenario.steps![0].actions![0], keepAlive: false };
-    const scenario = { ...loadedScenario, steps: [{ ...loadedScenario.steps![0], actions: [action] }] };
-    expect(buildUpdatePayload(scenario).overrides[0].keepAlive).toBe(false);
+  it('sends keepAlive only as the list a loaded override has, never as a boolean', () => {
+    const payloadWith = (keepAlive: unknown) => {
+      const action = {
+        ...loadedScenario.steps![0].actions![0],
+        keepAlive: keepAlive as KeepAliveImport[],
+        original: { keepAlive },
+      };
+      const scenario = { ...loadedScenario, steps: [{ ...loadedScenario.steps![0], actions: [action] }] };
+      return buildUpdatePayload(scenario).overrides[0];
+    };
+    const list: KeepAliveImport[] = [{ template: 'fresh', address: { type: 'override' }, values: { slot: '$slot' } }];
+
+    expect(buildUpdatePayload(baseScenario).overrides[0]).not.toHaveProperty('keepAlive');
+    expect(payloadWith([]).keepAlive).toEqual([]);
+    expect(payloadWith(list).keepAlive).toEqual(list);
+    expect(payloadWith(false)).not.toHaveProperty('keepAlive');
+    expect(payloadWith(true)).not.toHaveProperty('keepAlive');
   });
 
   it('preserves the scenario tags', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveProtocol, scenarioFromApiData } from './scenarios-data';
+import { resolveProtocol, scenarioFromApiData, type KeepAliveImport } from './scenarios-data';
 
 const templates = new Map<string, string>([
   ['pyth-price-feed-v2', 'Pyth'],
@@ -57,17 +57,23 @@ describe('scenarioFromApiData', () => {
     expect(scenarioFromApiData(noId, 'key-42', templates).id).toBe('key-42');
   });
 
-  it('reads an absent keepAlive as on and keeps keepAlive: false', () => {
+  it('keeps keepAlive as the override has it: absent, [] or a list', () => {
+    const list: KeepAliveImport[] = [
+      { template: 'fresh', address: { type: 'input', value: 'oracle' }, values: { slot: '$slot' } },
+    ];
     const s = scenarioFromApiData(
       {
         id: 's2',
-        overrides: [{ id: 'o1', templateId: 'pyth-price-feed-v2', scenarioRelativeSlot: 0, keepAlive: false }],
+        overrides: [
+          { id: 'o1', templateId: 'pyth-price-feed-v2', scenarioRelativeSlot: 0, keepAlive: [] },
+          { id: 'o2', templateId: 'pyth-price-feed-v2', scenarioRelativeSlot: 0, keepAlive: list },
+        ],
       },
       's2',
       templates
     );
-    expect(s.steps![0].actions![0].keepAlive).toBe(false);
-    expect(scenarioFromApiData(scenarioData, 's1', templates).steps![0].actions![0].keepAlive).toBe(true);
+    expect(s.steps![0].actions!.map((action) => action.keepAlive)).toEqual([[], list]);
+    expect(scenarioFromApiData(scenarioData, 's1', templates).steps![0].actions![0].keepAlive).toBeUndefined();
   });
 
   it('handles a scenario with no overrides', () => {
