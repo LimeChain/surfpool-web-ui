@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
+import MarketMoveDialog from './market-move-dialog';
 import PhoenixStateDialog from './phoenix-state-dialog';
 import PumpGraduationDialog from './pump-graduation-dialog';
 import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
@@ -63,6 +64,7 @@ export default function ScenariosBento({
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
   const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
+  const [marketMoveDialogOpen, setMarketMoveDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -203,6 +205,20 @@ export default function ScenariosBento({
 
   const handlePhoenixStateCreated = (scenarioId: string) => {
     setPhoenixStateDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenMarketMoveDialog = () => {
+    setMarketMoveDialogOpen(true);
+  };
+
+  const handleCloseMarketMoveDialog = () => {
+    setMarketMoveDialogOpen(false);
+  };
+
+  const handleMarketMoveCreated = (scenarioId: string) => {
+    setMarketMoveDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -350,6 +366,7 @@ export default function ScenariosBento({
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
             onPhoenixStateSelect={handleOpenPhoenixStateDialog}
+            onMarketMoveSelect={handleOpenMarketMoveDialog}
           />
         </>
       )}
@@ -460,6 +477,13 @@ export default function ScenariosBento({
         rpcUrl={rpcUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
+      />
+      <MarketMoveDialog
+        open={marketMoveDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleCloseMarketMoveDialog}
+        onCreated={handleMarketMoveCreated}
       />
     </div>
   );

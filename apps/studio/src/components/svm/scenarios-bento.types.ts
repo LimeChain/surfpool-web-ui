@@ -96,4 +96,10 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Manifest Crash',
+    prompt: 'SOL crashes 20% on the Manifest SOL/USDC order book',
+    icon: '📉',
+    protocols: ['manifest'],
+  },
 ];
