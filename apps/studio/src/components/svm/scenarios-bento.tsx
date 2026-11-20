@@ -54,7 +54,7 @@ export default function ScenariosBento({
   initialTab,
 }: ScenariosBentoProps) {
   const router = useRouter();
-  const { rpcUrl, studioUrl } = useAppConfig();
+  const { studioUrl, rpcUrl } = useAppConfig();
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
@@ -474,6 +474,7 @@ export default function ScenariosBento({
       <PhoenixStateDialog
         open={phoenixStateDialogOpen}
         studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
       />
