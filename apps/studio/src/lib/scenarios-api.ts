@@ -2,7 +2,7 @@ import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import { PROTOCOLS } from './protocol-icons';
-import type { KeepAliveImport, Scenario } from './scenarios-data';
+import type { Scenario } from './scenarios-data';
 
 // Solana u64/u128 fields exceed Number.MAX_SAFE_INTEGER, which native JSON silently rounds.
 const parseScenarioNumber = (value: string): number | LosslessNumber =>
@@ -560,11 +560,14 @@ export type OverridePayload = {
   label: string;
   enabled: boolean;
   fetchBeforeUse: boolean;
-  // Sent only as a list: absent keeps the template's keep-alive, and the engine refuses a boolean
-  keepAlive?: KeepAliveImport[];
+  keepAlive?: unknown[];
   account?: unknown;
   [passthrough: string]: unknown;
 };
+
+// Only [] has meaning: keep-alive off for the account from this override on. Absent, or any other value,
+// keeps the template's. The engine refuses a boolean, so a payload sends keepAlive only when this is true.
+export const isKeepAliveOff = (keepAlive: unknown) => Array.isArray(keepAlive) && keepAlive.length === 0;
 
 /**
  * Convert a scenario's steps/actions into the backend "overrides" format
@@ -589,7 +592,7 @@ export function buildUpdatePayload(scenario: Scenario) {
         fetchBeforeUse: action.fetchBeforeUse || false,
         keepAlive: action.keepAlive,
       };
-      if (!Array.isArray(override.keepAlive)) delete override.keepAlive;
+      if (!isKeepAliveOff(override.keepAlive)) delete override.keepAlive;
       if (action.account) {
         override.account = action.account;
       }

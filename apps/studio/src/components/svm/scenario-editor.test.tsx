@@ -1,5 +1,4 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
-import type { KeepAliveImport } from '@/lib/scenarios-data';
 import { comboboxResults } from '@/test-utils';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -81,7 +80,7 @@ const stepAction = (template: any, account: unknown = template.address, override
   overrides,
 });
 
-const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: KeepAliveImport[] }>) =>
+const renderEditor = (...actions: Array<ReturnType<typeof stepAction> & { keepAlive?: unknown[] }>) =>
   render(
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
@@ -219,23 +218,16 @@ const keepAliveTemplate = {
   keepAlive: [{ template: 'fresh', address: { type: 'override' }, values: { slot: '$slot' } }],
 };
 
-const keepAliveList: KeepAliveImport[] = [
-  { template: 'fresh', address: { type: 'pubkey', value: 'oracle' }, values: { slot: '$slot-1', ms: '$unix_ms' } },
-];
-
 const keepAliveSwitch = () => screen.getByText('Keep alive').nextElementSibling as HTMLInputElement;
 
 async function reopenOverride(
   template: any,
-  keepAlive?: KeepAliveImport[],
-  {
-    laterSlotActions = [],
-    otherTemplates = [],
-  }: { laterSlotActions?: Parameters<typeof renderEditor>; otherTemplates?: any[] } = {}
+  keepAlive?: unknown[],
+  ...laterSlotActions: Parameters<typeof renderEditor>
 ) {
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
-    json: async () => (url.endsWith('/templates') ? [template, ...otherTemplates] : { result: { value: null } }),
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
   }));
   const actions = [
     { ...stepAction(template, template.address, { 'traderState.quoteLotCollateral': 5 }), keepAlive },
@@ -274,8 +266,11 @@ it('keeps keepAlive: [] behind a hidden switch, on save and on Play', async () =
   expect(registrations()[0].params[0].overrides[0].keepAlive).toEqual([]);
 });
 
-it('shows keep alive on for an override without keepAlive and sends none', async () => {
-  await reopenOverride(keepAliveTemplate);
+it.each([
+  { saved: 'no keepAlive', keepAlive: undefined },
+  { saved: 'a non-empty keepAlive', keepAlive: [{ template: 'fresh' }] },
+])('shows keep alive on for an override with $saved and sends none', async ({ keepAlive }) => {
+  await reopenOverride(keepAliveTemplate, keepAlive);
   expect(keepAliveSwitch()).toBeChecked();
   expect(await savedOverride()).not.toHaveProperty('keepAlive');
 });
@@ -286,32 +281,18 @@ it('sends keepAlive: [] when keep alive is turned off', async () => {
   expect((await savedOverride()).keepAlive).toEqual([]);
 });
 
-it.each([collateralTemplate, keepAliveTemplate])(
-  'sends the keep-alive list of a reopened $name override back unchanged',
-  async (template) => {
-    await reopenOverride(template, keepAliveList);
-    expect((await savedOverride()).keepAlive).toEqual(keepAliveList);
-  }
-);
-
-it('sends keepAlive: [] when keep alive is turned off for an override with its own list', async () => {
-  await reopenOverride(keepAliveTemplate, keepAliveList);
-  expect(keepAliveSwitch()).toBeChecked();
+it('sends no keepAlive when keep alive is turned back on for a reopened keepAlive: [] override', async () => {
+  await reopenOverride(keepAliveTemplate, []);
   fireEvent.click(keepAliveSwitch());
-  expect((await savedOverride()).keepAlive).toEqual([]);
-});
-
-it('sends the own keep-alive list unchanged when keep alive is turned off and on again', async () => {
-  await reopenOverride(keepAliveTemplate, keepAliveList);
-  fireEvent.click(keepAliveSwitch());
-  fireEvent.click(keepAliveSwitch());
-  expect((await savedOverride()).keepAlive).toEqual(keepAliveList);
+  expect(await savedOverride()).not.toHaveProperty('keepAlive');
 });
 
 it('never sends a boolean keepAlive, also for actions cached before keepAlive became a list', async () => {
-  const cached = (keepAlive: boolean) => keepAlive as unknown as KeepAliveImport[];
+  const cached = (keepAlive: boolean) => keepAlive as unknown as unknown[];
   await reopenOverride(keepAliveTemplate, cached(false), {
-    laterSlotActions: [{ ...stepAction(keepAliveTemplate), action: 'Not reopened', keepAlive: cached(true) }],
+    ...stepAction(keepAliveTemplate),
+    action: 'Not reopened',
+    keepAlive: cached(true),
   });
   expect(keepAliveSwitch()).toBeChecked();
   await savedOverride();
@@ -319,15 +300,6 @@ it('never sends a boolean keepAlive, also for actions cached before keepAlive be
   const { overrides } = JSON.parse(patch[1].body);
   expect(overrides).toHaveLength(2);
   for (const override of overrides) expect(override).not.toHaveProperty('keepAlive');
-});
-
-it('drops the keep-alive list of an override saved under another template', async () => {
-  const otherTemplate = { ...keepAliveTemplate, id: 'trader-collateral-other', name: 'Other collateral' };
-  await reopenOverride(keepAliveTemplate, keepAliveList, { otherTemplates: [otherTemplate] });
-  fireEvent.click(await screen.findByText(otherTemplate.name));
-  const override = await savedOverride();
-  expect(override.templateId).toBe(otherTemplate.id);
-  expect(override).not.toHaveProperty('keepAlive');
 });
 
 it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
@@ -653,8 +625,8 @@ it('plays with the running clock: resumes the clock, registers the whole plan on
   expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']);
 });
 
-it('registers keepAlive only as the list each override has, never as a boolean', async () => {
-  const keepAlives = [undefined, [], keepAliveList, true as unknown as KeepAliveImport[]];
+it('registers keepAlive only as [], never as a boolean or a non-empty array', async () => {
+  const keepAlives = [undefined, [], [{ template: 'fresh' }], true as unknown as unknown[]];
   const steps = keepAlives.map((keepAlive, index) => {
     const step = column(`${index}`);
     return { ...step, actions: [{ ...step.actions[0], keepAlive }] };
@@ -668,9 +640,8 @@ it('registers keepAlive only as the list each override has, never as a boolean',
   fireEvent.click(await screen.findByText(RUNNING_PLAY));
   await waitFor(() => expect(registrations()).toHaveLength(1));
   const { overrides } = registrations()[0].params[0];
-  expect(overrides.map((override: any) => 'keepAlive' in override)).toEqual([false, true, true, false]);
+  expect(overrides.map((override: any) => 'keepAlive' in override)).toEqual([false, true, false, false]);
   expect(overrides[1].keepAlive).toEqual([]);
-  expect(overrides[2].keepAlive).toEqual(keepAliveList);
 });
 
 it('does not register a running Play when the clock cannot be resumed', async () => {

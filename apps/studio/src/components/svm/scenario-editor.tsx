@@ -5,6 +5,7 @@ import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
   flattenOverrideValues,
+  isKeepAliveOff,
   parseScenariosJson,
   scenarioDownloadFile,
   serializeScenarioJson,
@@ -13,7 +14,6 @@ import {
   type DynamicRefOption,
   type OverridePayload,
 } from '@/lib/scenarios-api';
-import type { KeepAliveImport } from '@/lib/scenarios-data';
 import { setSurfnetClockPaused } from '@/lib/surfnet-clock';
 import {
   ArrowDownTrayIcon,
@@ -83,7 +83,7 @@ interface Slot {
     overrides?: Record<string, unknown>;
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
-    keepAlive?: KeepAliveImport[];
+    keepAlive?: unknown[];
     account?: any; // Account address from template (Pubkey or PDA)
     original?: Record<string, unknown>; // Untouched backend override, passed through on save
   }[];
@@ -107,7 +107,7 @@ interface ScenarioEditorProps {
       action: string;
       account?: any; // Preserve account data from backend
       fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
-      keepAlive?: KeepAliveImport[];
+      keepAlive?: unknown[];
       overrides?: Record<string, unknown>; // Preserve the values/overrides from backend
       modifiedFields?: string[]; // Track which fields were modified
       original?: Record<string, unknown>; // Untouched backend override, passed through on save
@@ -326,7 +326,7 @@ export default function ScenarioEditor({
                 fetchBeforeUse: action.fetchBeforeUse || false,
                 keepAlive: action.keepAlive,
               };
-              if (!Array.isArray(override.keepAlive)) delete override.keepAlive;
+              if (!isKeepAliveOff(override.keepAlive)) delete override.keepAlive;
 
               // Only include account if it exists, don't send default values
               if (action.account) {
@@ -795,12 +795,6 @@ export default function ScenarioEditor({
     }, 0);
   };
 
-  // Studio does not edit keep-alive lists: on keeps the one the override has, else the template's applies
-  const keepAliveToSave = (savedList?: KeepAliveImport[]) => {
-    if (!keepAlive) return [];
-    return savedList?.length ? savedList : undefined;
-  };
-
   const addActionToSlot = (slotId: string, protocol: Protocol, action: Action) => {
     setSlots(
       slots.map((slot) => {
@@ -817,7 +811,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                keepAlive: keepAliveToSave(),
+                keepAlive: keepAlive ? undefined : [],
                 account: action.template?.address,
               },
             ],
@@ -858,10 +852,7 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A list names the inputs of its template, so another template drops it
-                    keepAlive: keepAliveToSave(
-                      existingAction.actionId === action.id ? existingAction.keepAlive : undefined
-                    ),
+                    keepAlive: keepAlive ? undefined : [],
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
@@ -989,7 +980,7 @@ export default function ScenarioEditor({
           fetchBeforeUse: action.fetchBeforeUse || false,
           keepAlive: action.keepAlive,
         };
-        if (!Array.isArray(override.keepAlive)) delete override.keepAlive;
+        if (!isKeepAliveOff(override.keepAlive)) delete override.keepAlive;
 
         // Only include account if it exists, don't send default values
         if (action.account) {
@@ -1640,7 +1631,7 @@ export default function ScenarioEditor({
                                                     }
                                                     // Also behind a hidden switch: a saved [] still stops the keep-alive
                                                     // earlier overrides of the account started
-                                                    setKeepAlive(action.keepAlive?.length !== 0);
+                                                    setKeepAlive(!isKeepAliveOff(action.keepAlive));
                                                   }
                                                 }
 
@@ -1988,9 +1979,9 @@ export default function ScenarioEditor({
                                   </p>
                                   {templateHasKeepAlive && (
                                     <p className="mt-1 text-xs text-zinc-500">
-                                      Keep alive: refresh this account every slot with the template&apos;s keep-alive,
-                                      or with the list this override already has. Off: stop the keep-alive that earlier
-                                      overrides of this account started and start none, so the account ages.
+                                      Keep alive: the template keeps this account fresh every slot. Off: from this
+                                      override on, nothing refreshes this account, so its fields age (for example to
+                                      test a stale price).
                                     </p>
                                   )}
                                 </div>
