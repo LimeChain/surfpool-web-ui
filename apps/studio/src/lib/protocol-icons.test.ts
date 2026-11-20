@@ -26,8 +26,9 @@ describe('PROTOCOL_ICONS', () => {
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
   });
 
-  it('has the same number of entries as PROTOCOLS', () => {
-    expect(Object.keys(PROTOCOL_ICONS).length).toBe(PROTOCOLS.length);
+  it('maps every protocol, and Doves to the Jupiter Perps icon', () => {
+    for (const protocol of PROTOCOLS) expect(PROTOCOL_ICONS[protocol.id]).toBe(protocol.icon);
+    expect(PROTOCOL_ICONS['jupiter-perps-doves']).toBe(PROTOCOL_ICONS['jupiter-perps']);
   });
 });
 

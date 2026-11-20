@@ -17,10 +17,15 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'pump', name: 'Pump', icon: '/assets/pump.svg' },
   { id: 'pumpswap', name: 'PumpSwap', icon: '/assets/pumpswap.svg' },
   { id: 'phoenix-eternal', name: 'Phoenix Eternal', icon: '/assets/phoenix.svg' },
+  { id: 'jupiter-perps', name: 'Jupiter Perps', icon: '/assets/jupiter.svg' },
 ];
 
 // Shared protocol icon mappings (derived from PROTOCOLS for backwards compatibility)
-export const PROTOCOL_ICONS: Record<string, string> = Object.fromEntries(PROTOCOLS.map((p) => [p.id, p.icon]));
+export const PROTOCOL_ICONS: Record<string, string> = {
+  ...Object.fromEntries(PROTOCOLS.map((p) => [p.id, p.icon])),
+  // Doves only prices Jupiter Perps: its overrides show that icon without a second AI protocol chip.
+  'jupiter-perps-doves': '/assets/jupiter.svg',
+};
 
 export function getProtocolIcon(protocolId: string, fallback = '/assets/surfpool.svg'): string {
   return PROTOCOL_ICONS[protocolId] || fallback;
