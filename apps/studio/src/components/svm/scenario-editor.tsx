@@ -13,6 +13,7 @@ import {
   type DynamicRefOption,
   type OverridePayload,
 } from '@/lib/scenarios-api';
+import { setSurfnetClockPaused } from '@/lib/surfnet-clock';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -25,7 +26,18 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import {
+  Combobox,
+  ComboboxLabel,
+  ComboboxOption,
+  Dropdown,
+  DropdownButton,
+  DropdownItem,
+  DropdownLabel,
+  DropdownMenu,
+  Select,
+  Switch,
+} from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
@@ -132,6 +144,15 @@ const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[
   { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
 ];
 
+type PlayClock = 'paused' | 'running';
+
+const PAUSED_CLOCK_WARNING =
+  'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
+
+// A pubkey address the template leaves empty names no account; the override carries the one it targets.
+const leavesAccountToOverride = (address: any) =>
+  !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
+
 export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
@@ -160,39 +181,19 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const accountRequestRef = useRef(0);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
+  const [playClock, setPlayClock] = useState<PlayClock>('running');
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
+  const [isStepping, setIsStepping] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
-
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
+
+  const accountRequestRef = useRef(0);
+  // A ref, so a second click sees the Step in flight before the next render
+  const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
-
-  useEffect(() => {
-    const properties = (selectedAction?.template?.properties ?? []) as any[];
-    const sources = Array.from(
-      new Set(
-        properties
-          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
-          .map((prop) => prop.source as string)
-      )
-    );
-    if (sources.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    const handleOptionsLoaded = (optionLists: DynamicRefOption[][]) => {
-      if (cancelled) return;
-      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
-    };
-    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, source))).then(handleOptionsLoaded);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAction, studioUrl]);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -408,6 +409,7 @@ export default function ScenarioEditor({
   // Fetch protocols dynamically from API
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [protocolsLoading, setProtocolsLoading] = useState(true);
+  const [templateTags, setTemplateTags] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -417,6 +419,7 @@ export default function ScenarioEditor({
           throw new Error('Failed to fetch protocols');
         }
         const templates = await response.json();
+        setTemplateTags(Object.fromEntries(templates.map((template: any) => [template.id, template.tags ?? []])));
 
         // Group templates by protocol
         const protocolGroups: Record<string, any[]> = {};
@@ -488,6 +491,10 @@ export default function ScenarioEditor({
 
     fetchProtocols();
   }, [studioUrl]);
+
+  const isClockSensitive = slots.some((slot) =>
+    slot.actions.some((action) => templateTags[action.actionId]?.includes('clock-sensitive'))
+  );
 
   const filteredProtocols = protocols.filter((protocol) => {
     const query = searchQuery.toLowerCase();
@@ -664,13 +671,14 @@ export default function ScenarioEditor({
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
-      if (accountPubkey) addressString = accountPubkey;
+      // A PDA template, or one that leaves the account to the override, reads the saved account.
+      if (accountPubkey && !addressString) addressString = accountPubkey;
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
-      // A template whose properties are all inputs or dynamic_refs (the Phoenix market templates) edits
-      // no field of the account, so its decoded data would only be sent back as override values.
+      // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
+      // its decoded data would only be sent back as override values.
       // An empty slice still pulls the account into the local VM for Play, without decoding it.
       const properties = action.template.properties ?? [];
       const inputsOnly =
@@ -836,11 +844,13 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A saved override keeps the plain address it was created for (such as a Phoenix
-                    // Trader). A derived (PDA) address is rebuilt from the template, so edited seed
+                    // A template with no address keeps the account the override was saved for, such as a trader
+                    // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
                     account:
-                      existingAction.actionId === action.id && existingAction.account?.pubkey
+                      leavesAccountToOverride(action.template?.address) &&
+                      existingAction.actionId === action.id &&
+                      existingAction.account?.pubkey
                         ? existingAction.account
                         : action.template?.address,
                   }
@@ -862,61 +872,83 @@ export default function ScenarioEditor({
     setMouseX(null);
   };
 
-  const handleStepForward = async () => {
-    if (currentPlaybackSlot < slots.length - 1) {
-      setIsExecuting(false);
+  // A time travel of one slot makes the surfnet produce it and apply the column scheduled for it
+  const advanceOneSlot = async () => {
+    try {
+      // Get current absolute slot from getEpochInfo
+      const epochResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getEpochInfo',
+          params: [{ commitment: 'processed' }],
+        }),
+      });
 
-      try {
-        // Get current absolute slot from getEpochInfo
-        const epochResponse = await fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getEpochInfo',
-          }),
-        });
+      if (epochResponse.ok) {
+        const epochData = await epochResponse.json();
+        if (epochData.result) {
+          const currentAbsoluteSlot = epochData.result.absoluteSlot;
+          const nextSlot = currentAbsoluteSlot + 1;
 
-        if (epochResponse.ok) {
-          const epochData = await epochResponse.json();
-          if (epochData.result) {
-            const currentAbsoluteSlot = epochData.result.absoluteSlot;
-            const nextSlot = currentAbsoluteSlot + 1;
+          logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
 
-            logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
+          // Call surfnet_timeTravel with next absolute slot
+          const timeTravelResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'surfnet_timeTravel',
+              params: [{ absoluteSlot: nextSlot }],
+            }),
+          });
 
-            // Call surfnet_timeTravel with next absolute slot
-            const timeTravelResponse = await fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'surfnet_timeTravel',
-                params: [{ absoluteSlot: nextSlot }],
-              }),
-            });
-
-            if (timeTravelResponse.ok) {
-              const timeTravelData = await timeTravelResponse.json();
-              logger.log('✅ Time travel successful:', timeTravelData.result);
-            } else {
-              console.error('❌ Time travel failed:', timeTravelResponse.status);
-            }
+          if (!timeTravelResponse.ok) {
+            console.error('❌ Time travel failed:', timeTravelResponse.status);
+            return false;
           }
+          const timeTravelData = await timeTravelResponse.json();
+          if (timeTravelData.error) {
+            console.error('❌ Time travel failed:', timeTravelData.error);
+            return false;
+          }
+          logger.log('✅ Time travel successful:', timeTravelData.result);
+          return true;
         }
-      } catch (error) {
-        console.error('❌ Error stepping forward:', error);
+      }
+    } catch (error) {
+      console.error('❌ Error stepping forward:', error);
+    }
+    return false;
+  };
+
+  // A second Step before the first one finishes would move the clock twice and skip a column
+  const handleStepForward = async () => {
+    if (steppingRef.current || currentPlaybackSlot >= slots.length - 1) return;
+    steppingRef.current = true;
+    setIsStepping(true);
+    try {
+      setIsExecuting(false);
+      if (!(await advanceOneSlot())) {
+        setIsExecuting(true);
+        return;
       }
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
       setTimeout(() => setIsExecuting(true), 100);
+    } finally {
+      steppingRef.current = false;
+      setIsStepping(false);
     }
   };
 
-  const handlePlay = async () => {
+  // The surfnet lands column N on the Nth slot it produces after the registration
+  const registerScenario = async () => {
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
@@ -956,32 +988,6 @@ export default function ScenarioEditor({
       tags: [],
     };
 
-    // IMPORTANT: Pause the clock BEFORE registering the scenario to prevent race conditions
-    // Otherwise, clock ticks between registration and pause can apply overrides prematurely
-    try {
-      const pauseResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
-
-      if (pauseResponse.ok) {
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
-        logger.log('🎬 Clock paused before scenario registration');
-      }
-    } catch (error) {
-      console.error('Error pausing clock:', error);
-    }
-
-    // Register scenario with surfnet (clock is now paused, no race condition)
     try {
       logger.log('📤 Registering scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
@@ -995,51 +1001,88 @@ export default function ScenarioEditor({
         }),
       });
 
-      if (registerResponse.ok) {
-        const registerData = await registerResponse.json();
-        logger.log('✅ Scenario registered:', registerData);
-      } else {
+      if (!registerResponse.ok) {
         console.error('❌ Failed to register scenario:', await registerResponse.text());
+        return false;
       }
+      const registerData = await registerResponse.json();
+      if (registerData.error) {
+        console.error('❌ Failed to register scenario:', registerData.error);
+        return false;
+      }
+      logger.log('✅ Scenario registered:', registerData);
+      return true;
     } catch (error) {
       console.error('❌ Error registering scenario:', error);
+      return false;
+    }
+  };
+
+  // A paused clock lands one column per step; a running one produces the plan's slots by itself
+  const startPlay = async (clock: PlayClock) => {
+    if (clock === 'paused') {
+      // Paused before the registration, so no column lands before its step
+      if (!(await setSurfnetClockPaused(rpcUrl, true))) {
+        console.error('Error pausing clock');
+        return;
+      }
+      if (!(await registerScenario()) || (slots.length > 0 && !(await advanceOneSlot()))) {
+        await resumeClock();
+        return;
+      }
+      setCurrentPlaybackSlot(0);
+    } else {
+      // A clock paused from the header would never produce the plan's slots
+      if (!(await setSurfnetClockPaused(rpcUrl, false))) {
+        console.error('Error resuming clock');
+        return;
+      }
+      if (!(await registerScenario())) {
+        return;
+      }
+      setCurrentPlaybackSlot(Math.max(slots.length - 1, 0));
     }
 
-    setCurrentPlaybackSlot(0);
+    setPlayClock(clock);
     setIsExecuting(true);
     setMode('play');
   };
 
-  const handleStop = () => {
+  // Registering waits for surfnet to prepare the scenario, which takes seconds for large ones.
+  const handlePlay = async (clock: PlayClock) => {
+    if (isStartingPlay) return;
+    setIsStartingPlay(true);
+    try {
+      await startPlay(clock);
+    } finally {
+      setIsStartingPlay(false);
+    }
+  };
+
+  const handlePlayPaused = () => handlePlay('paused');
+
+  const handlePlayRunning = () => handlePlay('running');
+
+  const handleStop = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
+    }
     setMode('read');
     setIsExecuting(false);
     setCurrentPlaybackSlot(0);
   };
 
-  const handleComplete = async () => {
-    // Resume the clock when completing scenario playback
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_resumeClock',
-        }),
-      });
+  const resumeClock = async () => {
+    if (await setSurfnetClockPaused(rpcUrl, false)) {
+      logger.log('▶️ Clock resumed after scenario playback');
+    } else {
+      console.error('Error resuming clock');
+    }
+  };
 
-      if (response.ok) {
-        // Dispatch event so header widget and other components sync
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: false },
-          })
-        );
-        logger.log('▶️ Clock resumed after scenario completion');
-      }
-    } catch (error) {
-      console.error('Error resuming clock:', error);
+  const handleComplete = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
     }
 
     setMode('read');
@@ -1126,6 +1169,31 @@ export default function ScenarioEditor({
       setDownloadError('Download failed');
     }
   };
+
+  useEffect(() => {
+    const properties = (selectedAction?.template?.properties ?? []) as any[];
+    const sources = Array.from(
+      new Set(
+        properties
+          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
+          .map((prop) => prop.source as string)
+      )
+    );
+    if (sources.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const handleOptionsLoaded = (optionLists: DynamicRefOption[][]) => {
+      if (cancelled) return;
+      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
+    };
+    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, rpcUrl, source))).then(handleOptionsLoaded);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAction, studioUrl, rpcUrl]);
 
   return (
     <div className="relative flex h-full">
@@ -2234,12 +2302,8 @@ export default function ScenarioEditor({
 
                                         // Regular field - render input based on type
                                         const typeString = String(typeInfo.type);
-                                        const isPhoenixCollateral =
-                                          selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
-                                          fieldPath === 'traderState.quoteLotCollateral';
                                         const inputType =
-                                          !isPhoenixCollateral &&
-                                          (typeString.startsWith('i') || typeString.startsWith('u'))
+                                          typeString.startsWith('i') || typeString.startsWith('u')
                                             ? 'number'
                                             : typeString === 'bool'
                                               ? 'checkbox'
@@ -2521,11 +2585,12 @@ export default function ScenarioEditor({
                                               const currentValue = rawValue != null ? String(rawValue) : '';
                                               const isModified = modifiedFields.has(fieldPath);
 
-                                              // A live list (today only Phoenix markets) is always searchable and takes custom values;
+                                              // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
                                               const useCombobox = isLiveList || constantDef.options.length > 20;
-                                              const { options, selectedOption } = resolveTokenSelectorOptions(
+                                              // A saved value the catalog lacks stays selectable as its custom option.
+                                              const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
                                                 currentValue
                                               );
@@ -2556,7 +2621,7 @@ export default function ScenarioEditor({
                                                     />
                                                   ) : (
                                                     <Select
-                                                      value={String(selectedOption?.value ?? '')}
+                                                      value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
                                                         setValue(fieldPath, e.target.value);
                                                       }}
@@ -2567,7 +2632,7 @@ export default function ScenarioEditor({
                                                       <option value="">
                                                         Select {constantDef.label.toLowerCase()}...
                                                       </option>
-                                                      {options.map((option) => (
+                                                      {staticCatalog.options.map((option) => (
                                                         <option key={option.id} value={option.value}>
                                                           {option.metadata?.symbol ?? option.label}
                                                         </option>
@@ -2884,13 +2949,29 @@ export default function ScenarioEditor({
                 <div className="flex items-center gap-3 pl-8">
                   {mode === 'read' ? (
                     <>
-                      <button
-                        onClick={handlePlay}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400"
-                        title="Play scenario"
-                      >
-                        <PlayIcon className="h-6 w-6" />
-                      </button>
+                      <Dropdown>
+                        <DropdownButton
+                          as="button"
+                          className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
+                          disabled={isStartingPlay}
+                          aria-busy={isStartingPlay}
+                          title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
+                        >
+                          {isStartingPlay ? (
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                          ) : (
+                            <PlayIcon className="h-6 w-6" />
+                          )}
+                        </DropdownButton>
+                        <DropdownMenu anchor="top end">
+                          <DropdownItem onClick={handlePlayPaused}>
+                            <DropdownLabel>Pause clock and step through slots</DropdownLabel>
+                          </DropdownItem>
+                          <DropdownItem onClick={handlePlayRunning}>
+                            <DropdownLabel>Run clock and play all slots</DropdownLabel>
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
                       <button
                         onClick={downloadScenario}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
@@ -2922,14 +3003,17 @@ export default function ScenarioEditor({
                       {/* Playback in progress - show step forward and stop */}
                       <button
                         onClick={handleStepForward}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400"
+                        disabled={isStepping}
+                        aria-busy={isStepping}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white transition-all hover:scale-110 hover:bg-green-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-green-500"
                         title="Step forward"
                       >
                         <ForwardIcon className="h-6 w-6" />
                       </button>
                       <button
                         onClick={handleStop}
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900"
+                        disabled={isStepping}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white transition-all hover:scale-110 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-black"
                         title="Stop scenario"
                       >
                         <StopIcon className="h-5 w-5" />
@@ -2939,6 +3023,11 @@ export default function ScenarioEditor({
                 </div>
               </div>
             </div>
+            {!!isClockSensitive && mode === 'read' && (
+              <div className="absolute inset-x-0 top-full mt-2 text-center text-xs text-amber-300">
+                {PAUSED_CLOCK_WARNING}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
