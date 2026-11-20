@@ -96,4 +96,10 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Velocity Crash',
+    prompt: 'SOL crashes 20% on Velocity',
+    icon: '📉',
+    protocols: ['velocity'],
+  },
 ];
