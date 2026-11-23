@@ -1,3 +1,4 @@
+import { BISONFI_FAIR_VALUE } from './pmms/bisonfi';
 import { TESSERA_FAIR_VALUE } from './pmms/tessera';
 import { serializeScenarioJson, toScenarioNumber } from './scenarios-api';
 
@@ -93,4 +94,5 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
 // Each PMM keeps its fair-value adapter in lib/pmms and is registered here.
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
   [TESSERA_FAIR_VALUE.protocol]: TESSERA_FAIR_VALUE,
+  [BISONFI_FAIR_VALUE.protocol]: BISONFI_FAIR_VALUE,
 };
